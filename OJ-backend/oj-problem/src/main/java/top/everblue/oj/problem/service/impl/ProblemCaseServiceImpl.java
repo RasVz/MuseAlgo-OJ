@@ -4,7 +4,7 @@ import top.everblue.oj.problem.entity.ProblemCase;
 import top.everblue.oj.problem.mapper.ProblemCaseMapper;
 import top.everblue.oj.problem.service.ProblemCaseService;
 import top.everblue.oj.problem.service.TestCaseStorageService;
-import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import cn.hutool.core.io.FileUtil;

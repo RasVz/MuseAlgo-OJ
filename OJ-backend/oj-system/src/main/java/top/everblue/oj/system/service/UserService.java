@@ -1,7 +1,7 @@
 package top.everblue.oj.system.service;
 
 import top.everblue.oj.system.entity.User;
-import com.baomidou.mybatisplus.extension.service.IService;
+import com.baomidou.mybatisplus.spring.service.IService;
 
 import java.util.List;
 

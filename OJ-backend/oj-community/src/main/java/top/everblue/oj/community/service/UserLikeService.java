@@ -1,6 +1,6 @@
 package top.everblue.oj.community.service;
 
-import com.baomidou.mybatisplus.extension.service.IService;
+import com.baomidou.mybatisplus.spring.service.IService;
 import top.everblue.oj.community.entity.UserLike;
 
 /**

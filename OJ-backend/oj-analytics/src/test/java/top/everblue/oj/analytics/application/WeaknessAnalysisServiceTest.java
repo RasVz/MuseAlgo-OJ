@@ -1,5 +1,9 @@
 package top.everblue.oj.analytics.application;
 
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -25,6 +29,13 @@ import static org.mockito.Mockito.when;
 /** 错题归因（seam：WeaknessAnalysisService.analyze）。 */
 @ExtendWith(MockitoExtension.class)
 class WeaknessAnalysisServiceTest {
+
+    @BeforeAll
+    static void initializeTableMetadata() {
+        // mock Mapper 不会触发启动扫描，新版 in 查询需要真实的列映射元数据。
+        TableInfoHelper.initTableInfo(
+                new MapperBuilderAssistant(new MybatisConfiguration(), "test"), ProblemTag.class);
+    }
 
     @Mock
     private ProfileQuery profileQuery;

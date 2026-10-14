@@ -1,6 +1,10 @@
 package top.everblue.oj.contest.infrastructure;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import top.everblue.oj.contest.entity.Contest;
 import top.everblue.oj.contest.entity.VpAttempt;
@@ -17,6 +21,14 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class ContestScheduleQueryAdapterTest {
+
+    @BeforeAll
+    static void initializeTableMetadata() {
+        // 使用 mock Mapper 时不会执行 MyBatis 的启动扫描；3.5.17 的 in 查询会立即解析列名。
+        MybatisConfiguration configuration = new MybatisConfiguration();
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(configuration, "test"), Contest.class);
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(configuration, "test"), VpAttempt.class);
+    }
 
     @Test
     @SuppressWarnings("unchecked")
