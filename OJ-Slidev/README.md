@@ -5,8 +5,12 @@
 ## 依赖与版本
 
 - Slidev **52.x**（package.json 锁定，勿随意大版本升级；升级前先用一节课件做兼容验证）
-- Node ≥ 18；包管理 npm（项目内有 package-lock.json）
-- 导出 PDF/PPTX 依赖 playwright-chromium（devDependency，已装）
+- 建议 Node **22.12+**；锁定依赖中的 Vite 7 要求 `^20.19.0 || >=22.12.0`，Playwright 要求 Node ≥ 20
+- 包管理使用 npm，按 `package-lock.json` 安装
+- 导出 PDF/PPTX 依赖 `playwright-chromium`（devDependency）及其 Chromium 浏览器，克隆仓库后需自行安装
+
+首次使用，在 `OJ-Slidev/` 目录执行 `npm ci`（包含导出所需依赖及浏览器下载；网络环境需能下载 Chromium）。
+仅构建网页版的运行环境可用 `npm ci --omit=dev`，这种安装方式不提供 PDF/PPTX 导出依赖。
 
 ## 日常命令（在工厂目录下执行）
 
@@ -25,7 +29,7 @@ slides.md                    # 仓库自带的示例 deck
 ../my-courses/01-入门.md      # 放在本工程之外的课程目录
 ```
 
-`--output` 是**输出文件路径**（非目录），指向课程包目录内即可让课程包自包含（md 源 + 可编辑 PPTX + 可打印 PDF）。
+`--output` 是**输出文件路径**（非目录），指向课程包目录内即可让课程包自包含（md 源 + PPTX + 可打印 PDF）。
 
 ## 路径解析约定（重要）
 
@@ -38,7 +42,7 @@ Slidev 52 会从**课件文件所在目录**向上查找 `node_modules` 来解�
   ln -s /path/to/OJ-Slidev/node_modules /path/to/course-tree/node_modules
   ```
 
-- 工厂执行 `npm install` 后该链接自动生效（指向同一目录），无需重建。
+- 工厂执行 `npm ci` 后该链接自动生效（指向同一目录），无需重建。
 - 若渲染时报「主题未找到」，说明从课件目录向上解析不到 `node_modules`，按上面的方式补一个链接即可。
 
 ## 故障排查

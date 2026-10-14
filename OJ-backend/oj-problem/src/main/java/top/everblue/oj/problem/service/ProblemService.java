@@ -2,7 +2,7 @@ package top.everblue.oj.problem.service;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import top.everblue.oj.problem.entity.Problem;
-import com.baomidou.mybatisplus.extension.service.IService;
+import com.baomidou.mybatisplus.spring.service.IService;
 import top.everblue.oj.problem.entity.vo.ProblemVO;
 import top.everblue.oj.problem.entity.vo.ProblemFilterOptionsVO;
 
