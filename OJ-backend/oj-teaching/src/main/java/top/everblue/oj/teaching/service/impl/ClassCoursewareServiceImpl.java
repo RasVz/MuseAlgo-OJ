@@ -42,7 +42,7 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 public class ClassCoursewareServiceImpl
-        extends com.baomidou.mybatisplus.extension.service.impl.ServiceImpl<ClassCoursewareMapper, ClassCourseware>
+        extends com.baomidou.mybatisplus.spring.service.impl.ServiceImpl<ClassCoursewareMapper, ClassCourseware>
         implements ClassCoursewareService {
 
     private final CoursewareService coursewareService;

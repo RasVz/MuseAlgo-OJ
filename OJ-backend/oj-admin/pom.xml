@@ -30,7 +30,7 @@
         <!-- 可观测性：Actuator 端点 + Prometheus 指标暴露 -->
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-actuator</artifactId></dependency>
         <dependency><groupId>io.micrometer</groupId><artifactId>micrometer-registry-prometheus</artifactId></dependency>
-        <!-- 结构化日志：LogstashEncoder 输出 JSON（文件 + 生产控制台），8.x 兼容项目 logback 1.5.x（SB 3.3.0 管理，父 pom 未管理该版本，此处显式指定） -->
+        <!-- 结构化日志：LogstashEncoder 输出 JSON（文件 + 生产控制台），8.x 兼容项目 logback 1.5.x（Spring Boot 管理，父 pom 未管理该版本，此处显式指定） -->
         <dependency><groupId>net.logstash.logback</groupId><artifactId>logstash-logback-encoder</artifactId><version>8.0</version></dependency>
     </dependencies>
     <build>

@@ -1,6 +1,6 @@
 package top.everblue.oj.problem.service.impl;
 
-import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import org.springframework.stereotype.Service;
 import top.everblue.oj.problem.entity.ProblemSample;
 import top.everblue.oj.problem.mapper.ProblemSampleMapper;
