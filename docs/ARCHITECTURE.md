@@ -72,7 +72,11 @@ flowchart TB
 
 ## 三、依赖约束（重要）
 
-这几条规则由 ArchUnit 测试在构建期强制校验，越界会导致 `mvn test` 失败：
+`ModuleDependencyArchTest` 当前自动校验：`judge / analytics / teaching / contest / community / problem / ai`
+不得依赖其他业务域（包括 `system`）的 `mapper / service / entity` 实现层包；
+唯一目标白名单是认证主体 `top.everblue.oj.system.entity.User`。违反此规则会导致 `mvn test` 失败。
+
+以下是开发与评审约定；其中禁止依赖 `oj-admin`、Controller 写操作分层尚未由该测试自动覆盖：
 
 1. **业务模块不得依赖 `oj-admin`**。`oj-admin` 只负责装配，不承载实体与业务 Service。
 2. **业务模块之间不得直接访问对方的 Mapper**。跨模块读取走 `oj-api` 中定义的只读 DTO 与查询接口；跨模块写操作走应用事件。
@@ -100,10 +104,10 @@ sequenceDiagram
     API->>DB: 落库（PENDING）+ 投递唤醒事件
     W->>DB: 批量领取任务（batch-size=8）
     W->>J: HTTP 提交到某个端点
-    J-->>W: 返回结果（可轮询）
+    J-->>W: 同步等待并返回结果（wait=true）
     alt 端点异常
         W->>CB: 记录失败
-        CB-->>W: 连续 3 次失败 → 冷却 60s 后熔断该端点
+        CB-->>W: 连续 3 次失败 → 熔断该端点并冷却 60s
         W->>J: 轮询下一个可用端点
     end
     W->>DB: 写回得分 / 状态 / 用时内存
@@ -144,7 +148,7 @@ sequenceDiagram
 - 迁移脚本位于 `OJ-backend/oj-admin/src/main/resources/db/migration`，由 Flyway 按版本号顺序执行，命名 `V{n}__说明.sql`。
 - `baseline-on-migrate: true` + `baseline-version: 6`：这意味着 **V1–V6 属于「引入 Flyway 之前的既有基线」**，Flyway 只执行 V7 及之后的增量迁移。
 - 因此**空库必须先有表结构基线**才能启动。仓库用 `docker/mysql-init/00-schema.sql`（纯结构 + Flyway 历史记录）承担这个角色，详见 [DEVELOPMENT.md](DEVELOPMENT.md) 的「数据库迁移」一节。
-- ⚠️ **不要修改已有迁移文件**，哪怕只是改注释——Flyway 的 checksum 覆盖文件全部字节，改动会让已有数据库在启动时报校验失败。
+- ⚠️ **不要修改已有迁移文件**，哪怕只是改注释——注释及其他行内容也参与 Flyway checksum，修改可能让已有数据库在启动时报校验失败。
 
 ## 九、前端结构
 

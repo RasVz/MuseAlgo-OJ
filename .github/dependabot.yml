@@ -12,6 +12,10 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: "chore(deps)"
+    # Spring Boot 保持 3.x；跨主版本迁移需单独验证整套 starter 和业务行为。
+    ignore:
+      - dependency-name: "org.springframework*"
+        update-types: ["version-update:semver-major"]
     groups:
       # 把 Spring 全家桶合并成一个 PR，避免刷屏
       spring:
