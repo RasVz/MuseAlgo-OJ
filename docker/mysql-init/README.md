@@ -18,63 +18,21 @@ java.sql.SQLException: Failed to open the referenced table 'user'
 
 > ⚠️ **不要删除 `00-schema.sql`**，否则新克隆的库无法启动。
 > 它是**纯结构**，不含账号、题目、提交等任何数据，可以安全公开。
-> 也不要**单独**改写它——它的 `flyway_schema_history` 必须与迁移文件逐条对应，
-> 两者只能成对修改（见[下一节](#修改已合入的迁移文件)）。
+> 基线中的 `flyway_schema_history` 必须与所附迁移对应，维护方法见[迁移维护规则](#迁移维护规则)。
 
-## 修改已合入的迁移文件（仅限首次公开发布之前）
+## 迁移维护规则
 
-Flyway 的 checksum 覆盖迁移文件的**全部字节**——注释、空行、行尾换行都算在内。
-所以只改注释也会让已有的库启动失败：
+**已执行或已分发给协作者的迁移必须保持原样**，不以仓库是否公开为判断依据。
+新增结构变更写成 `V{n+1}__说明.sql`；后端在现有基线上自动执行新迁移。
+不必为每次新增迁移重导基线，基线历史未包含的新版本会正常执行。
 
-```
-Migration checksum mismatch for migration version 52
--> Applied to database : -260103840
--> Resolved locally    : 656283055
-```
+只有有意更新新安装使用的结构快照时，才从已成功应用迁移、通过 Flyway 校验的临时数据库
+重新导出结构和 `flyway_schema_history`，两者必须来自同一个数据库状态。
+具体导出示例见 [DEVELOPMENT.md](../../docs/DEVELOPMENT.md#34-新增迁移的正确姿势)。
+不得在历史迁移被误改时通过重导快照或手改 checksum 掩盖问题，应先还原历史文件。
 
-**默认策略是「不改」**：需要修正时新增一个 `V{n+1}__说明.sql`
-（见 [DEVELOPMENT.md](../../docs/DEVELOPMENT.md) 第 3.2 节）。
-
-下面这套「成对修改」的步骤**只适用于首次公开发布之前**——此时还没有任何外部数据库
-应用过这些迁移，改完不会影响别人。**仓库一旦公开发布，本节即失效**：
-已发布的迁移文件必须保持字节级不变，任何修正都只能通过新增迁移完成。
-
-### 1. Flyway 10 的校验和算法
-
-`ChecksumCalculator` 的实现是：逐行读取（`BufferedReader.readLine()`，**丢弃行尾符**），
-每行去掉 BOM 后取 UTF-8 字节喂给 `java.util.zip.CRC32`，**行与行之间不加任何分隔符**，
-最后按 32 位有符号整数解释。
-
-Python 复现（`zlib.crc32` 与 Java 的 CRC32 同多项式）：
-
-```python
-import zlib
-def flyway_checksum(text: str) -> int:
-    crc = 0
-    for line in text.splitlines():          # 等价于 BufferedReader.readLine()
-        crc = zlib.crc32(line.replace('\ufeff', '').encode('utf-8'), crc)
-    return crc - 2**32 if crc >= 2**31 else crc
-```
-
-> 注意这里**没有**把各行用 `\n` 拼回去。加分隔符算出来的值一定对不上。
-
-### 2. 改动步骤
-
-1. 改 `OJ-backend/oj-admin/src/main/resources/db/migration/V*.sql`；
-2. 用上面的函数算出新 checksum，替换 `00-schema.sql` 里 `flyway_schema_history`
-   对应记录的值；
-3. 已经建过库的环境，同步订正它的历史记录：
-   ```sql
-   UPDATE flyway_schema_history SET checksum = <新值> WHERE script = 'V52__submission_code_split.sql';
-   ```
-4. 两步校验都要做：
-   - 起一个临时 MySQL（挂载本目录），确认基线能干净导入、且记录值等于新 checksum；
-   - 启动后端，日志出现 `Successfully validated N migrations` 与
-     `Schema 'oj_db' is up to date. No migration necessary.` 才算通过
-     —— 这是 Flyway 亲自复核，比自算结果可信。
-
-> 校验和的一致性是「迁移文件 ↔ `00-schema.sql` ↔ 已建库」三者共同成立的，
-> 任何一处漏改都会在下次启动时暴露为 `Migration checksum mismatch`。
+Flyway 会按逐行文本计算 checksum，注释和行内容也参与计算；不要把「只改注释」视为无影响。
+发现 `Migration checksum mismatch` 时按 [排错指南](../../docs/TROUBLESHOOTING.md#日志出现-flyway-checksum-mismatch) 处理。
 
 ## 导入演示数据
 
