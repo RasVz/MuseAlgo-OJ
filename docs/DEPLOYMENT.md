@@ -5,7 +5,7 @@
 ## 〇、部署前请先明确三件事
 
 1. **这是教学系统，不是高并发商业 OJ。** 单机部署（2 核 4G 起）足以支撑一个班级到一所学校的规模。
-2. **判题机有安全风险。** Judge0 需要 `privileged` 权限执行用户代码，**绝对不能暴露到公网**，详见第四节。
+2. **判题机有安全风险。** Judge0 需要 `privileged` 权限执行用户代码，**绝对不能暴露到公网**，详见第五节。
 3. **密钥必须重新生成。** 仓库里不含任何真实密钥，`.env.example` 只是变量名的模板。
 
 ## 一、组件与端口
@@ -87,8 +87,8 @@ curl -fsS localhost:8080/actuator/health        # 期望 {"status":"UP"}
 
 ```bash
 docker compose -f docker-compose.prod.yml logs -f backend     # 看后端日志
-docker compose -f docker-compose.prod.yml exec mysql \
-  mysql -uroot -p"$OJ_DB_PASS" oj_db -e 'SELECT version, description, success FROM flyway_schema_history ORDER BY installed_rank DESC LIMIT 3;'
+docker compose -f docker-compose.prod.yml exec -T mysql sh -c \
+  'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" oj_db -e "SELECT version, description, success FROM flyway_schema_history ORDER BY installed_rank DESC LIMIT 3;"'
 ```
 
 > **注意**：首次启动时 MySQL 会自动执行 `docker/mysql-init/00-schema.sql` 建立表结构基线与 Flyway 历史（**不含任何业务数据**）。演示数据请用 `scripts/db-seed.sh`，生产环境**不要**导入演示账号。
@@ -100,43 +100,110 @@ docker compose -f docker-compose.prod.yml exec mysql \
 >
 > 生产编排与开发编排使用**不同的 compose 项目名**（`musealgo-prod` / `musealgo-dev`），数据卷互不干扰，不会串库。
 >
-> 如果你不打算在服务器上编译，也可以在本机或 CI 上执行 `./mvnw -DskipTests package` 与 `npm ci && npm run build`，把 `oj-admin-*.jar` 与 `dist/` 拷到服务器，用任意方式托管（第 3 节的 systemd 方案就是这条路）。
+> 查询命令在容器内读取 `MYSQL_ROOT_PASSWORD`，无需把 `.env` 导出到宿主 shell。
+> 如果你不打算在服务器上编译，可以按第三节从仓库根目录构建 jar 与前端，再复制到服务器。
 
 ---
 
 ## 三、方式 B：systemd 单机 jar（最省资源）
 
-适合「一台服务器、不用容器」的场景。
+适用于使用 systemd 的 Linux 服务器。先安装并启动 MySQL 8、Redis，配置它们只监听本机；
+服务器安装 JRE 17，构建环境另需 JDK 17 与 Node.js（建议 22.12+）。MySQL/Redis 的安装方式、
+服务名和 Java 路径按发行版调整。以下构建、复制命令从服务器上的仓库根目录执行。
 
-**1. 准备密钥文件**（仅 root 可读）
+### 3.1 初始化原生数据库
+
+**仅对全新的空库执行**，已有库按升级流程处理。先以管理员进入 MySQL：
 
 ```bash
-sudo mkdir -p /etc/musealgo
-sudo tee /etc/musealgo/oj.env > /dev/null <<'EOF'
-JWT_SECRET=<openssl rand -base64 48 生成的随机串>
+mysql -uroot -p
+```
+
+在 MySQL 提示符中执行，先把示例口令替换成自己的强口令：
+
+```sql
+CREATE DATABASE oj_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'oj'@'127.0.0.1' IDENTIFIED BY 'REPLACE_WITH_YOUR_DATABASE_PASSWORD';
+GRANT ALL PRIVILEGES ON oj_db.* TO 'oj'@'127.0.0.1';
+EXIT;
+```
+
+从仓库根目录导入结构基线；命令会提示输入专用账号的口令：
+
+```bash
+mysql --default-character-set=utf8mb4 -h127.0.0.1 -uoj -p oj_db < docker/mysql-init/00-schema.sql
+```
+
+基线包含结构与迁移历史，不含业务数据。账号需要本库 DDL 权限以执行 Flyway；不要授予全局权限。
+生产环境不导入演示账号。Redis 如果设置了口令，后续环境文件也要配置 `OJ_REDIS_PASS`。
+
+### 3.2 构建、账号与目录
+
+```bash
+(cd OJ-backend && ./mvnw package)
+(cd OJ-frontend && npm ci && npm run build)
+
+# Linux 示例：账号已存在时跳过 useradd；nologin 路径按发行版调整
+sudo useradd --system --user-group --home-dir /opt/musealgo --shell /usr/sbin/nologin oj
+sudo mkdir -p /opt/musealgo/data/testcases /opt/musealgo/data/uploads \
+  /opt/musealgo/OJ-Coursewares /opt/musealgo/dist
+sudo install -m 644 OJ-backend/oj-admin/target/oj-admin-0.1.0-SNAPSHOT.jar /opt/musealgo/oj-admin.jar
+sudo cp -R OJ-frontend/dist/. /opt/musealgo/dist/
+sudo chown -R oj:oj /opt/musealgo/data /opt/musealgo/OJ-Coursewares
+```
+
+前端静态产物和 jar 由 root 管理，运行账号只需读取；数据与课件输出目录由 `oj` 写入。
+升级时按实际产物版本更换 jar 文件名。
+
+### 3.3 环境文件与服务
+
+创建仅 root 可读的配置文件（systemd 由系统管理器读取，再注入服务）：
+
+```bash
+sudo install -d -m 700 /etc/musealgo
+sudo install -m 600 /dev/null /etc/musealgo/oj.env
+sudoedit /etc/musealgo/oj.env
+```
+
+首次安装时将以下模板写入文件，替换密钥和数据库口令；升级时直接编辑原文件，不要执行上面的空文件创建命令。
+`JWT_SECRET` 可用 `openssl rand -base64 48` 生成。该文件使用 systemd EnvironmentFile 语法，不是 shell 脚本。
+
+```dotenv
+JWT_SECRET=REPLACE_WITH_GENERATED_RANDOM_SECRET
 OJ_DB_HOST=127.0.0.1
 OJ_DB_USER=oj
-OJ_DB_PASS=<数据库密码>
+OJ_DB_PASS=REPLACE_WITH_YOUR_DATABASE_PASSWORD
 OJ_REDIS_HOST=127.0.0.1
+# Redis 启用认证时取消注释并填写：
+#OJ_REDIS_PASS=REPLACE_WITH_YOUR_REDIS_PASSWORD
+OJ_RABBITMQ_ENABLED=false
+OJ_SEARCH_ENABLED=false
+MANAGEMENT_HEALTH_RABBIT_ENABLED=false
+# 与第四节同源 Nginx 配套，必须显式留空：
+OJ_PUBLIC_BASE_URL=
+SERVER_ADDRESS=127.0.0.1
 OJ_TESTCASE_PATH=/opt/musealgo/data/testcases
 OJ_UPLOAD_DIR=/opt/musealgo/data/uploads
 OJ_SLIDEV_WORKER_DIR=/opt/musealgo/OJ-Slidev
 OJ_SLIDEV_OUTPUT_DIR=/opt/musealgo/OJ-Coursewares
-DEEPSEEK_API_KEY=<你的大模型 Key，不用 AI 功能可留空>
-EOF
-sudo chmod 600 /etc/musealgo/oj.env
+DEEPSEEK_API_KEY=
 ```
 
-**2. 建服务**
+原生默认会启用 RabbitMQ 与 Meilisearch；本模板显式关闭，并关闭 RabbitMQ 健康探针。
+若以后启用它们，需同时配置连接参数与实际服务。Redis 若使用认证，填写 `OJ_REDIS_PASS`。
+判题功能另需在此文件中配置第五节的 `JUDGE0_URLS`。
+
+创建 `/etc/systemd/system/musealgo-oj.service`：
 
 ```ini
-# /etc/systemd/system/musealgo-oj.service
 [Unit]
 Description=MuseAlgo-OJ
-After=network.target mysqld.service redis.service
+After=network.target
 
 [Service]
 User=oj
+Group=oj
+WorkingDirectory=/opt/musealgo
 EnvironmentFile=/etc/musealgo/oj.env
 ExecStart=/usr/bin/java -Xmx2g -jar /opt/musealgo/oj-admin.jar
 Restart=on-failure
@@ -146,17 +213,33 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
+先确认 MySQL/Redis 已就绪，再启动后端；需要自动依赖管理时将发行版对应的数据库/缓存服务名加入 `After=` 与 `Requires=`。
+
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now musealgo-oj
 sudo systemctl status musealgo-oj
+curl -fsS http://127.0.0.1:8080/actuator/health
 ```
 
-**换密钥时**：只改 `/etc/musealgo/oj.env` 再 `sudo systemctl restart musealgo-oj`，**不需要重新打包**。
+换密钥时编辑 `/etc/musealgo/oj.env`，再执行 `sudo systemctl restart musealgo-oj`，无需重新打包。
 
-**课件功能（可选）**：systemd 方案下课件构建是在宿主机上以外部进程调用 Slidev，
-因此宿主机需要安装 **Node ≥ 20**，并在 `OJ_SLIDEV_WORKER_DIR` 指向的工程目录里执行过 `npm ci`。
-不需要在线生成课件时无需安装 Node，仅把课件产物目录挂进 Nginx 即可浏览已有课件。
+### 3.4 在线课件构建（可选）
+
+宿主机安装 **Node.js 22.12+**，确保服务的 PATH 能找到 `node` 与 `npm`。从仓库根目录复制工程：
+
+```bash
+sudo mkdir -p /opt/musealgo/OJ-Slidev
+sudo cp OJ-Slidev/package.json OJ-Slidev/package-lock.json /opt/musealgo/OJ-Slidev/
+sudo chown -R oj:oj /opt/musealgo/OJ-Slidev
+sudo -u oj env npm_config_cache=/opt/musealgo/OJ-Slidev/.npm-cache \
+  npm --prefix /opt/musealgo/OJ-Slidev ci --omit=dev
+```
+
+在线课件构建只需要工程依赖；`oj` 必须能在工程目录中写入临时 Markdown。
+若使用 `/usr/local/bin` 等非默认 Node 安装路径，在服务中显式设置对应 `Environment=PATH=...` 并重启。
+PDF/PPTX 导出另需完整开发依赖及 Chromium，见 [OJ-Slidev 说明](../OJ-Slidev/README.md)。
+不需要在线构建时可跳过此节；已有课件仍可由 Nginx 静态托管。
 
 ---
 
@@ -210,9 +293,10 @@ server {
 }
 ```
 
-> 若后端部署在其他主机，记得把 `OJ_PUBLIC_BASE_URL` 设为对外访问地址，用于生成回调与分享链接。
-> 反过来，如果前端 Nginx 已经把 `/api` 与 `/uploads/` 都反代/托管好了（即前后端同源），
-> **不要**设置 `OJ_PUBLIC_BASE_URL`——留空时后端返回同源相对地址，换域名、换端口都不会失效。
+> `OJ_PUBLIC_BASE_URL` 用于生成本地上传文件地址。若浏览器从独立资源域名访问上传文件，
+> 填该资源服务的对外基础地址，并确保它实际托管 `/uploads/`。
+> 同源 Nginx 托管时显式设置 `OJ_PUBLIC_BASE_URL=`，返回 `/uploads/...` 相对地址。
+> 两份 Compose 已覆盖为空；原生/systemd 若完全未设置，应用默认值是 `http://localhost:8080`，不能把「未设置」当作「留空」。
 
 ---
 
@@ -248,9 +332,9 @@ JUDGE0_URLS=http://<judge0 地址>:2358
 | `OJ_TESTCASE_PATH` | ⭕ | 判题用例目录，**生产请指向持久卷**（默认 `./data/testcases`） |
 | `OJ_UPLOAD_DIR` | ⭕ | 本地上传目录（默认 `uploads`），与 Nginx 的 `/uploads/` 必须是同一份 |
 | `OJ_SLIDEV_WORKER_DIR` / `OJ_SLIDEV_OUTPUT_DIR` | ⭕ | 课件工程目录与课件输出目录。官方镜像已设好默认值；**systemd / 单 jar 部署必须给绝对路径**（发行形态没有源码目录树，工作区根推断不成立），且 `OJ_SLIDEV_WORKER_DIR` 需先执行过 `npm ci` |
-| `OJ_PUBLIC_BASE_URL` | ⭕ | 生成本地上传文件地址用的基础地址。**留空表示同源相对地址**（推荐，前后端同源时不用设）；后端与站点不同源时才填绝对地址 |
-| `OJ_RABBITMQ_ENABLED` | ⭕ | 无 broker 时设为 `false`，回退数据库轮询 |
-| `OJ_SEARCH_ENABLED` | ⭕ | 无 Meilisearch 时设为 `false`，搜索回退 `LIKE` |
+| `OJ_PUBLIC_BASE_URL` | ⭕ | 生成本地上传文件地址用的基础地址。**显式空值表示同源相对地址**；Compose 已覆盖为空，原生未设置时默认 `http://localhost:8080`；资源不同源时填实际资源基础地址 |
+| `OJ_RABBITMQ_ENABLED` | ⭕ | 原生默认 `true`；无 broker 时设为 `false`，回退数据库轮询，并设 `MANAGEMENT_HEALTH_RABBIT_ENABLED=false` |
+| `OJ_SEARCH_ENABLED` | ⭕ | 原生默认 `true`；无 Meilisearch 时设为 `false`，搜索回退 `LIKE` |
 
 **换 JWT 密钥的后果**：所有已登录用户的 token 立刻失效，需要重新登录。请在低峰期操作。
 
@@ -262,8 +346,15 @@ JUDGE0_URLS=http://<judge0 地址>:2358
 
 ```bash
 # 1. 先备份数据库（重要）
-docker compose -f docker-compose.prod.yml exec -T mysql \
-  mysqldump -uroot -p"$OJ_DB_PASS" --single-transaction oj_db | gzip > backup-$(date +%F).sql.gz
+backup_file="backup-$(date +%F-%H%M%S).sql"
+if docker compose -f docker-compose.prod.yml exec -T mysql sh -c \
+  'exec mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction --no-tablespaces --set-gtid-purged=OFF oj_db' > "$backup_file"; then
+  gzip "$backup_file" || exit 1
+else
+  rm -f "$backup_file"
+  echo '数据库备份失败，停止升级' >&2
+  exit 1
+fi
 
 # 2. 换新产物（Docker 方案：重新构建镜像后 up -d，只重建变更的服务）
 docker build -f deploy/Dockerfile.backend -t musealgo-oj/backend:latest .
@@ -283,10 +374,10 @@ curl -fsS localhost:8080/actuator/health   # 应为 {"status":"UP"}
 
 - [ ] `JWT_SECRET` 是 `openssl rand -base64 48` 生成的新值，不是示例值
 - [ ] 数据库与 Redis 口令**不是** `123456`，且端口不对公网开放
-- [ ] `.env` / 密钥文件权限为 `600`，属主为运行服务的用户
+- [ ] `.env` / 密钥文件权限为 `600`；Compose 文件由运维账号持有，systemd 的 `/etc/musealgo/oj.env` 由 root 持有
 - [ ] 判题机端口未暴露公网
 - [ ] **没有**导入 `db-seed.sh` 的演示账号（`admin/123456`）到生产库
-- [ ] 已用真实域名配置 `OJ_PUBLIC_BASE_URL`
+- [ ] 同源上传使用显式空值 `OJ_PUBLIC_BASE_URL=`；资源不同源时配置真实资源基础地址，并验证上传文件可访问
 - [ ] Nginx 已开启 HTTPS（证书可用 certbot 申请）
 - [ ] 已配置数据库定期备份
 - [ ] `/actuator/prometheus` 只对监控网络开放（或加访问控制）
