@@ -2,7 +2,7 @@ package top.everblue.oj.problem.service;
 
 import top.everblue.oj.problem.entity.ProblemListItem;
 import top.everblue.oj.problem.entity.vo.ProblemVO;
-import com.baomidou.mybatisplus.extension.service.IService;
+import com.baomidou.mybatisplus.spring.service.IService;
 
 import java.util.List;
 

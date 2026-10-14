@@ -6,8 +6,8 @@
 
 请通过以下方式私下联系维护者：
 
-- 使用 GitHub 的 [私密漏洞报告](https://docs.github.com/code-security/security-advisories/guidance-on-reporting-and-writing-information-about-vulnerabilities/privately-reporting-a-security-vulnerability) 功能（仓库 Security 标签页 → Report a vulnerability）
-- 或发送邮件至仓库提交记录中维护者的邮箱
+- 发送邮件至 [1204736981@qq.com](mailto:1204736981@qq.com)
+- 若仓库 Security 页面提供 **Report a vulnerability** 入口，也可使用 GitHub 私密漏洞报告
 
 请尽量提供：
 

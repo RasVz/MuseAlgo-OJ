@@ -117,17 +117,11 @@ private Map<String, Integer> languageIds;
 
 三要素缺一不可：**业务问题、处理方式、前置依赖**。
 
-> ⚠️ **默认规则：已经合入的迁移文件，一个字节都不要改。**
-> Flyway 的 checksum 覆盖文件**全部字节**——注释、空行、行尾换行都算在内。
-> 改动会让所有已建库的环境启动直接失败：`Migration checksum mismatch`，
-> 而且重新执行迁移修不好，只能手工订正 `flyway_schema_history` 表。
-> **需要补充说明时，优先写进 `docs/` 文档或代码注释，不要动迁移文件。**
-> 这条规则曾在本项目被违反过一次（12 个迁移文件被改注释，导致起栈即崩）。
->
-> 确实必须改时（例如注释里出现了本仓库不存在的引用），改动要**成对做**：
-> 改文件的同时订正结构基线 `docker/mysql-init/00-schema.sql` 里记录的 checksum，
-> 并同步已建库的 `flyway_schema_history`。完整步骤与校验方法见
-> [数据库初始化目录说明](../docker/mysql-init/README.md#修改已合入的迁移文件)。
+> ⚠️ **已执行或已分发的迁移文件不要修改，包括注释整理。**
+> Flyway 校验迁移文本，修改注释或其他行内容也可能导致 `Migration checksum mismatch`。
+> 需要补充说明时写进 `docs/` 或代码注释；结构修正新增 `V{n+1}__说明.sql`。
+> 发现历史迁移被误改时还原原文件，不要手改历史 checksum 或用 `flyway repair` 掩盖问题。
+> 基线维护规则见 [数据库初始化目录说明](../docker/mysql-init/README.md#迁移维护规则)。
 
 ## Mapper XML 约定
 

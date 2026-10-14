@@ -40,26 +40,49 @@ docker compose -f compose.dev.yml up -d
 
 ### 路线 B：本地原生
 
-需要自备 JDK 17、Maven、MySQL 8、Redis、Node.js。
+需要自备 JDK 17、MySQL 8、Redis 与 Node.js（建议 22.12+）。Maven 使用仓库包装器即可。
+本路线默认连接本机 MySQL **3306**、Redis **6379**；Docker 开发栈映射的 3307 / 6381 不能直接代用。
+
+1. 在全新数据库上按 [部署指南的数据库初始化步骤](DEPLOYMENT.md#31-初始化原生数据库) 创建 `oj_db`、专用账号并导入 `00-schema.sql`。已有库不要重复导入基线。
+2. 从仓库根目录执行 `cp .env.example .env`，填写 `JWT_SECRET`、`OJ_DB_USER`、`OJ_DB_PASS`；无可选中间件时增加：
+
+   ```dotenv
+   OJ_RABBITMQ_ENABLED=false
+   OJ_SEARCH_ENABLED=false
+   MANAGEMENT_HEALTH_RABBIT_ENABLED=false
+   OJ_PUBLIC_BASE_URL=
+   ```
+
+   密钥可用 `openssl rand -base64 48` 生成；`.env` 被脚本作为 shell 文件加载，含空格或特殊字符的值须正确加引号。
+
+3. 两个终端都从仓库根目录执行：
 
 ```bash
-# 后端（脚本会自动 source .env，先把各模块装进本地仓库，再启动 oj-admin）
+# 终端一：脚本加载 .env，先安装所有依赖模块，再启动 oj-admin
 ./scripts/run-local.sh
-
-# 或手动分两步，顺序不能颠倒：
-# 1) 先把同级模块装进本地 Maven 仓库，否则 oj-admin 找不到它们的 SNAPSHOT
-export JWT_SECRET="$(openssl rand -base64 48)"
-export OJ_DB_PASS=你的数据库密码
-cd OJ-backend && ./mvnw -pl oj-admin -am -DskipTests install
-# 2) 再启动。这一步**不要**加 -am：父工程不是可执行模块，
-#    带 -am 会让 Maven 先对父工程执行 spring-boot:run 而失败
-./mvnw -pl oj-admin spring-boot:run
-
-# 前端（/api 与 /uploads 默认代理到 localhost:8080）
-cd OJ-frontend && npm install && npm run dev
 ```
 
-> 概括一下这条容易踩的规则：**安装阶段要 `-am`，启动阶段不要 `-am`。**
+```bash
+# 终端二：前端（/api 与 /uploads 默认代理到 localhost:8080）
+(cd OJ-frontend && npm ci && npm run dev)
+```
+
+若需手动启动，以下是 `run-local.sh` 的等价步骤（同样从仓库根目录执行）：
+
+```bash
+(
+  set -e
+  set -a
+  . ./.env
+  set +a
+  cd OJ-backend
+  ./mvnw -pl oj-admin -am -DskipTests install &&
+    ./mvnw -pl oj-admin spring-boot:run
+)
+```
+
+安装阶段使用 `-am`；启动阶段不加 `-am`，以免对不可执行的父工程执行 `spring-boot:run`。
+如需在线生成课件，还应执行 `(cd OJ-Slidev && npm ci --omit=dev)`。
 
 ---
 
@@ -73,12 +96,10 @@ cd OJ-frontend && npm install && npm run dev
 
 ### 3.2 ⚠️ 已发布的迁移文件不要修改
 
-Flyway 的 checksum 覆盖**文件全部字节**，**连改注释、改空行都会让已有数据库在启动时报校验失败**。需要修正时，请新增一个 `V{n+1}__说明.sql`，不要改动已有文件。
+Flyway 的 checksum 会校验迁移文本，**修改注释或其他行内容也可能让已有数据库在启动时报校验失败**。需要修正时，请新增一个 `V{n+1}__说明.sql`，不要改动已有文件。
 
-**唯一的例外是「首次公开发布之前」**：此时还没有任何外部数据库应用过这些迁移，改完不会影响别人。
-这种情况下必须按 `docker/mysql-init/README.md` 的步骤同步订正 `00-schema.sql` 里
-`flyway_schema_history` 的 checksum，否则新克隆者会因「基线历史与迁移文件不匹配」而起不来。
-**仓库一旦公开发布，这条例外即失效**——之后一律新增迁移，不再修改历史文件。
+**已执行或已分发给协作者的迁移一律冻结**，不以仓库是否公开为判断依据。
+基线维护与历史校验说明见 [数据库初始化目录](../docker/mysql-init/README.md#迁移维护规则)。
 
 ### 3.3 这套迁移是「增量迁移」，不是自足建库脚本
 
@@ -107,7 +128,8 @@ docker compose -f compose.dev.yml restart backend
 docker compose -f compose.dev.yml logs -f backend | grep -i flyway
 ```
 
-**如果你改了表结构基线**（例如新增了表并希望新克隆者也能用），需要同步重导 `00-schema.sql`——否则新克隆者拿到的基线会缺表，而 Flyway 因为 baseline 机制不会补。重导方式：
+新增迁移后，**现有基线通常无需重导**：新克隆者导入基线后，Flyway 会执行基线历史中尚未记录的新迁移。
+若有意更新新安装使用的结构快照，应从已应用全部迁移且校验通过的同一临时数据库导出结构与历史，不能只改其中之一。示例：
 
 ```bash
 docker exec <mysql容器> mysqldump -uroot -p<密码> --no-data --skip-comments \
@@ -163,7 +185,7 @@ compose.dev.yml             开发栈编排（核心四件套 + judge / extras �
 1. 在对应业务模块的 `controller` 包加 Controller 方法，只做「收 DTO → 调应用服务 → 返回结果」。
 2. 写操作必须落在 **`top.everblue.oj.<module>.application` 应用服务**里，由它负责权限校验、事务边界、字段白名单复制。
 3. **不要**在 Controller 里直接调 Mapper，也**不要**跨模块访问别人的 Mapper——跨域读取走 `oj-api` 里的只读查询接口。
-4. 这些规则由 ArchUnit 测试强制校验，越界会让 `mvn test` 失败。
+4. ArchUnit 当前自动校验跨业务模块的实现层依赖，具体范围见 [架构说明](ARCHITECTURE.md#三依赖约束重要)。Controller 写操作分层等约定仍需代码评审检查。
 
 ### 5.2 新增一个前端页面
 
@@ -178,7 +200,8 @@ compose.dev.yml             开发栈编排（核心四件套 + judge / extras �
 2. 同步更新 `.env.example`（含注释说明）。
 3. 若是必填项，**不要给默认值**——让它缺失即失败，比带着弱默认值上生产安全。
 4. 更新 README 的配置说明表格。
-5. 可选配置在 `.env.example` 里请**整行注释掉**，不要写成 `KEY=`。
+5. 通常可选配置在 `.env.example` 里应**整行注释掉**，避免无意写成 `KEY=`。
+   明确需要空字符串时例外，例如原生同源部署使用 `OJ_PUBLIC_BASE_URL=`。
    留空赋值会覆盖 `application.yml` 里的 `${KEY:默认值}`，把默认值抹成空字符串
    （`AI_MODEL`、`DEEPSEEK_API_URL` 都踩过这个坑）。
 
@@ -193,30 +216,32 @@ compose.dev.yml             开发栈编排（核心四件套 + judge / extras �
 
 ## 六、构建与测试
 
+以下命令均从仓库根目录执行；前端先执行 `(cd OJ-frontend && npm ci)` 安装依赖。
+
 ```bash
 # 后端：编译（快）
-cd OJ-backend && ./mvnw -q compile
+(cd OJ-backend && ./mvnw -q compile)
 
 # 后端：跑单元测试
-cd OJ-backend && ./mvnw test
+(cd OJ-backend && ./mvnw test)
 
 # 后端：打包（会先跑一遍单元测试）
-cd OJ-backend && ./mvnw package
+(cd OJ-backend && ./mvnw package)
 # 产物：OJ-backend/oj-admin/target/oj-admin-0.1.0-SNAPSHOT.jar
 
 # 后端：连需要数据库的集成测试一起跑（需本机 MySQL / Redis 已就绪）
 # 该 profile 会清空默认排除项，并显式 include **/*IT.java，
 # 因此单元测试与集成测试都会被执行
-cd OJ-backend && ./mvnw test -Pintegration
+(cd OJ-backend && ./mvnw test -Pintegration)
 
 # 前端：代码检查（lint:ci 不带 --fix，与 CI 一致）
-cd OJ-frontend && npm run lint:ci
+(cd OJ-frontend && npm run lint:ci)
 
 # 前端：本地开发时可用带自动修复的版本
-cd OJ-frontend && npm run lint
+(cd OJ-frontend && npm run lint)
 
 # 前端：构建
-cd OJ-frontend && npm run build
+(cd OJ-frontend && npm run build)
 ```
 
 **测试分两层**：

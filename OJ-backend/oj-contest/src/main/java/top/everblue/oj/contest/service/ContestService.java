@@ -1,7 +1,7 @@
 package top.everblue.oj.contest.service;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.baomidou.mybatisplus.extension.service.IService;
+import com.baomidou.mybatisplus.spring.service.IService;
 import top.everblue.oj.contest.entity.Contest;
 
 /**

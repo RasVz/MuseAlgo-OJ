@@ -1,7 +1,7 @@
 package top.everblue.oj.community.service;
 
 import top.everblue.oj.community.entity.Post;
-import com.baomidou.mybatisplus.extension.service.IService;
+import com.baomidou.mybatisplus.spring.service.IService;
 
 /**
  * 动态的数据访问基座接口，只提供 MyBatis-Plus 的通用 CRUD。
