@@ -247,7 +247,6 @@ curl -fsS localhost:8080/actuator/health     # 期望 {"status":"UP"}
 ## 贡献
 
 欢迎提交 Issue 与 Pull Request，请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。
-参与本项目即表示你同意遵守 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)。
 
 ## 安全
 
