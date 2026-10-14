@@ -1,0 +1,60 @@
+name: build
+
+# 构建门禁：后端跑单元测试 + 打包，前端跑 ESLint + 构建。
+#
+# 关于测试范围：需要 MySQL / Redis 的集成测试（OjApplicationTests、*IT）
+# 已由 OJ-backend/pom.xml 的 surefire excludes 默认排除，
+# 因此这里无需 -DskipTests —— 跳过全部测试会让 CI 变成「只验证能编译」的假门禁，
+# 判题、榜单、查重等核心逻辑被改坏也不会被发现。
+# 需要连同集成测试一起验证时，在带数据库的环境执行：./mvnw test -Pintegration
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: 后端测试与打包 (Maven)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      # package 会先执行 test 阶段：跑完全部单元测试再打包，
+      # 因此这一条命令同时覆盖「测试通过」与「产物能构建」两件事
+      - name: 单元测试并打包
+        working-directory: OJ-backend
+        run: ./mvnw -B package
+
+  frontend:
+    name: 前端检查与构建 (Vite)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: OJ-frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: OJ-frontend/package-lock.json
+
+      # 用 npm ci 而非 install：严格按 lock 安装，能提前发现 lock 与 package.json 失同步
+      - name: 安装依赖
+        run: npm ci --no-audit --no-fund
+
+      # 用 lint:ci 而非 lint：后者带 --fix，CI 只应检查、不应改动工作区文件
+      - name: 代码检查 (ESLint)
+        run: npm run lint:ci
+
+      - name: 构建产物
+        run: npm run build

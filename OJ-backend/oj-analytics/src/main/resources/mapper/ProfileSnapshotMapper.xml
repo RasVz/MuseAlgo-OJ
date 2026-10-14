@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="top.everblue.oj.analytics.mapper.ProfileSnapshotMapper">
+
+    <!--
+      ========================================================================
+      学生画像快照（student_profile_snapshot）的持久化。
+      ========================================================================
+      快照 = 某个统计周期结束时冻结下来的一份画像 JSON，外加一份可分享的报告文件地址。
+      它的价值在于「不可变的历史记录」：期中的实时数据每天都在变，
+      而「期中某次测评时这个学生的水平如何」必须被固定下来供日后对比与追溯。
+
+      写入策略因此是「幂等覆盖」而非「追加」：同一个学生同一个周期反复触发生成
+      （重跑任务、老师手动刷新）都应更新同一条记录，而不是堆出多条。
+      这一点完全靠数据库唯一键 uk_profile_student_period (student_id, period_start)
+      + ON DUPLICATE KEY UPDATE 实现，应用层不做「先查再决定插或改」的判断——
+      那在并发下必然出现重复行。
+      ========================================================================
+    -->
+
+    <!--
+        幂等写入快照：同一学生同一周期重复生成时更新而非报错。
+        依赖 uk_profile_student_period (student_id, period_start) 唯一键。
+    -->
+    <insert id="upsert">
+        <!--
+          没有写 period_start 的更新分支：它是唯一键的一部分，改它等于换一条记录，
+          不属于「更新快照」的语义。
+
+          report_url = COALESCE(VALUES(report_url), report_url) 是本条 SQL 里唯一有讲究的赋值：
+          报告生成是异步的，可能出现「先写快照（此时 URL 还没有），稍后才补 URL」的时序。
+          若直接写 VALUES(report_url)，后一次调用的 null 会把已有的 URL 覆盖成空，
+          让已生成的报告链接丢失。用 COALESCE 保证「传了新值才覆盖，没传就保留原值」。
+        -->
+        INSERT INTO student_profile_snapshot
+            (student_id, class_id, period_start, period_end, snapshot_json, report_url)
+        VALUES
+            (#{studentId}, #{classId}, #{periodStart}, #{periodEnd}, #{snapshotJson}, #{reportUrl})
+        ON DUPLICATE KEY UPDATE
+            class_id      = VALUES(class_id),
+            period_end    = VALUES(period_end),
+            snapshot_json = VALUES(snapshot_json),
+            report_url    = COALESCE(VALUES(report_url), report_url)
+    </insert>
+
+    <!-- 只回填报告 URL（快照已存在时） -->
+    <update id="updateReportUrl">
+        <!--
+          报告文件异步生成完毕后回填链接，与 upsert 分开是为了让「快照已写入」
+          不被「报告是否已渲染成功」拖累——渲染失败不该让整个快照任务失败重试。
+          WHERE 用 (student_id, period_start) 而非 id：调用方手上只有这两个业务键，
+          且正好命中唯一键 uk_profile_student_period，走索引且天然幂等
+          （重复回填同一条 URL 结果相同）。
+          本语句不更新 update_time：快照的业务周期未变，只补一个衍生字段。
+        -->
+        UPDATE student_profile_snapshot
+        SET report_url = #{reportUrl}
+        WHERE student_id = #{studentId}
+          AND period_start = #{periodStart}
+    </update>
+
+</mapper>

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="top.everblue.oj.contest.mapper.UserRatingMapper">
+
+    <!--
+      ========================================================================
+      比赛 Rating 变动流水（user_rating）。
+      ────────────────────────────────────────────────────────────────────────
+      每条记录表示「某场 specific 比赛让某位选手的 rating 变了多少」，
+      是 rating 的**变更日志**而非当前值：当前值另存在 user.rating，
+      由 UserRatingService 在结算时一并更新。
+      两者必须同时成功——本表的行提供「为什么变成现在这个分」的可追溯性，
+      user.rating 提供查询时的性能。改动结算逻辑时请保持它们的原子性。
+
+      本文件不含任何 SQL 语句，只有 resultMap 与列清单，
+      读写全部走 Mapper 接口的注解或 MyBatis-Plus 的 BaseMapper。
+      ========================================================================
+    -->
+
+    <!-- 列到属性的映射；rating 与 rating_change 都保留，因为「变动过程」本身就是数据 -->
+    <resultMap id="BaseResultMap" type="top.everblue.oj.contest.entity.UserRating">
+        <id column="id" property="id" />
+        <result column="user_id" property="userId" />
+        <result column="contest_id" property="contestId" />
+        <result column="rating" property="rating" />
+        <result column="rating_change" property="ratingChange" />
+        <result column="rank" property="rank" />
+        <result column="create_time" property="createTime" />
+    </resultMap>
+
+    <!--
+      列清单供自定义查询 include 使用。
+      注意 rank 列记录的是「赛后在这场比赛中的名次」，
+      与 contest_rank.rank_num 是同一事实的两处冗余快照：
+      前者是选手个人的历史视角（这张表以 user_id 为中心），后者是榜单视角。
+      两者由同一次结算写入，不要指望改一处另一处会跟着变。
+    -->
+    <sql id="Base_Column_List">
+        id, user_id, contest_id, rating, rating_change, rank, create_time
+    </sql>
+
+</mapper>

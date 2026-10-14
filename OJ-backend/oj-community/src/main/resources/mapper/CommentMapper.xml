@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="top.everblue.oj.community.mapper.CommentMapper">
+
+    <!--
+      ========================================================================
+      评论（comment）的结果映射。
+      ========================================================================
+      本文件不含任何 SQL 语句，只提供 resultMap 与列清单，供 MyBatis-Plus 的
+      BaseMapper 与自定义 XML 片段共用。
+
+      评论是全站唯一的「多态引用」表：entity_type（POST / PROBLEM / …）+ entity_id
+      指向被评论的实体，parent_id 指向楼中楼的上级评论，reply_user_id 指向被回复者。
+      这意味着**无法用 JOIN 判断评论归属**，所有「查某实体下的评论」都只能先按
+      (entity_type, entity_id) 过滤；父级与被回复者也只能靠应用层按 id 拼装。
+      改动本映射时不要指望加关联查询解决层级问题。
+
+      content 是大字段：列表场景应只取 id/user_id/create_time 等元信息，
+      不要在这里把 content 加进 Base_Column_List——它会让每行评论都回表读正文。
+      ========================================================================
+    -->
+
+    <resultMap id="BaseResultMap" type="top.everblue.oj.community.entity.Comment">
+            <id property="id" column="id" />
+            <result property="userId" column="user_id" />
+            <result property="entityId" column="entity_id" />
+            <result property="entityType" column="entity_type" />
+            <result property="content" column="content" />
+            <result property="parentId" column="parent_id" />
+            <result property="replyUserId" column="reply_user_id" />
+            <result property="createTime" column="create_time" />
+            <result property="isDeleted" column="is_deleted" />
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id,user_id,entity_id,entity_type,content,parent_id,
+        reply_user_id,create_time,is_deleted
+    </sql>
+</mapper>

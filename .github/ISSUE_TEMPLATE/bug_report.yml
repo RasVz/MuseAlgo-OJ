@@ -1,0 +1,62 @@
+name: Bug 报告
+description: 报告一个可复现的缺陷
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈！提交前请先搜索是否已有相同 Issue。
+        ⚠️ 安全漏洞请勿在此提交，见 [SECURITY.md](../blob/master/SECURITY.md)。
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 问题描述
+      description: 实际发生了什么？期望的行为是什么？
+      placeholder: |
+        实际：点击「提交代码」后页面一直转圈，控制台报 500
+        期望：正常判题并返回结果
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 用 admin 登录
+        2. 进入题目 1001
+        3. 提交任意 C++ 代码
+        4. 观察网络面板
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 影响范围
+      multiple: true
+      options:
+        - 后端 API
+        - 前端页面
+        - 判题链路（Judge0）
+        - 数据库 / 迁移
+        - 比赛 / 榜单
+        - 班级 / 课件
+        - AI 助手
+        - Docker / 部署
+        - 文档
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境信息
+      value: |
+        - 部署方式：Docker Compose / 本地
+        - 操作系统：
+        - 分支或提交：
+        - 相关日志（后端 `docker compose -f compose.dev.yml logs backend`）：
+    validations:
+      required: true

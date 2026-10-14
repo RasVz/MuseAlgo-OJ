@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="top.everblue.oj.analytics.mapper.PlagiarismReportMapper">
+
+    <!--
+      ========================================================================
+      代码查重报告的查询。
+      ========================================================================
+      plagiarism_report 本身只存「一对可疑提交 + 相似度 + 判定方法 + 处理状态」，
+      不存任何用户名。展示时要回答两个问题：这份报告属于哪个班、双方分别是谁。
+      所以本查询要把 user（昵称/用户名）与 class_student（教师填的 remark）两张表
+      都接进来。
+
+      为什么所有 JOIN 都是 LEFT：报告一旦生成就成为审计凭据，
+      即使用户被注销、已被移出班级，报告也必须能查得到、能显示。
+      若用 INNER JOIN user，用户注销后报告连同当事人一起「消失」，
+      等于给了绕过查重的路径——把证据和当事人绑定在一起是不可接受的。
+      ========================================================================
+    -->
+
+    <!--
+        查重报告分页：相似度降序；双方展示名 = 班级 remark 优先 > 昵称 > 用户名。
+    -->
+    <select id="selectReportPage" resultType="map">
+        <!--
+          - 两个 class_student 的关联条件都必须带上 csa.class_id = r.class_id：
+            一个学生可能同时在多个班，只按 student_id 关联会把多个班的 remark
+            拼在一起，产生重复行（一人多班 × 报告条数），报告列表出现重复项。
+            这是本查询最容易踩的坑，改动时务必保留 class_id 条件。
+          - 三级展示名回退与全项目统一：remark > nickname > username，
+            NULLIF(x, '') 用于把空串转成 NULL，否则 COALESCE 会选中空串显示空白。
+          - 关键词条件全部走 <if> 可选拼接，用 WHERE 1 = 1 起头。
+            不这么做就得在动态条件前写 AND/OR 的组合判断，可读性会迅速崩坏。
+          - ORDER BY similarity DESC, r.id DESC —— 相似度优先（要先看最像的），
+            id 二次排序：相似度相同的报告（同一次批量检测的产物常出现相同分数）
+            必须有确定的次序，否则分页会出现重复/遗漏行。
+        -->
+        SELECT
+        r.id,
+        r.class_id        AS classId,
+        r.problem_id      AS problemId,
+        r.submission_a_id AS submissionAId,
+        r.submission_b_id AS submissionBId,
+        r.user_a_id       AS userAId,
+        r.user_b_id       AS userBId,
+        COALESCE(NULLIF(csa.remark, ''), NULLIF(ua.nickname, ''), ua.username) AS userAName,
+        COALESCE(NULLIF(csb.remark, ''), NULLIF(ub.nickname, ''), ub.username) AS userBName,
+        r.similarity,
+        r.method,
+        r.status,
+        r.created_at      AS createdAt
+        FROM plagiarism_report r
+        LEFT JOIN user ua ON ua.id = r.user_a_id
+        LEFT JOIN user ub ON ub.id = r.user_b_id
+        LEFT JOIN class_student csa ON csa.student_id = r.user_a_id AND csa.class_id = r.class_id
+        LEFT JOIN class_student csb ON csb.student_id = r.user_b_id AND csb.class_id = r.class_id
+        WHERE 1 = 1
+        <if test="classId != null">
+            AND r.class_id = #{classId}
+        </if>
+        <if test="problemId != null">
+            AND r.problem_id = #{problemId}
+        </if>
+        <if test="status != null and status != ''">
+            AND r.status = #{status}
+        </if>
+        ORDER BY r.similarity DESC, r.id DESC
+    </select>
+
+</mapper>

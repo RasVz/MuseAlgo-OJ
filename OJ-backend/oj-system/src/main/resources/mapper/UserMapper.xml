@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="top.everblue.oj.system.mapper.UserMapper">
+
+    <!--
+      ========================================================================
+      用户（user）表的结果映射。
+      ────────────────────────────────────────────────────────────────────────
+      本文件**不含任何 SQL 语句**，只提供 resultMap 与列清单。
+
+      【已知坑·注解与 XML 不可并存】Mapper 接口上的 lockEnabledAdminIds
+      用的是 @Select 原始 SQL（不带 <script>），而本文件没有对应的 XML 语句——
+      这是刻意分工，不是遗漏：
+        - 单行简单 SQL 用注解最直观，不需要绕一趟 XML；
+        - 但同一 id 绝不可既写注解又写 XML：MyBatis 会取 XML、注解被静默忽略并打
+          ERROR 日志且不抛异常，极难排查。
+      将来若要把某条注解查询改成 XML 实现，必须先从接口上删掉该注解。
+
+      【转义铁律】注解 SQL 有两种写法，转义要求相反：
+        - 不带 <script> 的原始 SQL：走 MyBatis 自己的解析器，< 和 > 可直接写，
+          **写 &lt; / &gt; 反而是语法错误**（会被当成 SQL 的一部分送进数据库）；
+        - 带 <script> 的：按 XML 解析，必须写 &lt; / &gt;。
+      判断标准很简单：这段 SQL 里有没有 <script> 标签。没有就别转义。
+
+      password 是 BCrypt 散列，不是明文；任何查询都不得把它 select 出去给前端，
+      Base_Column_List 里包含它仅供登录校验使用。
+      ========================================================================
+    -->
+
+    <!-- 通用查询映射结果 -->
+    <resultMap id="BaseResultMap" type="top.everblue.oj.system.entity.User">
+        <id column="id" property="id" />
+        <result column="username" property="username" />
+        <result column="password" property="password" />
+        <result column="nickname" property="nickname" />
+        <result column="role" property="role" />
+        <result column="email" property="email" />
+        <result column="avatar" property="avatar" />
+        <result column="school" property="school" />
+        <result column="motto" property="motto" />
+        <result column="blog" property="blog" />
+        <result column="github" property="github" />
+        <result column="submit_count" property="submitCount" />
+        <result column="accepted_count" property="acceptedCount" />
+        <result column="rating" property="rating" />
+        <result column="create_time" property="createTime" />
+    </resultMap>
+
+    <!--
+      通用查询结果列。
+      submit_count / accepted_count 是冗余计数：真实次数在 submission 表，
+      这里是结算时写回用户行的缓存值，为了让「个人主页 / 用户管理列表」
+      不必 JOIN 巨大的 submission 表就能显示数据。
+      数字对不上时先查这两列是否漏更新，不要直接改成对 submission 做实时聚合。
+    -->
+    <sql id="Base_Column_List">
+        id, username, password, nickname, role, email, avatar, school, motto, blog, github, submit_count, accepted_count, rating, create_time
+    </sql>
+
+</mapper>

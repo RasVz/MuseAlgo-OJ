@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="top.everblue.oj.problem.mapper.ProblemListItemMapper">
+
+    <!--
+      ========================================================================
+      题单成员（problem_list_item）的结果映射与查询。
+      ────────────────────────────────────────────────────────────────────────
+      题单既用于「教师布置作业」，也用于「学生自建收藏/练习单」。
+      成员关系存在这张表里而不是 problem.tags 字段上，
+      因为「某题属于哪些单子」需要按题目反查（见 selectContainedListIds），
+      靠 JSON 字段做不到。
+
+      全部读写的三个 id 都以 XML 实现（selectProblemsWithStatus /
+      selectContainedListIds），接口上不再写同名 @Select——
+      同一 id 同时存在注解与 XML 时 MyBatis 取 XML、注解被静默忽略并打 ERROR 日志。
+      ========================================================================
+    -->
+
+    <!-- 通用查询映射结果 -->
+    <resultMap id="BaseResultMap" type="top.everblue.oj.problem.entity.ProblemListItem">
+        <id column="id" property="id" />
+        <result column="list_id" property="listId" />
+        <result column="problem_id" property="problemId" />
+        <result column="sort" property="sort" />
+    </resultMap>
+
+    <!-- 通用查询结果列 -->
+    <sql id="Base_Column_List">
+        id, list_id, problem_id, sort
+    </sql>
+
+    <!-- 题单列表页：题目详情 + 「当前用户在这道题上的状态」 -->
+    <select id="selectProblemsWithStatus" resultMap="ProblemVOMap">
+        <!--
+          user_status 用 CASE + 相关子查询算三态：
+            1 已 AC（AC 过）／2 尝试过但未过／0 未尝试
+          CASE 的分支顺序即优先级：先判「有 AC」再判「有提交」。
+          若把两个条件写成同级，AC 过又提交了多次的题会落到 2，分数就错了——
+          顺序不能调换。
+
+          与 ProblemMapper.getProblemVOList 的 EXISTS 写法对比：
+          那里判断状态是**过滤条件**（要按状态筛题），用 EXISTS 走索引短路即可；
+          这里状态是**要输出的列**，每道题都必须算出结果，
+          所以用 COUNT(*) 子查询。两种场景不该互相照抄。
+
+          LEFT JOIN problem 而非 INNER：成员行可能指向已被删除的题目，
+          用 INNER 会让这些行消失，学生看到的题目数比实际少且无处解释。
+
+          ORDER BY pli.sort ASC —— 题单里的题序由教师/学生手动指定，
+          不能按题目 id 或难度排，否则布置的顺序就乱了。
+        -->
+        SELECT
+            p.id,
+            p.title,
+            p.difficulty,
+            p.tags,
+            p.pass_count,
+            p.total_count,
+            /* 计算用户状态 */
+            CASE
+                WHEN (SELECT COUNT(*) FROM submission s WHERE s.problem_id = p.id AND s.user_id = #{userId} AND s.status = 1) > 0 THEN 1
+                WHEN (SELECT COUNT(*) FROM submission s WHERE s.problem_id = p.id AND s.user_id = #{userId}) > 0 THEN 2
+                ELSE 0
+                END as user_status
+        FROM problem_list_item pli
+                 LEFT JOIN problem p ON pli.problem_id = p.id
+        WHERE pli.list_id = #{listId}
+        ORDER BY pli.sort ASC
+    </select>
+
+
+    <!--
+        VO 的结果映射。注意 ProblemVOMap 定义在下方使用它的 select 之后——
+        MyBatis 会先解析整个 XML 再绑定引用，位置不影响运行，
+        但阅读时显得跳跃，重构时可考虑把它挪到查询之前。
+    -->
+    <resultMap id="ProblemVOMap" type="top.everblue.oj.problem.entity.vo.ProblemVO">
+        <id column="id" property="id" />
+        <result column="title" property="title" />
+        <result column="difficulty" property="difficulty" />
+        <result column="tags" property="tags" />
+        <result column="pass_count" property="passCount" />
+        <result column="total_count" property="totalCount" />
+
+        <result column="user_status" property="userStatus" />
+    </resultMap>
+
+    <!-- 题目详情页「加入题单」：查询当前用户创建的题单中包含该题的 list_id 集合 -->
+    <select id="selectContainedListIds" resultType="java.lang.Long">
+        <!--
+          按题目反查题单，前端据此把「加入题单」按钮显示为「已加入」并预选中对应单子。
+
+          必须 INNER JOIN problem_list 并限定 creator_id：
+            不 JOIN 就只能拿到「所有包含这道题的题单 id」，
+            别人的单子 id 会被塞进结果，前端可能把当前用户没权限的题单列出来，
+            甚至让调用方误以为这些单子已加入。creator_id 的限定同时隐含了隐私：
+            不该让 A 知道 B 建了哪些单子。
+        -->
+        SELECT pli.list_id
+        FROM problem_list_item pli
+                 INNER JOIN problem_list pl ON pli.list_id = pl.id
+        WHERE pli.problem_id = #{problemId}
+          AND pl.creator_id = #{creatorId}
+    </select>
+
+</mapper>

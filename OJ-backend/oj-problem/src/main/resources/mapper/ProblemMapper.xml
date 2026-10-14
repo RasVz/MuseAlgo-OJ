@@ -1,0 +1,256 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="top.everblue.oj.problem.mapper.ProblemMapper">
+
+    <!--
+      ========================================================================
+      题目（problem）主表的结果映射与题库检索。
+      ────────────────────────────────────────────────────────────────────────
+      题目有两套可见性，两条查询里都必须处理：
+        is_public = 1     —— 题库层面公开（教师自建题默认不公开）
+        contest_id 非空   —— 该题来自某场比赛。比赛题的可见性由 problem_contest.visible 控制，
+                            不在本文件范围内，所以题库检索会把比赛题也一并列出，
+                            由上层过滤。这是刻意分工，不是漏写。
+
+      本文件是 oj-problem 中查询最多、最容易改坏的一个：
+      关键词/难度/标签/状态的筛选条件全部可选且互相独立，
+      新增条件时请确认它对已走的索引无害（例如在 p.tags 上用 LIKE '%x%'
+      会让索引失效，此时才需要下面的 problem_tag 双路匹配）。
+      ========================================================================
+    -->
+
+    <!-- 列到属性的映射；content（题面）是大字段，列表查询应避免带上它 -->
+    <resultMap id="BaseResultMap" type="top.everblue.oj.problem.entity.Problem">
+        <id column="id" property="id" />
+        <result column="title" property="title" />
+        <result column="contest_id" property="contestId" />
+
+        <result column="content" property="content" />
+        <result column="input_desc" property="inputDesc" />
+        <result column="output_desc" property="outputDesc" />
+
+        <result column="hint" property="hint" />
+
+        <result column="time_limit" property="timeLimit" />
+        <result column="memory_limit" property="memoryLimit" />
+        <result column="difficulty" property="difficulty" />
+        <result column="tags" property="tags" />
+
+        <result column="pass_count" property="passCount" />
+        <result column="total_count" property="totalCount" />
+        <result column="author_id" property="authorId" />
+        <result column="source" property="source" />
+
+        <result column="is_public" property="isPublic" />
+        <result column="create_time" property="createTime" />
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, title, contest_id, content, input_desc, output_desc, hint, time_limit, memory_limit, difficulty, tags, pass_count, total_count, author_id, source, is_public, create_time
+    </sql>
+
+    <!-- 题库列表（带筛选与分页）：按关键词/难度区间/标签/来源/我的做题状态检索题目 -->
+    <select id="getProblemVOList" resultType="top.everblue.oj.problem.entity.vo.ProblemVO">
+        <!--
+          - p.* 加一个 CASE 派生列，因此不能配 resultMap，用 resultType 直接映射。
+          - user_status 的三态（1 已 AC / 2 尝试未过 / 0 未尝试）用 EXISTS 判定：
+            EXISTS 命中第一行即短路，配合 (user_id, problem_id) 索引比对 COUNT 子查询更省。
+            CASE 分支顺序即优先级，「有 AC」必须先判（同 ProblemListItemMapper 的口径）。
+          - 关键词匹配 title 与 id：允许直接输入题号搜题，这是学生的常见习惯。
+            LIKE '%kw%' 无法走索引，属于可接受的全表扫描代价（题库规模有限）。
+
+          - tagNames 用 foreach 生成多个 AND，每个 AND 内部是 OR 的双路匹配：
+              ① p.tags LIKE '%name%'      —— 老数据的 tags 字段（JSON/逗号串）
+              ② EXISTS(problem_tag ⋈ tag) —— 新的关联表（正确的结构化数据）
+            两个条件各有必要性：老数据可能还没回填进 problem_tag，
+            只走 ① 会漏掉已关联但字段未同步的新题；只走 ② 则老数据一条都搜不到。
+            每个标签一个 AND 意味着「必须同时具备所有选中标签」（AND 语义）。
+            注意 ① 这个 LIKE 会让整条查询无法用 problem 的索引做索引过滤，
+            这是接受「双路匹配」换来的兼容代价，不要为了性能删掉 ② 的 EXISTS——
+            那才是正确数据源。
+
+          - 按 userStatus 筛选时用 NOT EXISTS / EXISTS 而不是复用上面那个 CASE：
+            筛选条件要能走索引（EXISTS 可下推为半连接），把状态算成列再过滤则不能。
+          - ORDER BY p.id ASC：默认按题号排序（题库页不做热度排序，热度会随时间漂移导致翻页重复）。
+        -->
+        SELECT
+        p.*,
+        (CASE
+        WHEN EXISTS (SELECT 1 FROM submission s WHERE s.problem_id = p.id AND s.user_id = #{userId} AND s.status = 1) THEN 1
+        WHEN EXISTS (SELECT 1 FROM submission s WHERE s.problem_id = p.id AND s.user_id = #{userId}) THEN 2
+        ELSE 0
+        END) AS user_status
+        FROM problem p
+        <where>
+            p.is_public = 1
+            <if test="keyword != null and keyword != ''">
+                AND (p.title LIKE CONCAT('%', #{keyword}, '%') OR p.id LIKE CONCAT('%', #{keyword}, '%'))
+            </if>
+            <if test="difficulty != null">
+                AND p.difficulty = #{difficulty}
+            </if>
+            <if test="minDifficulty != null">
+                AND p.difficulty <![CDATA[>=]]> #{minDifficulty}
+            </if>
+            <if test="maxDifficulty != null">
+                AND p.difficulty <![CDATA[<=]]> #{maxDifficulty}
+            </if>
+            <if test="tagNames != null and tagNames.size() > 0">
+                <foreach collection="tagNames" item="tagName">
+                    AND (
+                        p.tags LIKE CONCAT('%', #{tagName}, '%')
+                        OR EXISTS (
+                            SELECT 1
+                            FROM problem_tag pt
+                            INNER JOIN tag t ON t.id = pt.tag_id
+                            WHERE pt.problem_id = p.id AND t.name = #{tagName}
+                        )
+                    )
+                </foreach>
+            </if>
+            <if test="source != null and source != ''">
+                AND p.source = #{source}
+            </if>
+            <if test="userStatus != null and userStatus == 0">
+                AND NOT EXISTS (
+                    SELECT 1 FROM submission s
+                    WHERE s.problem_id = p.id AND s.user_id = #{userId}
+                )
+            </if>
+            <if test="userStatus != null and userStatus == 1">
+                AND EXISTS (
+                    SELECT 1 FROM submission s
+                    WHERE s.problem_id = p.id AND s.user_id = #{userId} AND s.status = 1
+                )
+            </if>
+            <if test="userStatus != null and userStatus == 2">
+                AND EXISTS (
+                    SELECT 1 FROM submission s
+                    WHERE s.problem_id = p.id AND s.user_id = #{userId}
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM submission s
+                    WHERE s.problem_id = p.id AND s.user_id = #{userId} AND s.status = 1
+                )
+            </if>
+        </where>
+        ORDER BY p.id ASC
+    </select>
+
+    <!-- 题库筛选器的「知识点」选项：只列出公开题目实际用到的叶子标签 -->
+    <select id="selectPublicKnowledgeTags" resultType="top.everblue.oj.problem.entity.vo.ProblemTagOptionVO">
+        <!--
+          两个 INNER JOIN 都在做「存在的证明」：标签必须真的被某个公开题目引用过，
+          否则不该出现在筛选器里（否则用户会选到一个空结果）。
+          t.parent_id IS NOT NULL 与 SubmissionMapper 的画像统计同口径：只用叶子标签。
+
+          GROUP BY t.name, t.dimension 而非 t.id：筛选选项的粒度是「同名同域」，
+          不同 id 但同名的标签（历史数据遗留）应合并成一个选项，否则用户会看到重复项。
+          因此 ORDER BY 里用 MIN(t.sort_order) 取最早那个的排序值，保证合并后的次序稳定。
+
+          按 t.dimension 先分组排序，再按 sort_order：让选项按知识域聚在一起，
+          而不是全局按 sort_order 交错排列。
+        -->
+        SELECT t.name, t.dimension
+        FROM tag t
+        INNER JOIN problem_tag pt ON pt.tag_id = t.id
+        INNER JOIN problem p ON p.id = pt.problem_id
+        WHERE p.is_public = 1 AND t.parent_id IS NOT NULL
+        GROUP BY t.name, t.dimension
+        ORDER BY t.dimension ASC, MIN(t.sort_order) ASC, t.name ASC
+    </select>
+
+    <!-- 收集公开题目的原始 tags 字段文本，供应用层解析出标签选项（兼容老数据格式） -->
+    <select id="selectPublicTagTexts" resultType="java.lang.String">
+        <!--
+          与 selectPublicKnowledgeTags 并存的原因相同：problem.tags 是历史字段，
+          格式不统一（JSON 数组 / 逗号分隔），只能在应用层解析后与关联表的结果合并去重。
+          IS NOT NULL 与 != '' 都要过滤：MySQL 的 != '' 遇 NULL 结果为 NULL（不成立），
+          两个条件都写才是显式的双重保险。过滤掉空串是为了不把空选项推给前端。
+
+          不加 ORDER BY：本查询的返回顺序无意义（结果会被应用层解析、排序、去重）。
+        -->
+        SELECT DISTINCT p.tags
+        FROM problem p
+        WHERE p.is_public = 1 AND p.tags IS NOT NULL AND p.tags != ''
+    </select>
+
+    <!-- 题库筛选器的「来源」选项：公开题目中出现过的题目来源（去重、字典序） -->
+    <select id="selectPublicSources" resultType="java.lang.String">
+        <!--
+          同上：NULL 与空串双重过滤。
+          这里有 ORDER BY（与 selectPublicTagTexts 不同）：来源选项直接按字典序展示，
+          库里没有可依赖的人工排序列，字典序是最稳定的呈现方式。
+          注意字典序是数据库 collation 决定的，中文来源名可能出现「看起来没排好」的结果，
+          这是正常现象，不要试图用应用层排序来「修正」——前端若要中文排序需自行处理。
+        -->
+        SELECT DISTINCT p.source
+        FROM problem p
+        WHERE p.is_public = 1 AND p.source IS NOT NULL AND p.source != ''
+        ORDER BY p.source ASC
+    </select>
+
+    <!-- 随机推荐未做过的公开题目（首页「来一题」） -->
+    <select id="selectRandomUnsolvedPublicProblems" resultMap="BaseResultMap">
+        <!--
+          「未做过」用 NOT EXISTS 而不是 INNER JOIN submission + IS NULL：
+            前者是半连接，能在 (user_id, problem_id) 索引上判定；
+            后者必须先 JOIN 出该用户的所有提交再过滤，学生提交量大时代价差几个数量级。
+            这里的「做过」不区分是否 AC——只要提交过就算做过，不再推荐。
+
+          ORDER BY RAND() 的代价必须说清楚：它无法用索引排序，
+          会把符合条件的所有行物化后随机重排，题目总数不多时（当前规模）可接受，
+          但如果题库增长到十万级就会明显变慢。
+          真到那一步应改为「先按 id 抽一批候选（如取随机起点的一段主键区间），
+          再在候选里过滤未做过的」，而不是继续优化 RAND()。
+          **不要**为了性能把 RAND() 换成固定值（如 ORDER BY id）——
+          那会让所有用户看到同一道推荐题，推荐功能就废了。
+
+          LIMIT 由参数传入而非写死：推荐位数量与「一题」「十题」两种模式不同。
+          含 include refid 因此**不取 content 大字段**吗？注意 Base_Column_List 里
+          确实包含 content——推荐位要显示题面摘要，故此处按需带回，属刻意的例外，
+          但调用方应传一个不大的 limit。
+        -->
+        SELECT
+            <include refid="Base_Column_List"/>
+        FROM problem p
+        WHERE p.is_public = 1
+          AND NOT EXISTS (
+              SELECT 1
+              FROM submission s
+              WHERE s.problem_id = p.id
+                AND s.user_id = #{userId}
+          )
+        ORDER BY RAND()
+        LIMIT #{limit}
+    </select>
+
+    <!-- 全文搜索（任务⑧）：Meilisearch 命中 id 集合后的 userStatus 批量回查 -->
+    <select id="selectUserStatusByProblemIds" resultType="java.util.HashMap">
+        <!--
+          全文搜索的检索在 Meilisearch 里做（它已返回 id 列表），
+          这条 SQL 只负责补一个字段：用户在命中题目上的做题状态。
+          关键在于**批量**：把外部给出的 id 集合一次 IN 查完，
+          而不是每道题调一次 selectUserStatus——那会让一次搜索发出 N 条 SQL。
+
+          MAX(CASE WHEN status = 1 THEN 1 ELSE 2 END) 的巧思：
+            同一题有 AC 就取 1，没有则取 2（尝试未过），
+            用 MAX 一次完成「有 AC 优先于未过」的优先级判定，无需两条语句或窗口函数。
+            没有提交的题目不返回行（前端按缺失即 0 处理）。
+          注意这里**没有**返回 0 的分支（未尝试），与 getProblemVOList 的三态不同——
+          本查询是「已搜到的题」的结果集，缺失即未尝试，由前端补默认值。
+
+          无 ORDER BY：返回顺序由外部的搜索相关性决定，数据库再排会破坏它。
+          注意 problemIds 由外部服务提供，故必须用 #{} 预编译占位符（已如此），
+          绝不能改成 ${} 拼接——那是 SQL 注入。
+        -->
+        SELECT s.problem_id AS problemId,
+               MAX(CASE WHEN s.status = 1 THEN 1 ELSE 2 END) AS userStatus
+        FROM submission s
+        WHERE s.user_id = #{userId}
+          AND s.problem_id IN
+          <foreach collection="problemIds" item="pid" open="(" separator="," close=")">#{pid}</foreach>
+        GROUP BY s.problem_id
+    </select>
+
+</mapper>

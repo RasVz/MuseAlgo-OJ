@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- 控制台输出（默认 dev 文本形态，行为与历史一致） -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} [%X{traceId:-}] - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- JSON 文件输出：LogstashEncoder 单行 JSON，按天 + 大小（100MB × 30 天）滚动，供采集侧离线/落盘使用 -->
+    <appender name="JSON_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>logs/oj-${spring.profiles.active:-default}.json.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>logs/oj-${spring.profiles.active:-default}.json.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <maxFileSize>100MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+        </rollingPolicy>
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <!-- 附加上下文标识，方便多应用采集时区分 -->
+            <customFields>{"app":"oj"}</customFields>
+        </encoder>
+    </appender>
+
+    <!-- 生产环境控制台 JSON 输出（便于 docker 采集 stdout/stderr），仅 prod profile 生效 -->
+    <springProfile name="prod">
+        <appender name="CONSOLE_JSON" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder class="net.logstash.logback.encoder.LogstashEncoder"/>
+        </appender>
+    </springProfile>
+
+    <!-- MyBatis SQL 日志：仅 DEBUG 级别输出 SQL（JSON encoder 下 %msg 含 SQL，语义不变） -->
+    <logger name="top.everblue.oj" level="INFO" />
+    <logger name="top.everblue.oj.judge.mapper" level="DEBUG" />
+    <logger name="top.everblue.oj.problem.mapper" level="DEBUG" />
+    <logger name="top.everblue.oj.analytics.mapper" level="DEBUG" />
+
+    <!-- 第三方组件的「已知且预期内」提示降噪，说明见 docs/TROUBLESHOOTING.md -->
+    <!-- BaseMapper 内建方法被同名 XML 覆盖时，MP 会告警并跳过自动注入：
+         ProblemContestMapper（insert / selectById / updateById / deleteById）与
+         OutboxEventMapper（deleteByIds）有意用 XML 重写 SQL，属设计行为。 -->
+    <logger name="com.baomidou.mybatisplus.core.injector" level="ERROR" />
+    <!-- problem_tag 与 user_tag_rating 均为联合主键 (problem_id/tag_id 与 user_id/tag_id)，
+         无法标注单列 @TableId，MP 的 xxById 系列对其本就不可用（全仓无调用点）。 -->
+    <logger name="com.baomidou.mybatisplus.core.metadata.TableInfoHelper" level="ERROR" />
+
+    <!-- 非 prod：文本控制台 + JSON 文件（默认 dev 形态） -->
+    <springProfile name="!prod">
+        <root level="INFO">
+            <appender-ref ref="CONSOLE" />
+            <appender-ref ref="JSON_FILE" />
+        </root>
+    </springProfile>
+
+    <!-- prod：仅 JSON 控制台（docker 采集 stdout）+ JSON 文件，避免混入文本行 -->
+    <springProfile name="prod">
+        <root level="INFO">
+            <appender-ref ref="CONSOLE_JSON" />
+            <appender-ref ref="JSON_FILE" />
+        </root>
+    </springProfile>
+</configuration>

@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="top.everblue.oj.judge.mapper.OutboxEventMapper">
+
+    <!--
+      ========================================================================
+      Outbox 模式（事务性发件箱）的事件表访问。
+      ========================================================================
+      为什么需要这张表：判题完成要同时做两件事——更新 submission 结果、通知其他模块
+      （进度推送、统计、画像）。如果先提交事务再发消息，进程在两步之间崩溃，消息就永久
+      丢失；如果先发消息再提交事务，消费者可能收到一条「还没生效」的结果。
+      Outbox 模式把「发消息」降级成本地事务表的一行 INSERT：事件与业务数据在**同一事务**
+      内落库，要么都成功要么都回滚，不存在中间态。投递由 OutboxPublisher 轮询完成，
+      语义是「至少一次（at-least-once）」，消费侧必须自行幂等。
+
+      投递状态机（status）：
+        PENDING ──投递成功──> PUBLISHED
+           │                 （published_at 落时间）
+           ├──重试未超限────> PENDING（retry_count+1，next_attempt_at 推迟做退避）
+           └──重试超上限────> FAILED（人工介入）
+           └──长期发不出去──> FAILED（归档任务按卡死判定标记）
+
+      本 XML 只承载「读待投递 / 归档搬移」两类语句；
+      状态流转的三个 UPDATE（markPublished / markFailed / markStuckAsFailed）
+      留在 Mapper 接口上用 @Update 写，因为它们是单行无分段的 SQL，
+      而铁律要求：同一 id 不可同时存在注解与 XML 定义（MyBatis 取 XML、注解被忽略并打
+      ERROR 日志）。两者 id 不重叠，因此不会触发该冲突。
+      ========================================================================
+    -->
+
+    <!--
+      取下一批待投递事件。
+      条件拆开看：
+        status = 'PENDING'         —— 只认未投递的，PUBLISHED/FAILED 不再重发
+        next_attempt_at <= NOW()   —— 退避中的事件还没到重试时间，暂不取（这是重试节奏的控制点）
+      ORDER BY next_attempt_at ASC —— 先到先得（FIFO），退避中的事件自然排到队尾，
+                                     不会因为 retry_count 靠前而饿死新事件。
+      注意这里不做「抢占」标记：单实例轮询下先取后投递即可；
+      多实例部署时靠 OutboxPublisher 侧的发布时间戳判重，不要在这条 SQL 里加锁。
+    -->
+    <select id="selectPendingEvents" resultType="top.everblue.oj.judge.entity.OutboxEvent">
+        SELECT id, aggregate_type, aggregate_id, event_type, payload,
+               status, retry_count, next_attempt_at, published_at,
+               last_error, created_at
+        FROM outbox_event
+        WHERE status = 'PENDING'
+          AND next_attempt_at &lt;= NOW()
+        ORDER BY next_attempt_at ASC
+        LIMIT #{limit}
+    </select>
+
+    <!--
+      取「已到归档时机」的事件，供 OutboxArchiveTask 分批搬往 outbox_event_archive。
+
+      为什么要归档而不是直接 DELETE：outbox_event 是审计凭据（谁在什么时候被判定完成、
+      投递失败原因是什么），直接删掉排障就没了线索。搬进归档表保留痕迹，主表体积也能回收。
+
+      outbox_event 表**没有 updated_at**（事件一旦落库，status/retry_count 的变化并不构成
+      「这条记录最近被改过」），所以时间基准必须按状态分别取：
+        PUBLISHED → published_at   投递完成时刻
+        PENDING   → next_attempt_at 卡死判定基准（超过 1 天发不出去即视为死信）
+        FAILED    → created_at     只能退到创建时间，宁可多留也不误删
+      外层的 status = #{status} 是主过滤条件（一次归档任务按单一状态跑三次），
+      括号内的 OR 分支因此冗余但**必须保留**：它承载了上面这层「按状态选时间列」的语义，
+      且能让 MySQL 用 status 索引收窄候选集再逐分支比较，优于把三种状态混在一起全表扫。
+
+      归档判据是「已投递 / 已放弃」而非「已被消费」，所以在途的 PENDING 事件不会被误删。
+    -->
+    <select id="selectExpiredForArchive" resultType="top.everblue.oj.judge.entity.OutboxEvent">
+        SELECT id, aggregate_type, aggregate_id, event_type, payload,
+               status, retry_count, next_attempt_at, published_at,
+               last_error, created_at
+        FROM outbox_event
+        WHERE status = #{status}
+          AND (
+                (status = 'PUBLISHED' AND published_at IS NOT NULL AND published_at &lt; #{cutoff})
+             OR (status = 'PENDING'   AND next_attempt_at IS NOT NULL AND next_attempt_at &lt; #{cutoff})
+             OR (status = 'FAILED'    AND created_at &lt; #{cutoff})
+              )
+        ORDER BY created_at ASC
+        LIMIT #{limit}
+    </select>
+
+    <!--
+      把事件原样搬进归档表。
+      显式列出列名而不是 SELECT *：归档表额外有 archived_at（由数据库默认值填充），
+      写死列名可以防止主表日后加列时把新列静默写进归档表、或因列数不匹配而报错。
+      注意 next_attempt_at 没有搬过来——归档语义是「这件事已经了结」，
+      重试时间对归档记录无意义。
+    -->
+    <insert id="insertArchive">
+        INSERT INTO outbox_event_archive
+            (id, aggregate_type, aggregate_id, event_type, payload, status,
+             retry_count, published_at, last_error, created_at)
+        VALUES
+            (#{id}, #{aggregateType}, #{aggregateId}, #{eventType}, #{payload}, #{status},
+             #{retryCount}, #{publishedAt}, #{lastError}, #{createdAt})
+    </insert>
+
+    <!--
+      搬移成功后删掉原表记录。必须与 insertArchive 在同一事务里，否则会出现
+      「归档表没有、主表已删」的事件凭空消失——那比不归档更糟。
+      id 是 UUID 字符串主键，没有自增顺序，因此按 ids 批量删除走主键点查，不会有锁竞争问题。
+    -->
+    <delete id="deleteByIds">
+        DELETE FROM outbox_event WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </delete>
+
+</mapper>

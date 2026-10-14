@@ -1,0 +1,64 @@
+# Build outputs
+**/target/
+**/dist/
+**/out/
+**/coverage/
+OJ-frontend/dist-baseline/
+# Slidev 课件运行时产物（oj.slidev.output-dir，按 uuid 生成，勿入库）
+OJ-Coursewares/
+
+# JavaScript dependencies and caches
+**/node_modules/
+**/.vite/
+**/.cache/
+**/.eslintcache
+**/__pycache__/
+*.py[cod]
+*.tsbuildinfo
+
+# IDE and editor files
+**/.idea/
+**/.vscode/
+*.iml
+*.ipr
+*.iws
+
+# Operating system files
+.DS_Store
+**/.DS_Store
+Thumbs.db
+
+# Local runtime data
+OJ-backend/data/
+OJ-backend/uploads/
+OJ-backend/*/uploads/
+OJ-backend/logs/
+# 日志实际按模块落在 OJ-backend/<模块>/logs/ 下（如 oj-admin/logs/），
+# 只写 OJ-backend/logs/ 挡不住；*.log 虽能兜住文件本身，
+# 但滚动归档等非 .log 文件仍可能漏进来，这里按目录一并排除
+OJ-backend/*/logs/
+**/temp_codes/
+*.log
+*.pid
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Docker 开发栈的数据库快照（本机数据，含账号密码哈希，禁止入库）
+# 例外：00-schema.sql 是纯表结构基线 + Flyway 迁移记录（不含任何业务数据），必须入库
+docker/mysql-init/*.sql
+docker/mysql-init/*.sql.gz
+!docker/mysql-init/00-schema.sql
+
+# Maven local/release files
+dependency-reduced-pom.xml
+pom.xml.releaseBackup
+release.properties
+
+# Local agent and desktop metadata
+.reasonix/
+.workbuddy/
+.workbuddy-ai/

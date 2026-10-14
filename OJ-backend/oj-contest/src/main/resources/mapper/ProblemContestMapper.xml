@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="top.everblue.oj.contest.mapper.ProblemContestMapper">
+
+    <!--
+      ========================================================================
+      比赛与题目的关联（problem_contest）。
+      ────────────────────────────────────────────────────────────────────────
+      一场比赛挂若干道题，每道题有两个独立的可见性开关，容易混淆：
+        - problem_contest.visible：题目**是否在比赛中展示**。
+          比赛进行中用于「题目按赛后开放」的赛制——先把题挂上但不显示，
+          到点再放开，参赛者看不到题目名称与内容。
+        - problem.is_public：题库层面的公开性，与比赛无关，由 oj-problem 维护。
+      两者都要出现在「选手可见」的判断里，漏掉任何一个都会提前泄题。
+
+      is_deleted 是软删标记：题目从比赛中移除时保留关联行，
+      以免把该场比赛的判题数据（按 contest_id + problem_id 关联）变成孤儿。
+      因此本文件里**除了 deleteById，所有语句都带 is_deleted = 0 或 = #{isDeleted}**。
+      ========================================================================
+    -->
+
+    <!-- 结果映射 -->
+    <resultMap id="BaseResultMap" type="top.everblue.oj.contest.entity.ProblemContest">
+        <id column="id" property="id"/>
+        <result column="contest_id" property="contestId"/>
+        <result column="problem_id" property="problemId"/>
+        <result column="problem_order" property="problemOrder"/>
+        <result column="score" property="score"/>
+        <result column="visible" property="visible"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+        <result column="is_deleted" property="isDeleted"/>
+    </resultMap>
+
+    <!-- 带题目详情的结果映射：extends 而非重新声明，基类的列映射可自动复用 -->
+    <resultMap id="WithProblemResultMap" type="top.everblue.oj.contest.entity.ProblemContest" extends="BaseResultMap">
+        <!--
+          problemTitle / difficulty / contestTitle 都不是本表列，
+          它们由 selectContestProblemsWithDetails 从 problem / contest 表带出来。
+          属性名沿用实体的驼峰式（problemTitle 而非 title），
+          以免与本表自身的列语义冲突——resultMap 里 property 必须唯一。
+        -->
+        <result column="problem_title" property="problemTitle"/>
+        <result column="difficulty" property="difficulty"/>
+        <result column="contest_title" property="contestTitle"/>
+    </resultMap>
+
+    <!-- 基础列 -->
+    <sql id="Base_Column_List">
+        id, contest_id, problem_id, problem_order, score,
+        visible, create_time, update_time, is_deleted
+    </sql>
+
+    <!-- 插入：把一道题挂进比赛。useGeneratedKeys 回填自增主键，供后续更新用 -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO problem_contest (
+            contest_id, problem_id, problem_order, score,
+            visible, create_time, update_time, is_deleted
+        ) VALUES (
+                     #{contestId}, #{problemId}, #{problemOrder}, #{score},
+                     #{visible}, #{createTime}, #{updateTime}, #{isDeleted}
+                 )
+    </insert>
+
+<!-- 根据ID查询（排除已删除） -->
+    <select id="selectById" resultMap="BaseResultMap">
+        <!-- is_deleted = 0 是硬条件：软删的关联行对上层等同不存在 -->
+        SELECT <include refid="Base_Column_List"/>
+        FROM problem_contest
+        WHERE id = #{id} AND is_deleted = 0
+    </select>
+
+<!-- 局部更新比赛内的题目配置（调整顺序/分值/可见性），字段为 null 的列保持原值 -->
+    <update id="updateById">
+        <!--
+          <set> 会自动去掉尾部多余的逗号，所以最后一个固定赋值项（update_time）
+          必须放在所有 <if> 之后，且不能自己带逗号——顺序不能调换，
+          否则会拼出 "update_time = ?, problem_order = ?" 这种非法 SQL。
+          update_time 无条件更新：即使没有业务字段变化，
+          「这条记录被改过」的事实也需要留痕。
+        -->
+        UPDATE problem_contest
+        <set>
+            <if test="problemOrder != null">problem_order = #{problemOrder},</if>
+            <if test="score != null">score = #{score},</if>
+            <if test="visible != null">visible = #{visible},</if>
+            update_time = #{updateTime}
+        </set>
+        WHERE id = #{id} AND is_deleted = 0
+    </update>
+
+    <!-- 逻辑删除：题目从比赛中摘除但保留关联行，避免判题数据变孤儿 -->
+    <update id="logicalDeleteById">
+        <!-- WHERE 里带 is_deleted = 0 使重复删除影响 0 行，是软删的幂等保证 -->
+        UPDATE problem_contest
+        SET is_deleted = 1, update_time = #{updateTime}
+        WHERE id = #{id} AND is_deleted = 0
+    </update>
+
+    <!-- 修改可见性：比赛进行中开放题目（题目按赛后开放赛制的时间闸门） -->
+    <update id="updateVisible">
+        <!-- update_time 用数据库的 NOW() 而非传入参数：这是系统自动触发的时间，本就该取库端时钟 -->
+        UPDATE problem_contest
+        SET visible = #{visible}, update_time = NOW()
+        WHERE id = #{id} AND is_deleted = 0
+    </update>
+
+<!-- 检查是否存在：某道题是否已被挂进本场，避免重复挂载 -->
+    <select id="countByContestAndProblem" resultType="long">
+        <!-- 命中 (contest_id, problem_id) 组合索引；is_deleted = 0 保证「摘除后可以再挂」 -->
+        SELECT COUNT(*)
+        FROM problem_contest
+        WHERE contest_id = #{contestId}
+          AND problem_id = #{problemId}
+          AND is_deleted = 0
+    </select>
+
+<!-- 获取最大顺序号：用于新增题目时排在队尾 -->
+    <select id="getMaxOrderByContestId" resultType="java.lang.Integer">
+        <!--
+          MAX(problem_order) 在没有已挂题目时返回 NULL（不是 0），调用方必须自己兜底，
+          否则拼出的下一题号会变成 "null+1" 或直接 NPE。
+          返回类型用包装类型 Integer 而非 int，正是为了能表达「无记录」这个状态。
+        -->
+        SELECT MAX(problem_order)
+        FROM problem_contest
+        WHERE contest_id = #{contestId} AND is_deleted = 0
+    </select>
+
+    <!-- 查询竞赛题目列表（关联题目详情） -->
+    <select id="selectContestProblemsWithDetails" resultMap="WithProblemResultMap">
+        <!--
+          pc.* 与后面的 p.* / c.* 同列名可能撞车（例如两边都有 create_time）：
+          resultMap 按列名取值时取第一个匹配项。本查询的三列题面数据
+          （problem_title / difficulty / contest_title）刻意起了与本表不重名的别名，
+          正是为了避免这种歧义——新增带出的列时也请遵守。
+
+          三处过滤的分工：
+            is_deleted = #{isDeleted}  —— 传参而非写死 0，让调用方能同时查「已挂」与「已摘除」的题目
+            visible 条件用 <if>        —— 管理员看全部，选手只看可见的
+            AND p.id IS NOT NULL        —— 与上面的 LEFT JOIN 组合使用：
+              LEFT JOIN 保留了关联行（哪怕题目已被删除），再用这个条件把「题目已不存在」
+              的空壳行滤掉。单独用 INNER JOIN 也能达到同样效果，但那样就分不清
+              「题目不存在」和「题目可见性为 0」两种情况了。
+
+          ORDER BY problem_order, id —— 双字段定序：手动调整的题号在前，
+          题号相同的（历史数据或未指定题号时）按 id 兜底，保证次序稳定。
+        -->
+        SELECT
+        pc.*,
+        p.title as problem_title,
+        p.difficulty as difficulty,
+        c.title as contest_title
+        FROM problem_contest pc
+        LEFT JOIN problem p ON pc.problem_id = p.id
+        LEFT JOIN contest c ON pc.contest_id = c.id
+        WHERE pc.contest_id = #{contestId}
+        AND pc.is_deleted = #{isDeleted}
+        <if test="visible != null">
+            AND pc.visible = #{visible}
+        </if>
+        AND p.id IS NOT NULL  <!-- 确保题目存在 -->
+        ORDER BY pc.problem_order ASC, pc.id ASC
+    </select>
+
+    <!-- 物理删除（慎用）：仅用于「比赛作废、连带清理干净」这类不会留下判题数据的场景 -->
+    <delete id="deleteById">
+        <!--
+          刻意不写 is_deleted 条件：物理删除的前提就是「要删干净」，
+          软删行也必须一并删掉，加了条件反而会留下删不掉的历史行。
+          常规的「把题从比赛中摘除」请用 logicalDeleteById。
+        -->
+        DELETE FROM problem_contest WHERE id = #{id}
+    </delete>
+
+<!-- 选手视角的题目列表：题号 + 分值 + 「我在这题上最近一次提交的状态」 -->
+    <select id="selectContestProblemList" resultType="top.everblue.oj.contest.entity.vo.ContestProblemVO">
+        <!--
+          status 用**相关子查询**而不是 JOIN submission 表再聚合，原因有三：
+            1. 只需要「最新一次」的结果，JOIN 后要 GROUP BY 再取 MAX(create_time)，
+               而 create_time 与状态不在同一行，取最新还得靠自连接或窗口函数，复杂得多；
+            2. JOIN submission 会让每个比赛题目都关联出该用户在该场比赛的所有提交，
+               行数放大后再排序，等于放弃了 pc.contest_id 上的索引；
+            3. ORDER BY s.create_time DESC LIMIT 1 正好把「取最新一行」下推到索引扫描，
+               每道题只读一行。
+          subquery 里三个条件缺一不可：
+            user_id     —— 状态是「我的」，不能拿到别人的
+            problem_id  —— 当前题目
+            contest_id  —— 限定在本场比赛内。少了它，VP（虚拟参赛）或平时练习的
+                           提交会被算进比赛状态里，赛时的「我是否已解出」会算错。
+          附带效果：没提交过的题，子查询无行返回 NULL，前端显示为「未尝试」。
+
+          这里用 INNER JOIN problem 而非 LEFT：玩家侧列表中「题目已删除」的空壳关联行
+          没有展示价值，filter 掉更干净。与 selectContestProblemsWithDetails 的
+          LEFT + IS NOT NULL 写法目的相同，只是那处还需要保留关联行做其他判断。
+        -->
+        SELECT
+            p.id as problemId,
+            p.title,
+            pc.problem_order as problemOrder,
+            pc.score,
+            -- 查询当前用户最新提交状态
+            (SELECT s.status
+             FROM submission s
+             WHERE s.user_id = #{userId}
+               AND s.problem_id = p.id
+               AND s.contest_id = pc.contest_id
+             ORDER BY s.create_time DESC
+             LIMIT 1) as status
+        FROM problem_contest pc
+                 INNER JOIN problem p ON pc.problem_id = p.id
+        WHERE pc.contest_id = #{contestId}
+          AND pc.is_deleted = 0
+          AND pc.visible = #{visible}
+        ORDER BY pc.problem_order ASC
+    </select>
+
+</mapper>

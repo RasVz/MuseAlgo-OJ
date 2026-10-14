@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/xsd/maven-4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent><groupId>top.everblue</groupId><artifactId>oj-parent</artifactId><version>0.1.0-SNAPSHOT</version></parent>
+    <artifactId>oj-admin</artifactId>
+    <packaging>jar</packaging>
+    <dependencies>
+        <dependency><groupId>top.everblue</groupId><artifactId>oj-common</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>top.everblue</groupId><artifactId>oj-framework</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>top.everblue</groupId><artifactId>oj-system</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>top.everblue</groupId><artifactId>oj-teaching</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>top.everblue</groupId><artifactId>oj-problem</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>top.everblue</groupId><artifactId>oj-judge</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>top.everblue</groupId><artifactId>oj-contest</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>top.everblue</groupId><artifactId>oj-community</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>top.everblue</groupId><artifactId>oj-ai</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>top.everblue</groupId><artifactId>oj-analytics</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter</artifactId></dependency>
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-aop</artifactId></dependency>
+        <dependency><groupId>org.flywaydb</groupId><artifactId>flyway-core</artifactId></dependency>
+        <dependency><groupId>org.flywaydb</groupId><artifactId>flyway-mysql</artifactId></dependency>
+        <dependency><groupId>org.projectlombok</groupId><artifactId>lombok</artifactId><optional>true</optional></dependency>
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
+        <dependency><groupId>org.springframework.security</groupId><artifactId>spring-security-test</artifactId><scope>test</scope></dependency>
+        <!-- 架构守卫：业务模块依赖规则（只走 oj-api 契约） -->
+        <dependency><groupId>com.tngtech.archunit</groupId><artifactId>archunit-junit5</artifactId><version>1.3.0</version><scope>test</scope></dependency>
+        <dependency><groupId>com.github.xiaoymin</groupId><artifactId>knife4j-openapi3-jakarta-spring-boot-starter</artifactId><version>${knife4j.version}</version></dependency>
+        <dependency><groupId>com.mysql</groupId><artifactId>mysql-connector-j</artifactId><scope>runtime</scope></dependency>
+        <!-- 可观测性：Actuator 端点 + Prometheus 指标暴露 -->
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-actuator</artifactId></dependency>
+        <dependency><groupId>io.micrometer</groupId><artifactId>micrometer-registry-prometheus</artifactId></dependency>
+        <!-- 结构化日志：LogstashEncoder 输出 JSON（文件 + 生产控制台），8.x 兼容项目 logback 1.5.x（SB 3.3.0 管理，父 pom 未管理该版本，此处显式指定） -->
+        <dependency><groupId>net.logstash.logback</groupId><artifactId>logstash-logback-encoder</artifactId><version>8.0</version></dependency>
+    </dependencies>
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <mainClass>top.everblue.oj.OjApplication</mainClass>
+                    <excludes><exclude><groupId>org.projectlombok</groupId><artifactId>lombok</artifactId></exclude></excludes>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

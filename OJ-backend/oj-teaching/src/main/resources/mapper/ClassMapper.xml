@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="top.everblue.oj.teaching.mapper.ClassMapper">
+
+    <!--
+      ========================================================================
+      班级（class）的结果映射与学生视角查询。
+      ────────────────────────────────────────────────────────────────────────
+      表名 class 是 MySQL 保留字，所有裸写该表名的 SQL 都必须加反引号
+      （`class`），否则语法错误。本文件里该表均以别名 class / 无别名的形式出现，
+      新增语句时请留意这一点。
+
+      学生与班级的多对多关系存在 class_student 表里，故「我加入的班级」
+      必然要走一次 JOIN——这也是本文件唯一一条自定义查询存在的原因。
+
+      教师身份存在 class.teacher_id 上，是一对多（一个教师带多个班）；
+      学生的加入关系在 class_student 上，类是动态的（随时可加入/退出）。
+      ========================================================================
+    -->
+
+    <!-- 通用查询映射结果 -->
+    <resultMap id="BaseResultMap" type="top.everblue.oj.teaching.entity.Class">
+        <id column="id" property="id" />
+        <result column="name" property="name" />
+        <result column="teacher_id" property="teacherId" />
+        <result column="invite_code" property="inviteCode" />
+        <result column="description" property="description" />
+        <result column="school" property="school" />
+        <result column="create_time" property="createTime" />
+    </resultMap>
+
+    <!-- 通用查询结果列：invite_code 是学生加入班级所用的邀请码，等同于一个弱凭证，不要当作权限凭据用 -->
+    <sql id="Base_Column_List">
+        id, name, teacher_id, invite_code, description, school, create_time
+    </sql>
+
+    <!-- 「我加入的班级」：学生首页的班级入口，按加入时间倒序 -->
+    <select id="selectJoinedClasses" resultMap="BaseResultMap">
+        <!--
+          必须 INNER JOIN class_student：查询主体是「加入关系」，
+          没有这条关系的班级与该用户无关（用 LEFT 会把全校所有班级都捞出来）。
+
+          SELECT class.* 用 class.* 而非 c.*：别名随意，但列集合只取 class 表的，
+          刻意不 select cs 的列——避免 join_time 等列意外覆盖同名映射。
+
+          ORDER BY cs.join_time DESC —— 学生关心的是「最近加入的班」。
+          这里必须显式指定排序：若按 class.create_time 排，新加入一个老班会排到末尾，
+          体验不对；而且 create_time 可能相同，排序不稳定。
+        -->
+        SELECT class.*
+        FROM class
+                 INNER JOIN class_student cs ON class.id = cs.class_id
+        WHERE cs.student_id = #{userId}
+        ORDER BY cs.join_time DESC
+    </select>
+
+</mapper>

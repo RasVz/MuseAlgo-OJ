@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://www.w3.org/2001/XMLSchema-instance https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent><groupId>top.everblue</groupId><artifactId>oj-parent</artifactId><version>0.1.0-SNAPSHOT</version></parent>
+    <artifactId>oj-contest</artifactId>
+    <dependencies>
+        <dependency><groupId>top.everblue</groupId><artifactId>oj-common</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>top.everblue</groupId><artifactId>oj-framework</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>top.everblue</groupId><artifactId>oj-api</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>top.everblue</groupId><artifactId>oj-system</artifactId><version>${project.version}</version></dependency>        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-web</artifactId></dependency>
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-amqp</artifactId></dependency>
+        <dependency><groupId>org.projectlombok</groupId><artifactId>lombok</artifactId><optional>true</optional></dependency>
+        <dependency><groupId>com.github.xiaoymin</groupId><artifactId>knife4j-openapi3-jakarta-spring-boot-starter</artifactId><version>${knife4j.version}</version></dependency>
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
+    </dependencies>
+</project>

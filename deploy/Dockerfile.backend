@@ -1,0 +1,112 @@
+# ============================================================
+# MuseAlgo-OJ 后端镜像（多阶段构建）
+# ------------------------------------------------------------
+# 构建（在仓库根目录执行，构建上下文必须是仓库根）：
+#   docker build -f deploy/Dockerfile.backend -t musealgo-oj/backend:latest .
+#
+# 国内网络较慢时可指定镜像源：
+#   docker build -f deploy/Dockerfile.backend \
+#     --build-arg MAVEN_MIRROR=https://maven.aliyun.com/repository/public \
+#     --build-arg NPM_REGISTRY=https://registry.npmmirror.com \
+#     -t musealgo-oj/backend:latest .
+#
+# 运行：
+#   docker run -d -p 8080:8080 --env-file .env \
+#     -v oj-testcases:/data/testcases \
+#     -v oj-uploads:/data/uploads \
+#     -v oj-coursewares:/app/OJ-Coursewares \
+#     musealgo-oj/backend:latest
+#
+# 为什么运行镜像里既有 JRE 又有 Node：
+#   课件系统以「外部进程」方式调用 Slidev（见 oj-teaching 的 SlidevBuilderService），
+#   它必须能在本容器内执行 OJ-Slidev/node_modules/.bin/slidev。
+#   因此运行镜像包含 Node 22 运行时和已装好依赖的 OJ-Slidev 工程。
+#   如果你不需要「上传 Markdown 在线生成课件」，可以不用本镜像，
+#   改走 docs/DEPLOYMENT.md 第三节的 systemd 单 jar 方案（只需 JRE）。
+#
+# 注意：生产环境务必设置 JWT_SECRET 与 OJ_DB_PASS，否则启动即失败（刻意设计）。
+# ============================================================
+
+# ---------- 阶段 1：编译后端 ----------
+FROM maven:3.9-eclipse-temurin-17 AS build
+WORKDIR /src
+
+ARG MAVEN_MIRROR=""
+
+# 先只复制各模块 pom，让「下载依赖」这一层能被缓存复用
+COPY OJ-backend/pom.xml               ./pom.xml
+COPY OJ-backend/oj-admin/pom.xml      ./oj-admin/pom.xml
+COPY OJ-backend/oj-api/pom.xml        ./oj-api/pom.xml
+COPY OJ-backend/oj-common/pom.xml     ./oj-common/pom.xml
+COPY OJ-backend/oj-framework/pom.xml  ./oj-framework/pom.xml
+COPY OJ-backend/oj-system/pom.xml     ./oj-system/pom.xml
+COPY OJ-backend/oj-problem/pom.xml    ./oj-problem/pom.xml
+COPY OJ-backend/oj-judge/pom.xml      ./oj-judge/pom.xml
+COPY OJ-backend/oj-contest/pom.xml    ./oj-contest/pom.xml
+COPY OJ-backend/oj-community/pom.xml  ./oj-community/pom.xml
+COPY OJ-backend/oj-teaching/pom.xml   ./oj-teaching/pom.xml
+COPY OJ-backend/oj-ai/pom.xml         ./oj-ai/pom.xml
+COPY OJ-backend/oj-analytics/pom.xml  ./oj-analytics/pom.xml
+
+RUN --mount=type=cache,target=/root/.m2 \
+    if [ -n "$MAVEN_MIRROR" ]; then \
+      mkdir -p /root/.m2 && \
+      printf '<settings><mirrors><mirror><id>mirror</id><mirrorOf>*</mirrorOf><url>%s</url></mirror></mirrors></settings>' "$MAVEN_MIRROR" > /root/.m2/settings.xml; \
+    fi && \
+    mvn -B -q dependency:go-offline -DskipTests || true
+
+# 再复制源码编译，产出可执行 jar
+COPY OJ-backend/ ./
+RUN --mount=type=cache,target=/root/.m2 \
+    mvn -B -DskipTests package
+
+# ---------- 阶段 2：安装 Slidev 课件工程依赖 ----------
+# 只装 dependencies、不装 devDependencies：playwright-chromium 只用于导出 PDF/PPTX，
+# 在线构建课件（slidev build）用不到，装进来会让镜像无谓增大数百 MB。
+FROM node:22-slim AS slidev
+WORKDIR /slidev
+
+ARG NPM_REGISTRY=""
+
+COPY OJ-Slidev/package.json OJ-Slidev/package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm \
+    if [ -n "$NPM_REGISTRY" ]; then npm config set registry "$NPM_REGISTRY"; fi && \
+    npm ci --no-audit --no-fund --omit=dev
+
+COPY OJ-Slidev/ ./
+
+# ---------- 阶段 3：开发镜像（Maven + Node，供 compose.dev.yml 使用）----------
+# 开发栈的后端容器既要在容器内跑 Maven，又要能执行 Slidev 构建，
+# 因此把 Node 运行时叠加到 Maven 镜像上（两个基础镜像同属 Debian/Ubuntu 系，已验证可运行）。
+FROM maven:3.9-eclipse-temurin-17 AS dev
+COPY --from=node:22-slim /usr/local /usr/local
+
+# ---------- 阶段 4：运行时 ----------
+FROM eclipse-temurin:17-jre
+WORKDIR /app
+
+# 判题用例、上传文件、课件产物的默认落点，建议挂载持久卷
+ENV OJ_TESTCASE_PATH=/data/testcases \
+    OJ_UPLOAD_DIR=/data/uploads \
+    OJ_SLIDEV_WORKER_DIR=/app/OJ-Slidev \
+    OJ_SLIDEV_OUTPUT_DIR=/app/OJ-Coursewares \
+    JAVA_OPTS="-Xmx2g"
+
+# Node 运行时：课件构建需要在本容器内执行 slidev CLI
+COPY --from=node:22-slim /usr/local /usr/local
+
+# Slidev 课件工程（含 node_modules）
+COPY --from=slidev /slidev/ /app/OJ-Slidev/
+
+COPY --from=build /src/oj-admin/target/oj-admin-*.jar /app/app.jar
+
+# 以非 root 用户运行
+# 注意：这几个目录必须「先在镜像里建好并 chown」——命名卷首次挂载时会把镜像里的
+# 目录内容与属主一起复制进卷；若镜像里没有该目录，卷会以 root 属主出现，非 root 进程写不进去。
+RUN useradd -r -u 10001 -m musealgo \
+    && mkdir -p /data/testcases /data/uploads /app/OJ-Coursewares \
+    && chown -R musealgo:musealgo /app /data
+USER musealgo
+
+EXPOSE 8080
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar /app/app.jar"]

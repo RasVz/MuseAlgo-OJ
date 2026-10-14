@@ -1,0 +1,34 @@
+# ---------- 后端镜像 ----------
+# 构建上下文是仓库根目录，因此这里按根目录写路径规则
+
+# 构建产物
+**/target/
+**/dist/
+
+# 依赖与缓存
+**/node_modules/
+
+# 版本控制与本地工具
+.git/
+.github/
+.workbuddy/
+.workbuddy-ai/
+.reasonix/
+.idea/
+.vscode/
+.DS_Store
+
+# 密钥与数据（体积大或敏感）
+.env
+.env.*
+**/*.log
+OJ-backend/data/
+OJ-backend/uploads/
+OJ-backend/*/uploads/
+OJ-Coursewares/
+docker/mysql-init/*.sql*
+
+# 文档与 CI 配置不参与镜像构建
+docs/
+.github/
+*.md

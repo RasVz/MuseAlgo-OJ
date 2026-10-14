@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="top.everblue.oj.problem.mapper.ProblemCaseMapper">
+
+    <!--
+      ========================================================================
+      测试点（problem_case）的结果映射。
+      ────────────────────────────────────────────────────────────────────────
+      本文件**不含任何 SQL 语句**，只提供 resultMap 与列清单，供 MyBatis-Plus 的
+      BaseMapper 与自定义 XML 片段共用——即它是 oj-problem 四个 mapper XML 中
+      唯一一个「纯映射」文件（另外三个 ProblemMapper / ProblemListMapper /
+      ProblemListItemMapper 都用 XML 实现了接口里的自定义查询）。
+
+      存储约定：input_file_path / output_file_path 存的是**文件路径**而非测试点内容本身。
+      测试点数据量大（有些题目单个样例就有上百 MB），全部塞进库会让 problem_case
+      变成大字段表，列表与统计查询全部退化。因此库里只留路径，
+      实际数据交给对象存储或判题机的挂载目录。
+      路径的 uuid 目录名不可改动，改名即断链。
+
+      case_order 是判题时的执行序，判题用例结果与它一一对应，重排会串行结果；
+      case_type 区分普通/样例/性能等类型（样例通常不计入最终得分，勿合并）。
+      ========================================================================
+    -->
+
+    <!-- 通用查询映射结果 -->
+    <resultMap id="BaseResultMap" type="top.everblue.oj.problem.entity.ProblemCase">
+        <id column="id" property="id" />
+        <result column="problem_id" property="problemId" />
+        <result column="input_file_path" property="inputFilePath" />
+        <result column="output_file_path" property="outputFilePath" />
+        <result column="score" property="score" />
+        <result column="case_order" property="caseOrder" />
+        <result column="case_type" property="caseType" />
+        <result column="status" property="status" />
+        <result column="create_time" property="createTime" />
+        <result column="update_time" property="updateTime" />
+    </resultMap>
+
+    <!-- 通用查询结果列 -->
+    <sql id="Base_Column_List">
+        id, problem_id, input_file_path, output_file_path,
+        score, case_order, case_type, status,
+        create_time, update_time
+    </sql>
+
+</mapper>

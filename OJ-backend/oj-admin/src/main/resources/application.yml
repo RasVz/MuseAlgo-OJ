@@ -1,0 +1,227 @@
+# ==========================================
+# Spring Boot 3.x
+# ==========================================
+server:
+  port: 8080             # 后端启动端口
+  servlet:
+    context-path: /      # 项目访问路径，默认根目录
+
+# 可观测性（O8）：health / info / prometheus 端点
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: never
+  metrics:
+    tags:
+      application: oj
+
+spring:
+  application:
+    name: OJ    # 应用名称
+
+  task:
+    scheduling:
+      # A1（高并发方案）：@Scheduled 任务专用线程池。
+      # 默认 pool.size=1：判题轮询执行期间看门狗/Outbox/排名任务全部停摆；
+      # 扩到 4 后各定时任务互不阻塞（判题实际执行已迁移到独立判题线程池，见 oj.judge.worker）。
+      pool:
+        size: ${OJ_SCHEDULING_POOL_SIZE:4}
+
+  flyway:
+    enabled: ${OJ_FLYWAY_ENABLED:true}
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    baseline-version: 6
+
+  # ----------------------------------------
+  # 1. 数据库配置 (MySQL)
+  # ----------------------------------------
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${OJ_DB_HOST:127.0.0.1}:3306/oj_db?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+
+    username: ${OJ_DB_USER:root}              # 通过环境变量注入数据库用户名
+    password: ${OJ_DB_PASS}                   # 通过环境变量注入数据库密码（缺失时启动即报错，快速失败）
+
+    # 连接池配置 (HikariCP)
+    hikari:
+      minimum-idle: 10
+      maximum-pool-size: ${OJ_DB_POOL_SIZE:50}   # B4：判题并发化后写放大，15 → 50（需同步核对 MySQL max_connections ≥ 100）
+      max-lifetime: 1800000
+      connection-timeout: 30000
+
+  # ----------------------------------------
+  # 2. 缓存配置 (Redis)
+  # ----------------------------------------
+  data:
+    redis:
+      host: ${OJ_REDIS_HOST:127.0.0.1}
+      port: 6379
+      password: ${OJ_REDIS_PASS:}                # 本地 Redis 默认无密码；生产通过 OJ_REDIS_PASS 注入
+      database: 0
+      timeout: 10s
+      lettuce:
+        pool:
+          max-active: ${OJ_REDIS_POOL_SIZE:32}   # B4：排名榜/限流/缓存高频访问，8 → 32
+          max-wait: -1ms
+          max-idle: 16
+          min-idle: 4
+
+  rabbitmq:
+    host: ${OJ_RABBIT_HOST:127.0.0.1}
+    port: ${OJ_RABBIT_PORT:5672}
+    username: ${OJ_RABBIT_USER:guest}
+    password: ${OJ_RABBIT_PASS:guest}            # 本地默认 guest/guest；生产通过 OJ_RABBIT_PASS 注入
+
+  # ----------------------------------------
+  # 3. 文件上传限制
+  # ----------------------------------------
+  servlet:
+    multipart:
+      max-file-size: 128MB     # 支持大型 FPS XML/ZIP，解压大小由导入服务另行限制
+      max-request-size: 128MB  # 单次 FPS 导入请求上限
+
+  # ----------------------------------------
+  # 4. JSON处理 (Jackson)
+  # ----------------------------------------
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
+
+# ==========================================
+# 第三方库配置
+# ==========================================
+
+# 5. MyBatis-Plus 配置
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml  # Mapper XML 扫描路径
+  type-aliases-package: top.everblue.oj.system.entity,top.everblue.oj.problem.entity,top.everblue.oj.judge.entity,top.everblue.oj.contest.entity,top.everblue.oj.community.entity,top.everblue.oj.teaching.entity,top.everblue.oj.analytics.entity
+  configuration:
+    map-underscore-to-camel-case: true           # 开启下划线转驼峰 (user_id -> userId)
+    log-impl: ${OJ_MYBATIS_LOG_IMPL:org.apache.ibatis.logging.slf4j.Slf4jImpl}
+
+# 6. 接口文档 (Knife4j / Swagger)
+knife4j:
+  enable: true
+  setting:
+    language: zh-CN
+
+# 7. 判题机 Docker 配置 (自定义配置)
+judge0:
+  url: http://127.0.0.1:2358 # 单端点兼容配置（judge0.urls 为空时生效）
+  # 多端点列表（逗号分隔），配置后轮询分发 + 失败熔断，去掉判题单点
+  # 例: http://127.0.0.1:2358,http://127.0.0.1:2359,http://127.0.0.1:2360
+  urls: ${JUDGE0_URLS:}
+  breaker:
+    failure-threshold: ${JUDGE0_BREAKER_FAILURE_THRESHOLD:3}   # 连续失败N次熔断该端点
+    cooldown-ms: ${JUDGE0_BREAKER_COOLDOWN_MS:60000}           # 熔断冷却，到期自动半开试探
+  # 在途请求上限（风险 1 预案，验证实测）：必须 ≤ Judge0 worker 槽位数，
+  # 否则并发用例在 Judge0 队列超时 → 重试 → 雪崩。3 worker 建议 4。
+  max-inflight: ${JUDGE0_MAX_INFLIGHT:4}
+  # Rosetta 执行 amd64 判题镜像时可设为 false，改用 Judge0 聚合内存限制。
+  per-process-memory-limit: ${JUDGE0_PER_PROCESS_MEMORY_LIMIT:true}
+oj:
+  slidev:
+    # 默认输出到「工作区根」下的 OJ-Coursewares；可用 OJ_SLIDEV_OUTPUT_DIR 覆盖。
+    # 注意：相对路径基于 findWorkspaceRoot()（从进程工作目录向上找同时含
+    # OJ-backend / OJ-Slidev 的目录）解析；发行形态（单 jar / 生产镜像）没有这套
+    # 目录树，必须用绝对路径覆盖，官方镜像已预设。
+    worker-dir: ${OJ_SLIDEV_WORKER_DIR:OJ-Slidev}
+    output-dir: ${OJ_SLIDEV_OUTPUT_DIR:OJ-Coursewares}
+    public-path: /coursewares/
+    # 课件地址默认使用同源相对路径（iframe 从页面所在源加载，本地由 vite 代理、线上由 nginx 转发）。
+    # 只有需要从外部直接访问课件时才设置完整前缀，例如 http://oj.example.com。
+    public-base-url: ${OJ_SLIDEV_PUBLIC_BASE_URL:}
+  messaging:
+    # 默认开启：排名/Rating 事件走 RabbitMQ，判题任务增加 MQ 唤醒（毫秒级响应）。
+    # 本地无 broker 时设 OJ_RABBITMQ_ENABLED=false 回退纯 DB 轮询模式。
+    rabbitmq-enabled: ${OJ_RABBITMQ_ENABLED:true}
+    outbox:
+      # Outbox 归档策略（OutboxArchiveTask，2026-08-14 方案第 3 节）：
+      # PUBLISHED 保留 7 天 / FAILED 保留 30 天 / 卡死 PENDING 超 1 天先标记 FAILED 再按 FAILED 清理。
+      archive-cron: "0 30 3 * * *"        # 归档执行时间（凌晨 3:30 低峰）
+      retention-days: 7                   # PUBLISHED 保留天数
+      failed-retention-days: 30           # FAILED 保留天数
+      archive-batch-size: 200             # 每批处理条数（循环直到取空）
+  security:
+    normalized-rbac: ${OJ_NORMALIZED_RBAC:false}
+  search:
+    # Meilisearch 全文搜索（任务⑧，2026-08-14 方案第 8 节）：
+    # 读侧 /problem/search，写侧题目增删改同步索引；故障自动回退 LIKE 查询。
+    enabled: ${OJ_SEARCH_ENABLED:true}
+    meilisearch:
+      # 本地 docker-compose 映射端口 7700；api-key 与 compose 中 MEILI_MASTER_KEY 保持一致
+      url: ${OJ_SEARCH_MEILISEARCH_URL:http://localhost:7700}
+      api-key: ${OJ_SEARCH_MEILISEARCH_API_KEY:oj-meili-dev-key}
+    breaker:
+      # 简单断路器：连续失败 N 次后短路 cooldown-ms，期间直接走 LIKE 降级
+      failure-threshold: ${OJ_SEARCH_BREAKER_FAILURE_THRESHOLD:3}
+      cooldown-ms: ${OJ_SEARCH_BREAKER_COOLDOWN_MS:30000}
+    reindex-cron: ${OJ_SEARCH_REINDEX_CRON:0 10 4 * * *}   # 每日全量重建兜底（凌晨 4:10）
+  judge:
+    persist-normalized-results: ${OJ_PERSIST_NORMALIZED_RESULTS:false}
+    worker:
+      # A1/A2（高并发方案）：判题专用线程池（独立于 @Scheduled 调度线程池）与批量领取。
+      # 容量公式见方案文档：应用并发只要 ≥ Judge0 槽位数就不构成瓶颈。
+      core-threads: ${OJ_JUDGE_WORKER_CORE_THREADS:8}
+      max-threads: ${OJ_JUDGE_WORKER_MAX_THREADS:16}
+      queue-capacity: ${OJ_JUDGE_WORKER_QUEUE_CAPACITY:200}
+      batch-size: ${OJ_JUDGE_WORKER_BATCH_SIZE:8}          # 每轮批量领取上限（对齐 core-threads）
+      trigger-concurrency: ${OJ_JUDGE_TRIGGER_CONCURRENCY:4} # RabbitMQ 唤醒消费者并发（默认 1）
+      case-parallelism: ${OJ_JUDGE_CASE_PARALLELISM:4}     # A3-1：单个提交内用例并行上限
+      case-timeout-ms: ${OJ_JUDGE_CASE_TIMEOUT_MS:30000}   # 单个用例判题超时（含重试的兜底上限）
+    watchdog:
+      # 判题任务看门狗：回收卡在 PROCESSING 的任务（Worker 崩溃/判题机挂起）
+      enabled: ${OJ_JUDGE_WATCHDOG_ENABLED:true}
+      interval-ms: ${OJ_JUDGE_WATCHDOG_INTERVAL_MS:60000}        # 扫描间隔
+      stuck-timeout-ms: ${OJ_JUDGE_WATCHDOG_STUCK_MS:600000}     # 卡住判定阈值（10分钟）
+      batch-size: ${OJ_JUDGE_WATCHDOG_BATCH_SIZE:50}
+  testcase:
+    # 本地开发默认写入应用工作目录；生产环境请通过 OJ_TESTCASE_PATH 指向持久卷。
+    base-path: ${OJ_TESTCASE_PATH:./data/testcases}
+  report:
+    # headless Chromium (browserless/chrome) 地址；未部署时保持默认即可，渲染接口会返回明确错误
+    chromium-url: ${OJ_CHROMIUM_URL:http://127.0.0.1:3000}
+    # ECharts 脚本地址（Chromium 容器需能访问；离线环境可改为自托管路径）
+    echarts-url: ${OJ_ECHARTS_URL:https://cdn.bootcdn.net/ajax/libs/echarts/5.5.0/echarts.min.js}
+  ai:
+    quota:
+      # 每用户每日 token 配额：超限后当日拒绝调用，次日自动重置
+      enabled: ${OJ_AI_QUOTA_ENABLED:true}
+      daily-tokens: ${OJ_AI_QUOTA_DAILY_TOKENS:30000}
+      exempt-teacher-admin: ${OJ_AI_QUOTA_EXEMPT_PRIVILEGED:true}   # 教师/管理员豁免
+    contest-guard:
+      # 比赛防护：题目处于进行中比赛时拦截 AI 答疑，防止实时作弊
+      enabled: ${OJ_AI_CONTEST_GUARD_ENABLED:true}
+      cache-seconds: ${OJ_AI_CONTEST_GUARD_CACHE_SECONDS:60}       # 判定结果短时缓存
+      exempt-teacher-admin: ${OJ_AI_CONTEST_GUARD_EXEMPT_PRIVILEGED:true}
+
+# 8. 腾讯云 COS 配置
+tencent:
+  cos:
+    secret-id: ${COS_SECRET_ID:}
+    secret-key: ${COS_SECRET_KEY:}
+    region: ${COS_REGION:ap-guangzhou}
+    bucket-name: ${COS_BUCKET_NAME:}
+    base-url: ${COS_BASE_URL:}
+
+# 本地文件存储（COS 未配置时的降级方案）
+file:
+  upload-dir: ${OJ_UPLOAD_DIR:uploads}
+  public-base-url: ${OJ_PUBLIC_BASE_URL:http://localhost:8080}
+
+# 9. AI 教学助手配置 (DeepSeek)
+ai:
+  # 密钥禁止默认值：缺失时 DeepSeekClient 走降级（返回 null），见 DeepSeekClient 空值检查
+  api-key: ${DEEPSEEK_API_KEY:}
+  api-url: ${DEEPSEEK_API_URL:https://api.deepseek.com/v1/chat/completions}
+  # 模型名（2026-08-15 实测 opencode go /models 接口：模型 ID 不带前缀；管理台 system_config ai.model 可动态覆盖）
+  model: ${AI_MODEL:deepseek-v4-flash}
+
+# 10. JWT 签名密钥（环境变量注入，禁止默认值；缺失/过短启动即失败，见 JwtUtils 校验）
+jwt:
+  secret: ${JWT_SECRET:}

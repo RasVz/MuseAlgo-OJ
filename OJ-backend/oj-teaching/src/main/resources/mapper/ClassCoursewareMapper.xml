@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="top.everblue.oj.teaching.mapper.ClassCoursewareMapper">
+
+    <!--
+      ========================================================================
+      班级课件关联（class_courseware）的结果映射。
+      ────────────────────────────────────────────────────────────────────────
+      本文件**不含任何 SQL 语句**，只提供 resultMap 与列清单。
+
+      课件挂到班级上时记录的不是引用而是**该次挂载的元信息**：
+        sort        —— 课件在班级内的展示顺序
+        is_visible  —— 教师可以先把课件挂上去、暂不发布给学生看（与 problem_contest.visible 同思路）
+      所以同一份课件挂到两个班会有两行，且两行的 sort/可见性可以不同——这是设计如此，
+      不是冗余。查询时必须带 class_id 限定，不能只按 courseware_id 找。
+
+      courseware 表里才有真正的内容与文件地址，本表只管「谁能看到、什么顺序」。
+      ========================================================================
+    -->
+
+    <!-- 通用查询映射结果 -->
+    <resultMap id="BaseResultMap" type="top.everblue.oj.teaching.entity.ClassCourseware">
+        <id column="id" property="id" />
+        <result column="class_id" property="classId" />
+        <result column="courseware_id" property="coursewareId" />
+        <result column="sort" property="sort" />
+        <result column="is_visible" property="isVisible" />
+        <result column="create_time" property="createTime" />
+    </resultMap>
+
+    <!--
+      通用查询结果列：刻意不含任何课件正文列（content），
+      班级课件列表只需要 id / 归属 / 顺序 / 可见性，取正文会让每行都回表读大字段。
+    -->
+    <sql id="Base_Column_List">
+        id, class_id, courseware_id, sort, is_visible, create_time
+    </sql>
+
+</mapper>

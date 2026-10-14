@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="top.everblue.oj.contest.mapper.ContestRankMapper">
+
+    <!--
+      ========================================================================
+      比赛最终排名（contest_rank）的落库层。
+      ========================================================================
+      排名本身**不在这里算**：赛时是 RankRedisService 用 Redis ZSET 实时维护的，
+      比赛结束（finalizeContest）时才把内存/缓存里的结果整批写回这张表。
+      因此本 XML 只有「全删 + 全插」两条语句，没有任何增量更新——这是刻意的：
+      排名是一个整体快照，逐行 upsert 反而会在重算时留下上一次的残留行。
+
+      排名规则（由 Redis 侧保证，落库时原样保存，不要在本文件里重新推导）：
+        - ACM 制：先比 solved_count（解题数）多者在前，再比 penalty_time 小者在前；
+          penalty_time = 各题首 AC 距开赛的分钟数之和 + 该题此前错误提交次数 × 20 分钟。
+        - 打分制（IOI 制）：改比 total_score，与 solved_count/penalty_time 无关。
+          两种赛制共用同一张表，靠 contest.type 区分，这里不做分支。
+        - 并列名次：Redis ZSET 的 score 编码为 solvedCount × 10⁹ - penaltyTime，
+          分数相同者名次相同（并列），因此 rank_num 可能出现重复值且不连续。
+          **不要**在这里加「唯一名次」的补救逻辑，那会破坏与赛时展示的一致性。
+        - award（奖项）：RankRedisService 组装实时榜时显式置 null，
+          最终奖项由结算流程回填，故本表 award 列允许为空。
+      ========================================================================
+    -->
+
+    <!--
+      清空某场比赛的历史排名。finalizeContest 在同一事务里先删后插，
+      用于支持「比赛被重新结算」——比如 Redis 缓存丢失后按提交记录重建，
+      再跑一次 finalizeContest。此时若不先删，同一场比赛的旧行会与新行并存，
+      榜单出现重影。删除范围只按 contest_id 收窄，不动其他比赛。
+    -->
+    <delete id="deleteByContestId">
+        DELETE FROM contest_rank
+        WHERE contest_id = #{contestId}
+    </delete>
+
+    <!--
+      整批插入某场比赛的最终排名。
+      为什么要 foreach 拼多值 INSERT 而不用一条条 insert：一场比赛动辄数百人，
+      逐条插入意味着数百次网络往返，在结算这种需要快速出榜的场景下不可接受。
+
+      显式列出全部列名（含 create_by / update_by 等审计列），而不是依赖实体自动映射：
+      结算时这些值统一由 finalizeContest 设为固定值（create_by=0 表示系统操作），
+      写死列名可防止实体加字段后这里悄悄漏写或多写。
+
+      rank_num 允许重复（并列名次），故此处没有唯一约束去「修正」它——这是有意为之。
+    -->
+    <insert id="batchInsert">
+        INSERT INTO contest_rank
+        (
+            contest_id,
+            user_id,
+            rank_num,
+            solved_count,
+            penalty_time,
+            total_score,
+            rating_before,
+            rating_after,
+            award,
+            is_visible,
+            is_deleted,
+            create_time,
+            update_time,
+            create_by,
+            update_by
+        )
+        VALUES
+        <foreach collection="list" item="item" separator=",">
+            (
+                #{item.contestId},
+                #{item.userId},
+                #{item.rankNum},
+                #{item.solvedCount},
+                #{item.penaltyTime},
+                #{item.totalScore},
+                #{item.ratingBefore},
+                #{item.ratingAfter},
+                #{item.award},
+                #{item.isVisible},
+                #{item.isDeleted},
+                #{item.createTime},
+                #{item.updateTime},
+                #{item.createBy},
+                #{item.updateBy}
+            )
+        </foreach>
+    </insert>
+
+</mapper>

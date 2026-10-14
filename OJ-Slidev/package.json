@@ -1,0 +1,20 @@
+{
+  "name": "oj-slidev",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "slidev build",
+    "dev": "slidev --open",
+    "export": "slidev export",
+    "check": "python3 scripts/check_slides.py"
+  },
+  "dependencies": {
+    "@slidev/cli": "^52.11.1",
+    "@slidev/theme-default": "latest",
+    "@slidev/theme-seriph": "latest",
+    "vue": "^3.5.26"
+  },
+  "devDependencies": {
+    "playwright-chromium": "^1.62.1"
+  }
+}

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="top.everblue.oj.analytics.mapper.TagMapper">
+
+    <!--
+      ========================================================================
+      知识标签树（tag）的访问。
+      ========================================================================
+      tag 是一棵两层树，承载两件事：
+        dimension —— 知识域（如「算法基础」「数据结构」），标签的统计上卷维度
+        树结构   —— parent_id IS NULL 的是根（某个 knowledge 系），有 parent_id 的是叶子标签
+                    （如「快速排序」「并查集」），统计时只用叶子（见 SubmissionMapper 的
+                    t.parent_id IS NOT NULL）。
+
+      本 Mapper 只保留了一条无法用 MyBatis-Plus Wrapper 表达的查询，
+      其余 CRUD 全部走 BaseMapper。
+      ========================================================================
+    -->
+
+    <!-- 拉取全部知识域（树的根节点），供画像前端渲染维度选择器 -->
+    <select id="selectDimensions" resultType="top.everblue.oj.analytics.entity.Tag">
+        <!--
+          WHERE parent_id IS NULL 就是「取根节点」的判据——这是本查询存在的唯一理由。
+          ORDER BY sort_order ASC：按人工配置的展示顺序，而不是按 id 或 name。
+          sort_order 在多个维度 sort_order 相同的极端情况下会导致次序不定，
+          但该表数据由运营维护、规模小（几十行），不构成实际问题。
+        -->
+        SELECT id, code, name, parent_id, dimension, sort_order, create_time
+        FROM tag
+        WHERE parent_id IS NULL
+        ORDER BY sort_order ASC
+    </select>
+
+</mapper>

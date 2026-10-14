@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="top.everblue.oj.judge.mapper.JudgeTaskMapper">
+
+    <!--
+      ========================================================================
+      判题任务队列（judge_task）的访问层。
+      ========================================================================
+      每条 submission 对应一条任务记录，由判题 Worker 异步消费。这是本系统里唯一
+      多线程并发写同一批行的表，因此本文件的所有语句都围绕「谁能拿到这条任务」设计。
+
+      任务状态机（judge_task.status）：
+        PENDING ──claimTasks 领取──> PROCESSING（locked_at 落时间，attempt_count+1）
+                                          │
+                    ┌─────────────────────┼─────────────────────┐
+              判题成功 complete       判题失败 fail            Worker 崩溃/无响应
+                    │                     │                          │
+                    ▼                     ▼                selectStuckTasks 检出
+                COMPLETED          未达上限 → 回 PENDING        （locked_at 超时）
+                                    并按 attempt_count 做                │
+                                    指数退避推迟 scheduled_at   ┌────────┴────────┐
+                                                                        │
+                                                        未超重试上限 → 回 PENDING
+                                                                超限 → FAILED（人工介入）
+
+      并发语义三原则（改动本文件前务必读完）：
+        1. 领取必须「选 + 改」同事务，靠 FOR UPDATE SKIP LOCKED 保证同一行只被一个 Worker 拿到；
+        2. 完成必须条件更新（completeIfProcessing 带 status='PROCESSING'），
+           用「影响行数为 0」表达「这条任务已不属于我了」，从而化解看门狗与 Worker 的竞态；
+        3. 锁的持有者身份不在表里（没有 owner 字段），靠 locked_at + status 组合近似判断，
+           所以超时阈值必须大于一次判题的最长耗时，否则会误回收正在跑的任务。
+      ========================================================================
+    -->
+
+    <!--
+      claimTasks: 原子批量领取待处理任务（高并发方案 A2）。
+
+      使用 FOR UPDATE SKIP LOCKED 避免多个 Worker 竞争同一行：
+      - FOR UPDATE: 对读取的行加排他锁
+      - SKIP LOCKED: 跳过已被其他事务锁定的行，避免等待
+      - ORDER BY scheduled_at ASC: 优先处理等待最久的任务（FIFO）
+      - LIMIT #{limit}: 单轮批量领取，交给判题线程池并行执行
+
+      调用方必须在 @Transactional 事务中调用，确保 SELECT 和 UPDATE 在同一事务内。
+
+      补充说明（为什么这三条都不能动）：
+      - SKIP LOCKED 是这条 SQL 的全部意义所在。换成普通 SELECT，N 个 Worker 会反复读到
+        同一批行；换成 SELECT ... FOR UPDATE（不带 SKIP LOCKED），Worker 之间会互相阻塞，
+        并发度退化成 1。MySQL 8.0+ / PostgreSQL 才支持 SKIP LOCKED，
+        若将来要兼容更低版本，需改用「乐观锁 + UPDATE 影响行数」方案，不要简单去掉关键字。
+      - scheduled_at <= NOW() 把退避中的重试挡在队列外；scheduled_at 在首次投递时等于创建时间，
+        重试时是「当前时间 + 指数退避」，因此 ORDER BY scheduled_at 天然同时满足 FIFO 与退避。
+      - 本条 SELECT 不改数据，改状态（status=PROCESSING / locked_at / attempt_count+1）
+        由调用方在**同一事务内**逐行 updateById 完成。锁要等事务提交才释放，
+        所以「选」和「改」之间不存在被其他 Worker 插入的窗口。
+    -->
+    <select id="claimTasks" resultType="top.everblue.oj.judge.entity.JudgeTask">
+        SELECT id, submission_id, status, attempt_count,
+               scheduled_at, locked_at, completed_at,
+               last_error, created_at, updated_at
+        FROM judge_task
+        WHERE status = 'PENDING'
+          AND scheduled_at &lt;= NOW()
+        ORDER BY scheduled_at ASC
+        LIMIT #{limit}
+        FOR UPDATE SKIP LOCKED
+    </select>
+
+    <!--
+      selectStuckTasks: 看门狗扫描卡住的 PROCESSING 任务。
+      locked_at 是 Worker 领取任务时写入的时间戳，超过 deadline 仍未完成
+      说明 Worker 大概率崩溃或判题机长时间无响应。
+
+      为什么不用「PROCESSING 且 completed_at IS NULL」：后者会把刚领走 1 秒的任务也捞出来，
+      无法区分「刚开始跑」和「已经跑飞了」。locked_at 是领取时刻，天然是「已运行时长」的起点。
+      ORDER BY locked_at ASC —— 先捞等待最久的，配合「超时即回收」，避免同一批任务反复被
+      同一个僵死 Worker 标记。deadline 由调用方按判题超时上界推算（NOW() - 阈值），
+      阈值必须大于一次判题允许的最长耗时，否则正常的长任务会被误判为卡死并被重跑，
+      造成同一次提交被判两次（此时靠 submission_id 唯一约束与 completeIfProcessing 兜底，
+      但浪费的算力无法避免）。
+    -->
+    <select id="selectStuckTasks" resultType="top.everblue.oj.judge.entity.JudgeTask">
+        SELECT id, submission_id, status, attempt_count,
+               scheduled_at, locked_at, completed_at,
+               last_error, created_at, updated_at
+        FROM judge_task
+        WHERE status = 'PROCESSING'
+          AND locked_at &lt; #{deadline}
+        ORDER BY locked_at ASC
+        LIMIT #{limit}
+    </select>
+
+    <!--
+      completeIfProcessing: 条件完成，解决看门狗与原 Worker 的竞态。
+      只有任务仍在 PROCESSING（即仍是同一个 Worker 的锁）时才允许置为 COMPLETED；
+      若任务已被看门狗重置为 PENDING 或被标记 FAILED，本更新影响 0 行，
+      调用方据此放弃写入 Outbox 事件，避免同一提交发布两次评测完成事件。
+
+      这条 WHERE 条件是整个判题链路唯一的「锁持有者校验」——judge_task 没有 owner/worker_id
+      列，无法按身份比对，只能用 status 作代理判断。典型竞态：
+        T0 Worker A 领取任务（status=PROCESSING）
+        T1 Worker A 长时间无响应，看门狗判定卡死并重置为 PENDING
+        T2 Worker B 重新领取同一任务（status=PROCESSING）
+        T3 Worker A 突然恢复并判出结果，调用 completeIfProcessing → 更新成功！
+      注意 T3 这一步**会**成功，因为此时 status 又是 PROCESSING 了。也就是说，
+      真正的去重保证不在这条 SQL，而在 submission 侧的 judge_phase 流转与
+      Outbox 事件的幂等消费上。此处条件更新解决的是更常见的一档：
+      看门狗已把它标成 FAILED 时，迟到的完成必须被丢弃（影响 0 行 → 跳过写 Outbox），
+      否则会为一个已判失败的提交补发一条「评测完成」事件。
+
+      若将来要彻底修掉 T3 那一档，需要给 judge_task 加 worker_id 列并在本 WHERE 中比对；
+      在没有该列之前，不要试图靠这里加条件绕过。
+    -->
+    <update id="completeIfProcessing">
+        UPDATE judge_task
+        SET status = 'COMPLETED',
+            completed_at = #{completedAt},
+            updated_at = #{updatedAt}
+        WHERE id = #{taskId}
+          AND status = 'PROCESSING'
+    </update>
+
+</mapper>

@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="top.everblue.oj.community.mapper.UserRelationMapper">
+
+    <!--
+      ========================================================================
+      关注关系（user_relation）的双向列表查询。
+      ========================================================================
+      【已知坑·注解与 XML 不可并存】selectFollowingList / selectFollowerList 的 SQL
+      定义在本文件中，Mapper 接口上刻意不写同名 @Select。原因有二：
+        1. MyBatis 中同一 id 不可同时存在注解与 XML 定义——会以 XML 为准、
+           注解被静默忽略并打 ERROR 日志；
+        2. 这两条语句都要做一次自反 LEFT JOIN 来算「当前查看者是否关注了这一行」，
+           用注解写需要拼接含 <script> 的长字符串，可读性远不如放在 XML。
+      接口上的 selectFollowedIds 用 @Select，因为它就是一条单行查询，无需多行 JOIN。
+
+      两条查询结构完全对称，唯一差别是 JOIN 的方向（见各条注释）：
+      一个是「TA 关注了谁」，一个是「谁关注了 TA」。
+      ========================================================================
+    -->
+
+    <select id="selectFollowingList" resultType="top.everblue.oj.community.entity.vo.UserRelationVO">
+        <!--
+          关注列表 = r.follower_id = #{userId}（TA 是关注方），JOIN 到被关注的用户 u。
+          粉丝列表的 JOIN 方向相反：r.followed_id = #{userId}，JOIN 到关注方 u。
+          两条语句除此外完全一致——改一条记得同步改另一条，否则
+          「关注列表」和「粉丝列表」会返回同一个集合，且很难在测试里被发现。
+
+          r2 是自反 LEFT JOIN，条件同时给出 viewerId 和当前行 u.id：
+          问的是「viewer 是否关注了这个人」，命中则 isFollowed=1，否则 0。
+          必须用 LEFT 而不是 INNER——绝大多数行是不关注的，
+          用 INNER 会把整个列表过滤成空。
+
+          isFollowed 用 CASE 而不是直接暴露 r2.id：
+          VO 侧期望的是 0/1 标志位，直接返回 id 会让前端拿到任意大整数。
+
+          ORDER BY r.create_time DESC：按关注时间倒序，最近关注的排前面。
+        -->
+        SELECT
+            u.id, u.username, u.nickname, u.avatar,
+            u.motto AS signature,  (CASE WHEN r2.id IS NOT NULL THEN 1 ELSE 0 END) as isFollowed
+        FROM user_relation r
+                 JOIN user u ON r.followed_id = u.id
+                 LEFT JOIN user_relation r2 ON r2.follower_id = #{viewerId} AND r2.followed_id = u.id
+        WHERE r.follower_id = #{userId}
+        ORDER BY r.create_time DESC
+    </select>
+
+    <select id="selectFollowerList" resultType="top.everblue.oj.community.entity.vo.UserRelationVO">
+        <!--
+          粉丝列表：JOIN 方向与关注列表相反——从 user_relation 出发连到**关注方** u，
+          WHERE 条件也随之改为 r.followed_id = #{userId}。
+          r2 自反 LEFT JOIN 的含义不变（viewer 是否关注了列表中的这个人），
+          所以在粉丝页里 isFollowed 依然可用：「TA 关注了这个人吗」正是粉丝页最需要的操作入口。
+          其余部分（含 0/1 标志位转换、排序）与关注列表完全一致，改动请同步。
+        -->
+        SELECT
+            u.id, u.username, u.nickname, u.avatar,
+            u.motto AS signature,  (CASE WHEN r2.id IS NOT NULL THEN 1 ELSE 0 END) as isFollowed
+        FROM user_relation r
+                 JOIN user u ON r.follower_id = u.id
+                 LEFT JOIN user_relation r2 ON r2.follower_id = #{viewerId} AND r2.followed_id = u.id
+        WHERE r.followed_id = #{userId}
+        ORDER BY r.create_time DESC
+    </select>
+
+</mapper>

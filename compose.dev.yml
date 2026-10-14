@@ -1,0 +1,277 @@
+# ============================================================
+# MuseAlgo-OJ — 全 Docker 本地开发栈（单一入口）
+# ------------------------------------------------------------
+# 默认起核心四件套：
+#   docker compose -f compose.dev.yml up -d
+#
+# 按需追加分组（profile）：
+#   判题机     docker compose -f compose.dev.yml --profile judge up -d
+#   中间件     docker compose -f compose.dev.yml --profile extras up -d
+#   全部       docker compose -f compose.dev.yml --profile "*" up -d
+#
+# 停止：docker compose -f compose.dev.yml down
+# 日志：docker compose -f compose.dev.yml logs -f backend
+#
+# 访问入口
+#   前端      http://localhost:5173
+#   后端 API  http://localhost:8080
+#   健康检查  http://localhost:8080/actuator/health
+#   判题机    http://localhost:2358（需 --profile judge）
+#   搜索      http://localhost:7700（需 --profile extras）
+#
+# 设计说明
+#   1. 全部服务同属一个 compose / 一个网络，容器间用服务名互访。
+#   2. MySQL 用 3307、Redis 用 6381 映射到宿主，避开本机原生 3306/6379。
+#   3. 空数据卷首次启动时，MySQL 自动执行 docker/mysql-init/00-schema.sql
+#      建立表结构基线（含 Flyway 迁移历史，缺它空库起不来）；业务数据
+#      另用 scripts/db-seed.sh 导入。如需自备 dump，把 *.sql(.gz) 放进同目录。
+#   4. 后端复用宿主 ~/.m2 缓存；源码整仓挂载，改动后 restart backend 即生效。
+#   5. 前端 dev 模式：源码挂载 + 命名卷存 node_modules（Linux 二进制）+ HMR。
+#   6. 判题机 Judge0 的配置走 compose configs（非 bind mount），
+#      从根上避免「相对路径挂载源缺失 → Docker 自动补建空目录」。
+# ============================================================
+name: musealgo-dev
+
+services:
+  # ---------------- 数据库：MySQL 8.0 ----------------
+  mysql:
+    image: mysql:8.0
+    container_name: musealgo-mysql
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --max_connections=200
+    environment:
+      MYSQL_ROOT_PASSWORD: "123456"
+      MYSQL_DATABASE: "oj_db"
+      TZ: Asia/Shanghai
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      # 首次创建数据卷时按文件名顺序执行；.sql.gz 由官方入口脚本自动解压导入
+      - ./docker/mysql-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p123456"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  # ---------------- 缓存：Redis ----------------
+  redis:
+    image: redis:6.0
+    container_name: musealgo-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6381:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  # ---------------- 后端：Spring Boot（容器内 Maven + Node 运行）----------------
+  backend:
+    # 开发镜像 = Maven + Node（见 deploy/Dockerfile.backend 的 dev 阶段）：
+    # 课件系统以外部进程调用 Slidev，容器内必须能跑 node，
+    # 否则「上传 Markdown 生成课件」在开发栈里必然失败。
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.backend
+      target: dev
+    image: musealgo-oj/backend-dev:latest
+    container_name: musealgo-backend
+    # 工作目录设在 OJ-backend 之下：Maven 多模块构建以此为基准
+    working_dir: /workspace/OJ-backend
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      # 容器网络内按服务名寻址（覆盖 .env / 默认值里的 127.0.0.1）
+      OJ_DB_HOST: mysql
+      OJ_DB_PASS: "123456"
+      OJ_REDIS_HOST: redis
+      # 未起中间件时降级为 DB 轮询与 LIKE 检索
+      OJ_RABBITMQ_ENABLED: "false"
+      OJ_SEARCH_ENABLED: "false"
+      # 起过 --profile extras 后，把上面的 OJ_SEARCH_ENABLED 改成 "true" 即打开全文检索
+      OJ_SEARCH_MEILISEARCH_URL: "http://meilisearch:7700"
+      OJ_SEARCH_MEILISEARCH_API_KEY: "oj-meili-dev-key"
+      # 未部署 RabbitMQ，关掉其健康探针，避免 /actuator/health 恒为 DOWN
+      MANAGEMENT_HEALTH_RABBIT_ENABLED: "false"
+      # 判题机同属本 compose 网络，直接用服务名；未起 --profile judge 时由熔断兜底
+      JUDGE0_URLS: "http://judge0-server:2358"
+      # 浏览器渲染服务若跑在宿主 Docker 上，经 host.docker.internal 访问
+      OJ_CHROMIUM_URL: "http://host.docker.internal:3000"
+      # 显式给出绝对路径，不依赖「工作区根推断」：
+      #   课件工程 / 课件产物 / 判题用例都在整仓挂载目录内，宿主与容器共享同一份。
+      #   判题用例目录与 scripts/db-seed.sh 的默认安装位置一致。
+      OJ_SLIDEV_WORKER_DIR: /workspace/OJ-Slidev
+      OJ_SLIDEV_OUTPUT_DIR: /workspace/OJ-Coursewares
+      OJ_TESTCASE_PATH: /workspace/OJ-backend/data/testcases
+      OJ_UPLOAD_DIR: /workspace/OJ-backend/uploads
+      OJ_PUBLIC_BASE_URL: ""
+      # 容器内无宿主 .npmrc，显式指定国内源，避免直连 npmjs 超时
+      NPM_CONFIG_REGISTRY: "https://registry.npmmirror.com"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./:/workspace                          # 整仓挂载，源码改动重启容器即生效
+      - ${HOME}/.m2:/root/.m2                  # 复用宿主 Maven 本地仓库缓存
+      - ./docker/maven-settings.xml:/maven-settings.xml:ro
+      # 课件工程依赖放命名卷：Linux 版 node_modules 不污染宿主目录，
+      # 首次启动由下面的命令自动 npm ci 安装
+      - slidev-node-modules:/workspace/OJ-Slidev/node_modules
+    ports:
+      - "8080:8080"
+    command: >
+      sh -c "if [ ! -d /workspace/OJ-Slidev/node_modules/@slidev ]; then
+      cd /workspace/OJ-Slidev && npm ci --no-audit --no-fund --omit=dev; fi;
+      cd /workspace/OJ-backend
+      && mvn -s /maven-settings.xml -pl oj-admin -am -DskipTests install
+      && exec mvn -s /maven-settings.xml -pl oj-admin spring-boot:run"
+
+  # ---------------- 前端：Vue3 + Vite（dev 模式）----------------
+  frontend:
+    image: node:22-slim
+    container_name: musealgo-frontend
+    working_dir: /app
+    depends_on:
+      - backend
+    environment:
+      # vite.config.js 读取该变量决定 /api 反向代理目标
+      VITE_PROXY_TARGET: "http://backend:8080"
+      # 容器内无宿主 .npmrc，显式指定国内源，避免直连 npmjs 超时
+      NPM_CONFIG_REGISTRY: "https://registry.npmmirror.com"
+    volumes:
+      - ./OJ-frontend:/app
+      - frontend-node-modules:/app/node_modules   # 容器内 Linux 版依赖，不污染宿主
+      - npm-cache:/root/.npm
+    ports:
+      - "5173:5173"
+    command: >
+      sh -c "npm install --no-audit --no-fund
+      && exec npm run dev -- --host 0.0.0.0 --port 5173"
+
+  # ================ 分组 judge：判题机（--profile judge 启用）================
+
+  # HTTP 端点：接收提交、查询结果
+  judge0-server:
+    image: judge0/judge0:1.13.1
+    container_name: musealgo-judge0-server
+    profiles: ["judge"]
+    ports:
+      - "2358:2358"
+    privileged: true
+    restart: unless-stopped
+    environment:
+      - REDIS_PASSWORD=judge0redispassword
+      - POSTGRES_PASSWORD=judge0dbpassword
+    configs:
+      - source: judge0-conf
+        target: /judge0.conf
+    depends_on:
+      - judge0-db
+      - judge0-redis
+
+  # 工作节点：真正执行代码的地方。扩容：--scale judge0-worker=3（经 Redis 分发，无需改端口）
+  judge0-worker:
+    image: judge0/judge0:1.13.1
+    # 刻意不设 container_name：设了就无法 --scale 扩容
+    profiles: ["judge"]
+    command: ["./scripts/workers"]
+    privileged: true
+    restart: unless-stopped
+    environment:
+      - REDIS_PASSWORD=judge0redispassword
+      - POSTGRES_PASSWORD=judge0dbpassword
+    configs:
+      - source: judge0-conf
+        target: /judge0.conf
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - judge0-db
+      - judge0-redis
+
+  # Judge0 专用 PostgreSQL（与 OJ 的 MySQL 无关，勿混用）
+  judge0-db:
+    image: postgres:13.0
+    container_name: musealgo-judge0-db
+    profiles: ["judge"]
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=judge0
+      - POSTGRES_PASSWORD=judge0dbpassword
+      - POSTGRES_DB=judge0
+    volumes:
+      - judge0-postgres-data:/var/lib/postgresql/data
+
+  # Judge0 专用 Redis（内部 6379，不映射宿主，避免与核心 Redis 冲突）
+  judge0-redis:
+    image: redis:6.0
+    container_name: musealgo-judge0-redis
+    profiles: ["judge"]
+    restart: unless-stopped
+    command: [
+      "bash", "-c",
+      'docker-entrypoint.sh --appendonly yes --requirepass "judge0redispassword"'
+    ]
+    volumes:
+      - judge0-redis-data:/data
+
+  # ================ 分组 extras：可选中间件（--profile extras 启用）================
+
+  # 全文搜索：起后把 backend 的 OJ_SEARCH_ENABLED 改成 "true" 打开
+  meilisearch:
+    image: getmeili/meilisearch:v1.10
+    container_name: musealgo-meilisearch
+    profiles: ["extras"]
+    ports:
+      - "7700:7700"
+    restart: unless-stopped
+    environment:
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY:-oj-meili-dev-key}
+      - MEILI_ENV=development
+      - MEILI_MAX_INDEXING_MEMORY=512MiB
+    volumes:
+      - meili-data:/meili_data
+
+  # 消息队列：起后把 backend 的 OJ_RABBITMQ_ENABLED 改成 "true" 打开
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: musealgo-rabbitmq
+    profiles: ["extras"]
+    ports:
+      - "5672:5672"
+      - "15672:15672"   # 管理台 http://localhost:15672 (guest/guest)
+    restart: unless-stopped
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+
+configs:
+  # 用 configs 而非 bind mount：文件缺失时 compose 直接报错，
+  # 不会像相对路径挂载那样被 Docker 静默补建成空目录（桌面幽灵目录根因）。
+  judge0-conf:
+    file: ./docker/judge0.conf
+
+volumes:
+  mysql-data:
+  redis-data:
+  frontend-node-modules:
+  npm-cache:
+  slidev-node-modules:
+  judge0-postgres-data:
+  judge0-redis-data:
+  meili-data:
+  rabbitmq-data:

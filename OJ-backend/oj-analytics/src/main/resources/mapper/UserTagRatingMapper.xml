@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="top.everblue.oj.analytics.mapper.UserTagRatingMapper">
+
+    <!--
+      ========================================================================
+      用户-标签 ELO 评分（user_tag_rating）的访问。
+      ========================================================================
+      【已知坑·不要"顺手修正"】user_tag_rating 的联合主键是 (user_id, tag_id)，
+      而实体 UserTagRating **故意没有 @TableId 注解**，两个字段都是裸的 @TableField。
+      这是有意为之，不是遗漏：
+        - 该表没有单列代理主键，加 @TableId 到任一字段都会让 MyBatis-Plus 误以为那是
+          唯一键，据此生成 selectById/updateById，逻辑上会把 (user_id, tag_id) 当单列用；
+        - 该表的读写全部走本 XML 里的 upsert 与 selectByUserAndTags，
+          以及 Mapper 的 selectList，从未调用过 selectById/updateById；
+      若将来要加 @TableId，必须同时确认所有按单键操作的代码路径都已清除，
+      并在实体上补一条注释说明变更理由，不要静默加上。
+
+      评分语义：学生每 AC 一道题，按该题的标签算一次 ELO 增益。
+      评分只增不减（GREATEST 取历史高分），problem_count 只增——记录的是「在该标签下
+      累计 AC 过多少题」，与 rating 不同，它是可以下降修正的字段不存在。
+      ========================================================================
+    -->
+
+    <!-- 记一次「学生 AC 了某标签下的题」：不存在则插入，已存在则累加 -->
+    <insert id="upsert">
+        <!--
+          依赖 uk_user_tag_rating (user_id, tag_id) 唯一键触发 ON DUPLICATE KEY UPDATE。
+
+          rating = GREATEST(rating, #{rating})：评分只升不降。不能用 rating = #{rating}
+          直接覆盖——ELO 增益模型算出的是本次的增量期望值，若历史已有更高分，
+          覆盖会让分数随题目难度忽高忽低，画像不再单调可比。
+
+          problem_count = problem_count + 1 而不是赋值：这是累计计数，
+          每次 AC 都 +1。注意初始 INSERT 时 problem_count 写死 1，
+          与累加分支保持一致，否则同一题第一次 AC 会被计成 0。
+
+          id 未出现在列清单里：由唯一键冲突而非主键冲突触发重复处理，
+          因此不需要也不能按主键 upsert。
+        -->
+        INSERT INTO user_tag_rating (user_id, tag_id, rating, problem_count)
+        VALUES (#{userId}, #{tagId}, #{rating}, 1)
+        ON DUPLICATE KEY UPDATE
+            rating = GREATEST(rating, #{rating}),
+            problem_count = problem_count + 1
+    </insert>
+
+    <select id="selectByUserAndTags" resultType="top.everblue.oj.analytics.entity.UserTagRating">
+        <!--
+          查某用户在指定标签集上的评分；tagIds 为空时**不加** tag_id 条件，返回该用户全部标签。
+
+          这一点容易被当成 bug 修掉：调用方确实区分「查全部」和「查指定」两种语义，
+          靠的是参数是否为空，而不是两个不同的方法。条件必须包在 <if> 里，
+          且 size() > 0 的判断不可省——传了空集合却生成 tag_id IN () 会直接语法错误。
+
+          没有 ORDER BY：本查询的结果总是被调用方按传入的 tagIds 顺序重排回业务顺序，
+          数据库层再排一次既无用又可能与之冲突。
+        -->
+        SELECT user_id, tag_id, rating, problem_count, update_time
+        FROM user_tag_rating
+        WHERE user_id = #{userId}
+        <if test="tagIds != null and tagIds.size() > 0">
+          AND tag_id IN
+          <foreach collection="tagIds" item="tid" open="(" separator="," close=")">#{tid}</foreach>
+        </if>
+    </select>
+
+</mapper>

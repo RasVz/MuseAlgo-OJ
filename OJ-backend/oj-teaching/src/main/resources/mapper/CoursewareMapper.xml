@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="top.everblue.oj.teaching.mapper.CoursewareMapper">
+
+    <!--
+      ========================================================================
+      课件（courseware）的结果映射。
+      ────────────────────────────────────────────────────────────────────────
+      本文件**不含任何 SQL 语句**，只提供 resultMap 与列清单。
+
+      【已知坑·url 中的 uuid 目录名不可改动】courseware.url 里存的是
+      对象存储的完整路径，其中的 uuid 目录名是上传时生成、已对外分发给学生的地址。
+      改目录名 = 学生手里的旧链接全部失效，且无法从数据库反推出原路径（不做记录）。
+      需要「换存储桶」「迁移目录」时请做重定向或全量改写 url 字段，
+      不要在代码里做路径拼接或规范化——那正是当初出问题的原因。
+
+      problem_list_id 是可选关联：课件可以挂到某个题单上（便于学生一键做题），
+      也可以是纯文档课件，此列可空，故不设外键约束。
+      privacy 控制可见范围；teacher_id 是创建者（教师），用于权限判定而非展示。
+      ========================================================================
+    -->
+
+    <!-- 通用查询映射结果 -->
+    <resultMap id="BaseResultMap" type="top.everblue.oj.teaching.entity.Courseware">
+        <id column="id" property="id" />
+        <result column="teacher_id" property="teacherId" />
+        <result column="title" property="title" />
+        <result column="url" property="url" />
+        <result column="problem_list_id" property="problemListId" />
+        <result column="content" property="content" /> <result column="description" property="description" />
+        <result column="privacy" property="privacy" /> <result column="create_time" property="createTime" />
+        <result column="update_time" property="updateTime" />
+    </resultMap>
+
+    <!--
+      通用查询结果列：包含 content（课件正文）大字段，
+      故课件**列表**场景不应 include 本清单，否则每行都要读正文。
+      列表请自行列出 id / title / description / create_time 等元信息，
+      需要正文时再按 id 单独查一次——这条与 CoursewareMapper 之外其他
+      Base_Column_List 的用法相反，是本文件最需要注意的一点。
+    -->
+    <sql id="Base_Column_List">
+        id, teacher_id, title, url, problem_list_id, content, description, privacy, create_time, update_time
+    </sql>
+
+</mapper>

@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="top.everblue.oj.community.mapper.PostMapper">
+
+    <!--
+      ========================================================================
+      社区帖子（post）的列表/详情查询。
+      ========================================================================
+      post 一张表承载三种内容：动态（type=0）、题解（type=1）、文章（type=2），
+      每种都可以关联到比赛 / 题目 / 班级。列表页因此必须靠一长串可选条件动态收窄，
+      本文件里最复杂的逻辑都在 selectPostVOList。
+
+      两条容易踩的规则，改动前务必确认：
+        1. post.privacy = 0 是硬性可见性条件，写在 <where> 里**不加 <if>**——
+           它不是筛选器，是安全边界，去掉会让私密内容出现在任何列表页。
+        2. LEFT JOIN user 只为取昵称与头像。用 LEFT 而非 INNER：
+           用户注销后帖子仍要可读（显示为已注销用户），用 INNER 会让帖子凭空消失。
+      ========================================================================
+    -->
+
+    <!-- 帖子列表（首页/筛选页）：支持按作者、分类、比赛、题目、内容类型、关键词、标签、排序检索 -->
+    <select id="selectPostVOList" resultType="top.everblue.oj.community.entity.vo.PostVO">
+        <!--
+          这里的两处嵌套 <if> 是全文件最容易改错的地方，它们表达的是「上下文闭包」：
+
+          1) 传了 contestId 才把 problemId 作为附加条件；
+             没传 contestId 却传了 problemId，则额外要求 contest_id IS NULL
+             ——「只看游离题目的讨论，而不是比赛期间的题目讨论」。
+             两个分支不能合并，否则比赛内的题目讨论会从普通题面页消失。
+
+          2) contestId / problemId 都没传、且浏览的又不是题解时，才补
+             contest_id IS NULL AND problem_id IS NULL，把列表限定为纯社区内容。
+             这里特意用 (type != 1) 而不是 (type == 0)：题解即使没关联题目也该出现，
+             所以「排除掉关联了比赛/题目的帖子」这个动作要跳过 type=1，
+             否则题解分类页会空掉。
+
+          type 与 types 用 <choose>/<when> 而非两个独立 <if>：
+          两者语义上互斥（单值 vs 多值），必须二选一，否则同时传入时会拼出
+          type = ? AND type IN (...) 这种可能自相矛盾的条件。
+
+          标签匹配是双重保险：problem.tags 历史上存过 JSON 数组和逗号分隔两种格式，
+          FIND_IN_SET 处理后者、JSON_CONTAINS 处理前者，
+          任一命中即可。这样过滤不挑历史数据格式，改动这条会破坏存量题目的标签筛选。
+          每个标签一个 <foreach> 生成一个 AND (... OR ...)：
+          多标签之间是 AND（必须同时具备），单个标签内部是 OR（两种格式任一）。
+        -->
+        SELECT
+        post.*,
+        user.nickname AS authorName,
+        user.avatar AS authorAvatar
+        FROM post
+        LEFT JOIN user ON post.author_id = user.id
+        <where>
+            post.privacy = 0
+
+            <if test="authorId != null">
+                AND post.author_id = #{authorId}
+            </if>
+
+            <if test="classId != null">
+                AND post.class_id = #{classId}
+            </if>
+
+            <if test="contestId != null">
+                AND post.contest_id = #{contestId}
+                <if test="problemId != null"> AND post.problem_id = #{problemId} </if>
+            </if>
+
+            <if test="contestId == null and problemId != null">
+                AND post.problem_id = #{problemId}
+                AND post.contest_id IS NULL
+            </if>
+
+            <!-- 题解(type=1)通常关联题目；按内容类型浏览时不应被 problem_id IS NULL 排除。 -->
+            <if test="contestId == null and problemId == null
+                    and (type == null or type != 1)
+                    and (types == null or !types.contains(1))">
+                AND post.contest_id IS NULL
+                AND post.problem_id IS NULL
+                <if test="category != null and category != '' and category != 'all'">
+                    AND post.category = #{category}
+                </if>
+            </if>
+
+            <choose>
+                <when test="type != null">
+                    AND post.type = #{type}
+                </when>
+                <when test="types != null and types.size() > 0">
+                    AND post.type IN
+                    <foreach collection="types" item="item" open="(" separator="," close=")">
+                        #{item}
+                    </foreach>
+                </when>
+            </choose>
+            <if test="keyword != null and keyword != ''">
+                AND (post.title LIKE CONCAT('%', #{keyword}, '%') OR post.summary LIKE CONCAT('%', #{keyword}, '%'))
+            </if>
+            <if test="tags != null and tags.size() > 0">
+                <foreach collection="tags" item="tag">
+                    AND (
+                        FIND_IN_SET(#{tag}, REPLACE(REPLACE(REPLACE(post.tags, '[', ''), ']', ''), '&quot;', '')) > 0
+                        OR (JSON_VALID(post.tags) AND JSON_CONTAINS(post.tags, JSON_QUOTE(#{tag})))
+                    )
+                </foreach>
+            </if>
+        </where>
+
+        <choose>
+            <when test="sort == 'hot'">
+                ORDER BY post.is_top DESC, post.score DESC, post.views DESC, post.create_time DESC
+            </when>
+            <when test="sort == 'likes'">
+                ORDER BY post.is_official DESC, post.is_essence DESC, post.is_top DESC, post.likes DESC, post.create_time DESC
+            </when>
+            <otherwise>
+                ORDER BY post.is_official DESC, post.is_essence DESC, post.is_top DESC, post.create_time DESC
+            </otherwise>
+        </choose>
+    </select>
+
+    <select id="selectRelatedArticleList" resultType="top.everblue.oj.community.entity.vo.PostVO">
+        <!--
+          题目页的「相关题解」推荐位。与 selectPostVOList 最大的不同是走
+          post_problem_relation 关联表而不是 post.problem_id 字段——
+          关联表支持一题多帖且是正解，post.problem_id 只是冗余字段。
+
+          三个硬过滤不可去掉：
+            post.type = 2     —— 只推文章/题解，动态出现在这里没有意义
+            post.privacy = 0 —— 隐私内容不进公开展示
+            post.is_deleted = 0 —— 软删的帖子必须排除
+          注意 selectPostVOList 里只过滤了 privacy，没过滤 is_deleted，
+          两者口径不一致是有原因的：列表页的 is_deleted 由上层/拦截器统一处理，
+          而这里是独立 SQL，没有那层保障。这处显式过滤不能「顺手统一」掉。
+
+          helpful 与 likes 两种排序共用同一套「精选优先」前缀，
+          差别只在 likes DESC 是否参与——精选权重高于点赞数。
+        -->
+        SELECT post.*, user.nickname AS authorName, user.avatar AS authorAvatar
+        FROM post_problem_relation relation
+        JOIN post ON post.id = relation.post_id
+        LEFT JOIN user ON post.author_id = user.id
+        WHERE relation.problem_id = #{problemId}
+          AND post.privacy = 0
+          AND post.is_deleted = 0
+          AND post.type = 2
+        <choose>
+            <when test="sort == 'helpful' or sort == 'likes'">
+                ORDER BY post.is_essence DESC, post.likes DESC, post.create_time DESC
+            </when>
+            <otherwise>
+                ORDER BY post.is_essence DESC, post.create_time DESC
+            </otherwise>
+        </choose>
+    </select>
+
+    <select id="selectPostVODetail" resultType="top.everblue.oj.community.entity.vo.PostVO">
+        <!--
+          单条详情。这里**刻意不过滤 privacy / is_deleted**：
+          是否可见由上层的权限校验（作者本人、运营、管理员）决定，
+          SQL 层一刀切会把管理员的审核后台也堵死。列表页可以无条件过滤，
+          详情页不行——这是两处口径不一致的正当原因。
+        -->
+        SELECT post.*, user.nickname AS authorName, user.avatar AS authorAvatar
+        FROM post
+                 LEFT JOIN user ON post.author_id = user.id
+        WHERE post.id = #{id}
+    </select>
+
+    <!-- 定时任务：按更新时间游标扫描近期活跃帖子，供热度分重算与索引重建 -->
+    <select id="selectRecentActivePosts" resultType="top.everblue.oj.community.entity.Post">
+        <!--
+          用 update_time（最后变更时间）而非 create_time：热度重算关心的是
+          「最近被点赞/评论/编辑过的帖子」，新发但无人问津的帖子不该反复进入扫描范围。
+          调用方以最后一次处理的 update_time 作为下一轮的 since 游标，
+          因此 ORDER BY update_time DESC 与游标语义一致，分页不会漏也不会重。
+
+          OFFSET 分页是这里可接受的：调用方按 since 窗口限制总量，
+          LIMIT 批次大小使单次扫描量有界（不会全表排序）。
+
+          【已知坑】SQL 定义在此 XML，Mapper 接口上刻意不写同名 @Select：
+          同一 id 同时存在注解与 XML 时 MyBatis 以 XML 为准、注解被静默忽略并打
+          ERROR 日志。两边只能留一处，接口侧的注释已说明这一点，不要再加回注解。
+
+          返回 Post 实体而非 PostVO：定时任务只做统计不需要拼作者信息，
+          少一次 user 表关联。
+        -->
+        SELECT * FROM post
+        WHERE update_time >= #{since}
+        ORDER BY update_time DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+</mapper>

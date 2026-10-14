@@ -1,0 +1,24 @@
+# ==========================================
+# worker profile（高并发方案 C1）：独立判题进程
+# ==========================================
+# 用途：比赛日将判题负载从 web 进程拆出，独立扩容。
+# 启动方式：
+#   java -jar oj-admin.jar --spring.profiles.active=worker
+# 说明：
+#   1. 多实例部署时，judge_task 的 FOR UPDATE SKIP LOCKED 保证任务不会重复领取，
+#      worker 实例与 web 实例（默认也跑轮询）可安全共存，互为兜底；
+#   2. 判题参数可按机器规格上调（线程数 ≤ 可用 CPU 核数）：
+#      单机 8 核：OJ_JUDGE_WORKER_CORE_THREADS=8 OJ_JUDGE_WORKER_BATCH_SIZE=8
+#      单机 16 核：OJ_JUDGE_WORKER_CORE_THREADS=16 OJ_JUDGE_WORKER_BATCH_SIZE=16
+#   3. 用例并行度与 Judge0 槽位对齐：OJ_JUDGE_CASE_PARALLELISM=4（4 端点 × 2 worker）
+#   4. worker 进程仍暴露 HTTP 端口，用于健康检查（/actuator/health）
+
+# 判题负载上调：批量领取与线程池对齐机器核数（默认值在 application.yml，
+# 这里按"比赛日专用判题机"的典型规格给出示例，按实际资源覆盖环境变量即可）
+oj:
+  judge:
+    worker:
+      core-threads: ${OJ_JUDGE_WORKER_CORE_THREADS:8}
+      max-threads: ${OJ_JUDGE_WORKER_MAX_THREADS:16}
+      batch-size: ${OJ_JUDGE_WORKER_BATCH_SIZE:8}
+      trigger-concurrency: ${OJ_JUDGE_TRIGGER_CONCURRENCY:4}

@@ -1,0 +1,235 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="top.everblue.oj.problem.mapper.ProblemListMapper">
+
+    <!--
+      ========================================================================
+      题单（problem_list）的结果映射与作业相关的查询。
+      ────────────────────────────────────────────────────────────────────────
+      一张表同时承载学生自建单与教师布置的作业，靠 type 区分
+      （type=4 为班级作业，见 selectStudentHomeworks）。
+      privacy 决定可见范围：公开 / 班级内可见 / 私有。
+      自建单与作业的字段含义一致但生命周期不同——作业有 start_time / end_time 截止时间，
+      自建单一般不设，故 start/end 可能为 null。
+
+      本文件四条自定义查询（selectStudentHomeworks / selectVOList /
+      selectHomeworkStudents / selectHomeworkProblems / selectHomeworkCellStats）
+      全部以 XML 实现，接口上不写同名 @Select：
+      同一 id 同时存在注解与 XML 时 MyBatis 取 XML、注解被静默忽略并打 ERROR 日志。
+      ========================================================================
+    -->
+
+    <!-- 通用查询结果列 -->
+    <sql id="Base_Column_List">
+        id, title, creator_id, description, type, class_id, privacy, start_time, end_time, problem_count, create_time
+    </sql>
+
+    <!-- 通用查询映射结果 -->
+    <resultMap id="BaseResultMap" type="top.everblue.oj.problem.entity.ProblemList">
+        <id column="id" property="id" />
+        <result column="title" property="title" />
+        <result column="creator_id" property="creatorId" />
+        <result column="description" property="description" />
+        <result column="type" property="type" />
+        <result column="class_id" property="classId" />
+        <result column="privacy" property="privacy" />
+        <result column="start_time" property="startTime" />
+        <result column="end_time" property="endTime" />
+        <result column="problem_count" property="problemCount" />
+        <result column="favorite_count" property="favoriteCount" />
+        <result column="create_time" property="createTime" />
+    </resultMap>
+
+    <!-- 班级作业列表：某学生需要完成的作业及各自的完成进度 -->
+    <select id="selectStudentHomeworks" resultType="top.everblue.oj.problem.entity.vo.ProblemListVO">
+        <!--
+          pl.type = 4 硬编码班级作业类型：这个查询的语义就是「作业」，
+          学生自建单（其他 type）必须排除，否则首页会把自己的收藏夹也列成作业。
+
+          归属过滤 cs.student_id = #{userId} 写在 WHERE 上，且用 LEFT JOIN class_student
+          ——这里 LEFT 与 WHERE 的组合等价于 INNER：LEFT 只是让「未挂班级的作业」
+          也参与一次行生成，随即被 WHERE 滤掉。写法上看似冗余，实则是为了
+          class 表与 class_student 表的连接顺序与上面的 LEFT JOIN class 保持一致，
+          改动时注意别把 LEFT 改成 INNER 又把 WHERE 条件留在原位（结果相同但语义易混）。
+
+          两个相关子查询都用子查询而非 JOIN：
+          一个题单的完成情况是**聚合**（跨该单所有题与该学生的所有提交），
+            先 JOIN 会产生 题数 × 提交数 的笛卡尔积，再去重代价高；
+          solvedCount 用 COUNT(DISTINCT s.problem_id) 是必须的——
+            即使 JOIN 了 problem_list_item，一道题也只能算「已完成一次」，
+            而 submit_count 是提交次数不是题数。
+          没有时间窗：作业完成情况统计的是全部提交，不按 start/end 裁剪
+          （截止后的补交也要计入；截止前的裁剪由 selectHomeworkCellStats 负责）。
+        -->
+        SELECT
+            pl.id,
+            pl.title,
+            pl.creator_id AS creatorId,
+            pl.problem_count AS problemCount,
+            pl.class_id AS classId,
+            pl.start_time AS startTime,
+            pl.end_time AS endTime,
+            class.name AS className,
+
+            -- 统计该作业的总题目数
+            (SELECT COUNT(*) FROM problem_list_item WHERE list_id = pl.id) as totalProblems,
+
+            -- 统计该学生在该作业中已通过(status=1)的去重题目数
+            (SELECT COUNT(DISTINCT s.problem_id)
+
+             FROM submission s
+                      JOIN problem_list_item pli ON s.problem_id = pli.problem_id
+             WHERE pli.list_id = pl.id
+               AND s.user_id = #{userId}
+               AND s.status = 1) as solvedCount
+        FROM problem_list pl
+                 LEFT JOIN class ON pl.class_id = class.id
+                 LEFT JOIN class_student cs ON cs.class_id = class.id
+
+        WHERE pl.type = 4 -- 4 代表班级作业类型
+          AND cs.student_id = #{userId}
+        ORDER BY pl.create_time DESC
+    </select>
+
+    <!-- 题单列表页：支持按类型、班级、创建者、关键词、可见性筛选 -->
+    <select id="selectVOList" resultType="top.everblue.oj.problem.entity.vo.ProblemListVO">
+        <!--
+          LEFT JOIN user 取创建者昵称/头像：题单列表在用户被注销后仍要展示，
+          用 INNER 会让这批题单直接消失。
+
+          coursewareCount 用相关子查询统计「挂在该题单上的课件数」，
+          而不是 JOIN courseware 后 GROUP BY——那会让一条题单变成 N 行，
+          再用 COUNT(DISTINCT pl.id) 兜住，白白放大行数。课件的 is_deleted = 0
+          条件必须写在子查询内部，写在外层 WHERE 会把整个题单过滤掉（而不是只把课件数变 0）。
+
+          problem_count 是题单表里的冗余计数（教师列表靠它显示题数），
+          而 selectStudentHomeworks 里的 totalProblems 是实时 COUNT(*)：
+          两者可能不一致，前者是性能优化（避免每次实时数），后者用于学生端需要准确值。
+          发现数字对不上时先查冗余列是否漏更新，不要急着改查询。
+        -->
+        SELECT
+        pl.id,
+        pl.title,
+        pl.description,
+        pl.type,
+        pl.privacy,
+        pl.class_id AS classId,
+        pl.problem_count AS problemCount,
+        pl.favorite_count AS favoriteCount,
+        pl.create_time AS createTime,
+        pl.update_time AS updateTime,
+        pl.creator_id AS creatorId,
+        pl.start_time AS startTime,
+        pl.end_time AS endTime,
+        (SELECT COUNT(*) FROM courseware cw WHERE cw.problem_list_id = pl.id AND cw.is_deleted = 0) AS coursewareCount,
+        u.nickname AS creatorName,
+        u.avatar AS creatorAvatar
+
+        FROM problem_list pl
+        LEFT JOIN user u ON pl.creator_id = u.id
+        <where>
+            <if test="type != null"> AND pl.type = #{type} </if>
+            <if test="classId != null"> AND pl.class_id = #{classId} </if>
+            <if test="creatorId != null"> AND pl.creator_id = #{creatorId} </if>
+            <if test="keyword != null and keyword != ''"> AND pl.title LIKE CONCAT('%', #{keyword}, '%') </if>
+            <if test="privacy != null"> AND pl.privacy = #{privacy} </if>
+        </where>
+        -- 手动排序优先（sort_order 越小越靠前），未参与排序（=0）的按创建时间倒序兜底
+        ORDER BY pl.sort_order ASC, pl.create_time DESC
+    </select>
+
+    <!-- 作业名单：班级的学生列表，供教师勾选本次作业的适用对象 -->
+    <select id="selectHomeworkStudents" resultType="map">
+        <!--
+          从 class_student 出发 LEFT JOIN user：名单的主体是「班级关系」，
+          即便用户记录缺失也要把这行留下（否则教师会发现名单凭空少人）。
+          学生名三级回退：教师填的 remark > 昵称 > 登录用户名，
+          NULLIF(x, '') 把空串转成 NULL，避免 COALESCE 选中空串显示空白。
+
+          ORDER BY join_time, student_id —— 按入班时间排（教师熟悉这个顺序），
+          join_time 相同的（批量导入学生）用 student_id 兜底保证次序稳定。
+          注意本查询**不过滤 is_deleted**：class_student 没有软删列，
+          退班是靠删除记录实现的，所以名单里出现的人一定还在班。
+        -->
+        SELECT
+            cs.student_id AS studentId,
+            COALESCE(NULLIF(cs.remark, ''), NULLIF(u.nickname, ''), u.username) AS studentName
+        FROM class_student cs
+                 LEFT JOIN user u ON u.id = cs.student_id
+        WHERE cs.class_id = #{classId}
+        ORDER BY cs.join_time ASC, cs.student_id ASC
+        </select>
+
+        <!-- 作业题目列表：按教师布置的顺序展示，附带题目标题 -->
+        <select id="selectHomeworkProblems" resultType="map">
+        <!--
+          LEFT JOIN problem：与上面几条一致，题目被删后成员行仍保留，
+          前端可显示「题目已删除」而不是让题目凭空消失。
+          pli.sort, p.id 双字段定序：手动题序优先，相同则按 id 兜底。
+        -->
+        SELECT
+            p.id AS problemId,
+            p.title AS problemTitle,
+            pli.sort AS sort
+        FROM problem_list_item pli
+                 LEFT JOIN problem p ON p.id = pli.problem_id
+        WHERE pli.list_id = #{homeworkId}
+        ORDER BY pli.sort ASC, p.id ASC
+    </select>
+
+    <!-- 作业完成情况矩阵：一次取出每个「学生 × 题目」格子的提交与 AC 数据 -->
+    <select id="selectHomeworkCellStats" resultType="map">
+        <!--
+          一次查询带回整张矩阵（学生 × 题目），避免按学生逐个查产生的 N+1。
+          返回结果里**只有提交过的格子**，没有提交的「学生×题目」组合不会出现；
+          前端需要用它与 selectHomeworkStudents / selectHomeworkProblems 的结果
+          做笛卡尔积来补全空格。缺格子不补 0 是为了控制传输量：一个班 50 人 × 10 题 = 500 格，
+          全量返回而多数为空没有意义。
+
+          两个 INNER JOIN 是双重收窄，与 SubmissionMapper.selectHomeworkSubmissionPage 同理：
+            class_student       —— 只统计本班学生
+            problem_list_item   —— 只统计本次作业包含的题目
+          若 JOIN 了 submission（把提交行直接带出来），
+          submitCount 会变成 COUNT(*) 之外的重复放大，故先用两个 JOIN 收窄，
+          再对 submission 行做聚合。
+
+          finalAc = MAX(CASE WHEN status=1 THEN 1 ELSE 0 END) —— 只要有过一次 AC 就是 1，
+          与 acCount（AC 次数，衡量反复提交）区分开：前者画格子颜色，后者看投入量。
+          若把 finalAc 误写成 acCount，格子会显示成 7 而不是「已过」，务必不要混用。
+
+          时间窗条件用 CDATA 包住比较符（XML 中裸写 < 会被当标签起始符）。
+          startTime / endTime 都可空，对应「不限时间」与「作业尚未开始」。
+
+          【重要·本文件的时间区间口径与其他 mapper 不完全一致，勿按名字推断】
+          这里用**闭区间** [startTime, endTime]（两端都带等号）。但同属 startTime/endTime
+          这一对参数名，SubmissionMapper.selectUserDailySubmissionStats 却是半开区间；
+          而 SubmissionMapper 里用 from/to 的四个画像统计查询又都是半开区间。
+          也就是说 **「参数名 → 开闭性」并不存在稳定对应关系**：
+            · from/to    一律半开 [from, to)，用于「周期切片」，相邻段需首尾相接不重不漏；
+            · startTime/endTime 用法分两种：作业/提交明细类用闭区间（用户按时刻筛选，
+              期望看到该时刻本身的提交）；统计类（selectUserDailySubmissionStats）用半开。
+          判断依据只能是**这条 SQL 在做什么**，不能凭参数名或所在模块推断——
+          这正是为什么三处都留了注释。改动任一处时，先确认它属于哪一类语义，
+          不要为了「统一风格」把闭区间改成半开（会漏掉截止瞬间的提交）。
+          CDATA 的用法与 SubmissionMapper 保持一致，是本仓库的固定写法。
+        -->
+        SELECT
+        s.user_id AS studentId,
+        s.problem_id AS problemId,
+        COUNT(*) AS submitCount,
+        SUM(CASE WHEN s.status = 1 THEN 1 ELSE 0 END) AS acCount,
+        MAX(CASE WHEN s.status = 1 THEN 1 ELSE 0 END) AS finalAc,
+        MAX(s.create_time) AS lastSubmitTime
+        FROM submission s
+        INNER JOIN class_student cs ON cs.student_id = s.user_id AND cs.class_id = #{classId}
+        INNER JOIN problem_list_item pli ON pli.problem_id = s.problem_id AND pli.list_id = #{homeworkId}
+        WHERE 1 = 1
+        <if test="startTime != null">
+            AND s.create_time <![CDATA[>=]]> #{startTime}
+        </if>
+        <if test="endTime != null">
+            AND s.create_time <![CDATA[<=]]> #{endTime}
+        </if>
+        GROUP BY s.user_id, s.problem_id
+    </select>
+</mapper>

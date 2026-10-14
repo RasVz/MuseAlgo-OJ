@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="top.everblue.oj.teaching.mapper.ClassStudentMapper">
+
+    <!--
+      ========================================================================
+      班级成员（class_student）的结果映射与成员列表查询。
+      ────────────────────────────────────────────────────────────────────────
+      class_student 既是「谁在哪个班」的关系表，也承载了教师为每个学生手填的
+      remark（学号或真名）。全项目的展示名回退规则
+      「remark > nickname > username」就建立在这一列上，
+      所以本文件、ProblemListMapper、SubmissionMapper、PlagiarismReportMapper
+      里那几处 COALESCE(NULLIF(remark,''), ...) 是同一个意图的不同实现，改一处要想到其余。
+
+      退班通过删除本表的记录实现，**没有软删列**，
+      因此「成员列表」直接 WHERE class_id 即可，不需过滤状态。
+      ========================================================================
+    -->
+
+    <!-- 通用查询映射结果 -->
+    <resultMap id="BaseResultMap" type="top.everblue.oj.teaching.entity.ClassStudent">
+        <id column="id" property="id" />
+        <result column="class_id" property="classId" />
+        <result column="student_id" property="studentId" />
+        <result column="join_time" property="joinTime" />
+    </resultMap>
+
+    <!-- 通用查询结果列 -->
+    <sql id="Base_Column_List">
+        id, class_id, student_id, join_time
+    </sql>
+
+    <!-- 查询班级成员：教师端的班级管理名单，含显示名、联系方式与加入时间 -->
+    <select id="selectClassMembers" resultType="java.util.Map">
+        <!--
+          LEFT JOIN user 取用户名与邮箱：成员关系是主体，
+          即便 user 记录缺失（账号被清理）也要把这行显示出来，
+          否则教师会以为班里少了人。用 INNER JOIN user 会静默隐藏这类成员。
+
+          搜索同时匹配 u.username 与 cs.remark：教师手上可能有登录名，
+          也只有自己填的学号/真名，两边都得能搜到。
+          用 OR 而不是分别两个 <if>，一次 LIKE 前缀即可，不影响走索引。
+
+          排序按 join_time DESC：教师最关心新加入的成员。
+          注意本文件没有像 ProblemListMapper.selectHomeworkStudents 那样做
+          join_time, student_id 双字段定序——join_time 唯一性依赖入班操作的时序精度，
+          批量导入学生时可能相同，故这里的次序在极端情况下可能不稳定；
+          若名单需要严格可复现的顺序，补上 student_id 作为第二排序键。
+
+          返回 java.util.Map 而非 VO：字段随需求增减，Map 省去频繁改 DTO 的成本。
+          代价是失去编译期检查，改列别名时调用方不会报错——改名请同步前端。
+        -->
+        SELECT
+        cs.student_id as userId,
+        cs.join_time as joinTime,
+        cs.remark as remark,
+        u.username as username,
+        u.avatar as avatar,
+        u.email as email
+        FROM class_student cs
+        LEFT JOIN user u ON cs.student_id = u.id
+        WHERE cs.class_id = #{classId}
+        <if test="keyword != null and keyword != ''">
+            AND (u.username LIKE CONCAT('%', #{keyword}, '%') OR cs.remark LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        ORDER BY cs.join_time DESC
+    </select>
+
+</mapper>

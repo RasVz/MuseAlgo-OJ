@@ -1,0 +1,147 @@
+# ============================================================
+# MuseAlgo-OJ — 生产编排（单机 Docker Compose）
+# ------------------------------------------------------------
+# 与 compose.dev.yml 的分工：
+#   compose.dev.yml          开发用：容器内跑 Maven / Vite dev server，源码挂载 + 热更新
+#   docker-compose.prod.yml  生产用：跑发行镜像（编译好的 jar + 静态产物），精简运行时
+#
+# 三步上线：
+#   1) 构建镜像（必须在仓库根目录执行，构建上下文是仓库根）
+#        docker build -f deploy/Dockerfile.backend  -t musealgo-oj/backend:latest  .
+#        docker build -f deploy/Dockerfile.frontend -t musealgo-oj/frontend:latest .
+#   2) 准备密钥
+#        cp .env.example .env
+#        vi .env            # 至少填 JWT_SECRET、OJ_DB_PASS；然后 chmod 600 .env
+#   3) 启动并自检
+#        docker compose -f docker-compose.prod.yml up -d
+#        curl -fsS localhost:8080/actuator/health      # 期望 {"status":"UP"}
+#
+# 访问入口
+#   站点        http://<服务器地址>/                       前端（Nginx，/api 反代到后端）
+#   健康检查    http://127.0.0.1:8080/actuator/health     默认只绑本机，供运维探活
+#
+# 首次启动 MySQL 会自动执行 docker/mysql-init/00-schema.sql，只建立表结构基线
+# （59 张表 + Flyway 历史，不含任何业务数据）。演示数据用 scripts/db-seed.sh，
+# 生产环境千万不要导入演示账号。
+#
+# 判题机 Judge0 需要 privileged 权限，刻意不放在本文件里，见 docs/DEPLOYMENT.md 第五节；
+# 用下面的 JUDGE0_URLS 指向它即可。
+# ============================================================
+name: musealgo-prod
+
+services:
+  # ---------------- 数据库：MySQL 8.0（不对外暴露端口）----------------
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --max_connections=200
+    environment:
+      MYSQL_ROOT_PASSWORD: ${OJ_DB_PASS:?必须设置 OJ_DB_PASS（数据库 root 口令）}
+      MYSQL_DATABASE: oj_db
+      TZ: Asia/Shanghai
+    volumes:
+      - mysql-data:/var/lib/mysql
+      # 仅当数据卷为空时执行：建立表结构基线（含 Flyway 历史，缺它空库起不来）
+      - ./docker/mysql-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+    networks: [backend-net]
+
+  # ---------------- 缓存：Redis（不对外暴露端口）----------------
+  redis:
+    image: redis:6.0
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    networks: [backend-net]
+
+  # ---------------- 后端：发行镜像（编译好的 jar + JRE）----------------
+  backend:
+    image: musealgo-oj/backend:latest
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # 容器网络内按服务名寻址（覆盖 .env 里的 127.0.0.1）
+      OJ_DB_HOST: mysql
+      OJ_DB_USER: root
+      OJ_REDIS_HOST: redis
+      # 判题机地址；未部署 Judge0 时留空，判题不可用但其余功能不受影响
+      JUDGE0_URLS: ${JUDGE0_URLS:-}
+      # 未部署 RabbitMQ / Meilisearch 时关闭，避免 /actuator/health 恒为 DOWN
+      OJ_RABBITMQ_ENABLED: "false"
+      MANAGEMENT_HEALTH_RABBIT_ENABLED: "false"
+      OJ_SEARCH_ENABLED: "false"
+      # 单 jar 部署没有「源码工作区」目录树，课件路径必须给绝对路径
+      # （镜像内工作目录就是 /app；见 SlidevPathProvider）
+      OJ_SLIDEV_WORKER_DIR: /app/OJ-Slidev
+      OJ_SLIDEV_OUTPUT_DIR: /app/OJ-Coursewares
+      # 判题用例与上传目录：必须与下面的命名卷挂载点一致，
+      # 否则用例会被写进容器临时层，重建即丢。
+      OJ_TESTCASE_PATH: /data/testcases
+      OJ_UPLOAD_DIR: /data/uploads
+      # 留空表示「同源相对地址」：未配置 COS 时后端返回 /uploads/<uuid>.<ext>，
+      # 由前端 Nginx 的 /uploads/ 路由（只读挂载同一卷）提供，浏览器可直接访问。
+      # 若要生成绝对地址（例如后端与站点不同源），在 .env 里设置 OJ_PUBLIC_BASE_URL。
+      OJ_PUBLIC_BASE_URL: ${OJ_PUBLIC_BASE_URL:-}
+      JAVA_OPTS: ${JAVA_OPTS:--Xmx2g}
+    volumes:
+      # 判题用例、上传文件、课件产物都必须落在持久卷上，容器重建不丢
+      - testcase-data:/data/testcases
+      - uploads-data:/data/uploads
+      - coursewares-data:/app/OJ-Coursewares
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # 镜像自带 curl；健康检查通过意味着「真的连上库、Flyway 已跑完、应用已就绪」
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/actuator/health | grep -q '\"status\":\"UP\"'"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+    ports:
+      # 默认只绑本机：对外一律走前端 Nginx 的 /api，不要直接暴露 8080
+      # （与开发栈同机并行时需要改 BACKEND_PORT / WEB_PORT，否则端口冲突）
+      - "${BACKEND_BIND:-127.0.0.1}:${BACKEND_PORT:-8080}:8080"
+    networks: [backend-net]
+
+  # ---------------- 前端：发行镜像（静态产物 + Nginx，/api 反代后端）----------------
+  frontend:
+    image: musealgo-oj/frontend:latest
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-80}:80"
+    volumes:
+      # 课件与上传文件都要能被浏览器直接访问，因此同一份卷只读挂给前端 Nginx
+      - coursewares-data:/var/www/coursewares:ro
+      - uploads-data:/var/www/uploads:ro
+    depends_on:
+      backend:
+        condition: service_started
+    networks: [backend-net]
+
+networks:
+  backend-net:
+
+volumes:
+  mysql-data:
+  redis-data:
+  testcase-data:
+  uploads-data:
+  coursewares-data:
