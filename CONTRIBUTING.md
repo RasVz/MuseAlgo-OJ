@@ -26,13 +26,13 @@ docker compose -f compose.dev.yml up -d
 
 ```bash
 # 后端：跑单元测试（需要 MySQL/Redis 的集成测试已由 pom.xml 默认排除）
-cd OJ-backend && ./mvnw -q test
+(cd OJ-backend && ./mvnw -q test)
 
 # 前端：代码检查与构建（lint:ci 不带 --fix，与 CI 行为一致）
-cd OJ-frontend && npm run lint:ci && npm run build
+(cd OJ-frontend && npm run lint:ci && npm run build)
 ```
 
-> 本机已启动 MySQL / Redis 时，可用 `./mvnw test -Pintegration` 连同集成测试一起验证。
+> 以上从仓库根目录执行，前端需先安装依赖。本机已初始化 MySQL / Redis 且配置好环境变量时，可用 `(cd OJ-backend && ./mvnw test -Pintegration)` 连同集成测试一起验证。
 
 > 仓库配有 pre-commit 密钥扫描脚本（`scripts/secret-check-pre-commit.sh`）与 CI 端的 gitleaks 工作流。
 > 请不要以任何形式提交密钥、口令、Token 或包含真实用户数据的数据库导出。
