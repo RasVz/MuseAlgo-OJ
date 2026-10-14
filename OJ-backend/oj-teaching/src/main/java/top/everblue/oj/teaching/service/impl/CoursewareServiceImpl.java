@@ -6,7 +6,7 @@ import top.everblue.oj.teaching.entity.Courseware;
 import top.everblue.oj.teaching.mapper.CoursewareMapper;
 import top.everblue.oj.teaching.mapper.CoursewareUsageMapper;
 import top.everblue.oj.teaching.service.CoursewareService;
-import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 
 import java.util.Collection;
 import java.util.Map;

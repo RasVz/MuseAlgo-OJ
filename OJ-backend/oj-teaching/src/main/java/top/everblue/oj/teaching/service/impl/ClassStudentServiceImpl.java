@@ -4,7 +4,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import top.everblue.oj.teaching.entity.ClassStudent;
 import top.everblue.oj.teaching.mapper.ClassStudentMapper;
 import top.everblue.oj.teaching.service.ClassStudentService;
-import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;

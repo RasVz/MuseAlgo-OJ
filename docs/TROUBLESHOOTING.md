@@ -34,12 +34,10 @@ openssl rand -base64 48          # 生成一个
 
 **处理**：
 
-- 如果是本地开发库，直接重置：`docker compose -f compose.dev.yml down -v` 后重建；
+- 先还原被修改的历史迁移；只有确认可丢弃、且已备份的本地开发库才考虑重置数据卷。重置会清空数据，不能替代还原迁移文件。
 - 如果是生产库，**不要**用 `flyway repair` 掩盖问题，也不要手改 `flyway_schema_history`。正确做法是把改动还原（迁移文件必须保持字节级不变），把需要的修正写成**新的** `V{n+1}__说明.sql`。
 
-> 唯一的例外是**首次公开发布之前**（还没有外部数据库应用过这些迁移），
-> 此时可以改文件并同步重导 `00-schema.sql` 的 checksum，步骤见 `docker/mysql-init/README.md`。
-> 一旦仓库公开发布，一律只新增迁移、不改历史文件，详见 [DEVELOPMENT.md](DEVELOPMENT.md) 第 3.2 节。
+> 已执行或已分发的迁移一律冻结，与仓库是否公开无关；只新增迁移，不改历史文件。详见 [DEVELOPMENT.md](DEVELOPMENT.md) 第 3.2 节。
 
 ### 启动日志里的 WARN 需要处理吗？
 
@@ -81,9 +79,9 @@ docker ps | grep 3307                     # 查是不是另一个容器
 
 ### `docker compose` 报 stack 名冲突
 
-**原因**：`compose.dev.yml` 里设了顶层 `name: musealgo-dev`，如果宿主上还有另一套同名项目就会冲突。
+**原因**：项目名、固定容器名和宿主端口都可能冲突。开发编排既设置了 `name: musealgo-dev`，也设置了固定的 `container_name` 与宿主端口。
 
-**处理**：改顶层 `name`，或用 `docker compose -p 你的项目名 -f compose.dev.yml up -d`。
+**处理**：用不同的 `-p` 项目名可以隔离默认网络和命名卷，但仍需在本地编排副本中删除或更改固定 `container_name`，并更换被占用的宿主端口。用 `docker compose -p 你的项目名 -f 你的编排文件 config` 检查最终配置，再启动。先确认现有容器和数据归属，不要直接删除另一套栈。
 
 ---
 

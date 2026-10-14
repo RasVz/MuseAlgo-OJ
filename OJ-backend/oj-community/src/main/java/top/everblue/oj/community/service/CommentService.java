@@ -1,7 +1,7 @@
 package top.everblue.oj.community.service;
 
 import top.everblue.oj.community.entity.Comment;
-import com.baomidou.mybatisplus.extension.service.IService;
+import com.baomidou.mybatisplus.spring.service.IService;
 import top.everblue.oj.community.entity.dto.CommentDTO;
 import top.everblue.oj.community.entity.vo.CommentVO;
 import top.everblue.oj.community.comment.CommentTarget;

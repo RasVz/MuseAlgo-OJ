@@ -3,7 +3,7 @@ package top.everblue.oj.problem.service;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import top.everblue.oj.problem.entity.ProblemList;
-import com.baomidou.mybatisplus.extension.service.IService;
+import com.baomidou.mybatisplus.spring.service.IService;
 import top.everblue.oj.problem.entity.dto.ProblemListOrderDTO;
 import top.everblue.oj.problem.entity.vo.ProblemListVO;
 import java.util.List;
