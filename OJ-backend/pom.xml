@@ -37,7 +37,7 @@
         <java.version>17</java.version>
         <maven.compiler.release>17</maven.compiler.release>
         <spring-boot.version>3.5.13</spring-boot.version>
-        <mybatis-plus.version>3.5.9</mybatis-plus.version>
+        <mybatis-plus.version>3.5.17</mybatis-plus.version>
         <hutool.version>5.8.48</hutool.version>
         <jwt.version>0.11.5</jwt.version>
         <docker.java.version>3.3.6</docker.java.version>
