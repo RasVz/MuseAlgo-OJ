@@ -1,7 +1,7 @@
 package top.everblue.oj.teaching.service;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
-import com.baomidou.mybatisplus.extension.service.IService;
+import com.baomidou.mybatisplus.spring.service.IService;
 import top.everblue.oj.teaching.entity.Class;
 
 
