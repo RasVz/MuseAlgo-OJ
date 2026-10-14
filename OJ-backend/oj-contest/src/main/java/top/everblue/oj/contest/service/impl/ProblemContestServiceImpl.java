@@ -1,6 +1,6 @@
 package top.everblue.oj.contest.service.impl;
 
-import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import top.everblue.oj.contest.entity.ProblemContest;
 import top.everblue.oj.contest.entity.vo.ContestProblemVO;
 import top.everblue.oj.contest.mapper.ProblemContestMapper;

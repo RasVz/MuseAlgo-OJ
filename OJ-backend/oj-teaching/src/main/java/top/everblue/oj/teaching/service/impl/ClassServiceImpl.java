@@ -9,7 +9,7 @@ import top.everblue.oj.teaching.entity.Class;
 import top.everblue.oj.teaching.mapper.ClassMapper;
 import top.everblue.oj.teaching.mapper.ClassStudentMapper;
 import top.everblue.oj.teaching.service.ClassService;
-import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import org.springframework.stereotype.Service;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import java.time.LocalDateTime;
