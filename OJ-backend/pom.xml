@@ -39,7 +39,7 @@
         <spring-boot.version>3.3.0</spring-boot.version>
         <mybatis-plus.version>3.5.9</mybatis-plus.version>
         <hutool.version>5.8.26</hutool.version>
-        <jwt.version>0.11.5</jwt.version>
+        <jwt.version>0.13.0</jwt.version>
         <docker.java.version>3.3.6</docker.java.version>
         <lombok.version>1.18.42</lombok.version>
         <knife4j.version>4.5.0</knife4j.version>
