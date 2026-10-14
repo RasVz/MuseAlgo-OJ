@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![build](https://github.com/RasVz/MuseAlgo-OJ/actions/workflows/build.yml/badge.svg)](https://github.com/RasVz/MuseAlgo-OJ/actions/workflows/build.yml)
 [![Java](https://img.shields.io/badge/Java-17-orange.svg)](https://adoptium.net/)
-[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3-brightgreen.svg)](https://spring.io/projects/spring-boot)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5-brightgreen.svg)](https://spring.io/projects/spring-boot)
 [![Vue](https://img.shields.io/badge/Vue-3.5-42b883.svg)](https://vuejs.org/)
 
 ---
@@ -48,7 +48,7 @@ MuseAlgo-OJ 是一套面向**信息学奥赛教学**的自托管在线判题系�
 
 ## 技术栈
 
-**后端**　Java 17 · Spring Boot 3.3 · MyBatis-Plus · MySQL 8 · Redis · RabbitMQ（可选）· Meilisearch（可选）· Flyway
+**后端**　Java 17 · Spring Boot 3.5 · MyBatis-Plus · MySQL 8 · Redis · RabbitMQ（可选）· Meilisearch（可选）· Flyway
 **判题**　[Judge0](https://github.com/judge0/judge0) 1.13.1（通过 HTTP 调用）
 **前端**　Vue 3.5 · Vite 7 · Element Plus · Pinia · ECharts · Monaco Editor
 **课件**　Slidev
