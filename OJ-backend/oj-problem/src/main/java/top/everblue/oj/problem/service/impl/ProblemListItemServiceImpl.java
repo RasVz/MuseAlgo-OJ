@@ -4,7 +4,7 @@ import top.everblue.oj.problem.entity.ProblemListItem;
 import top.everblue.oj.problem.entity.vo.ProblemVO;
 import top.everblue.oj.problem.mapper.ProblemListItemMapper;
 import top.everblue.oj.problem.service.ProblemListItemService;
-import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import org.springframework.stereotype.Service;
 
 import java.util.List;

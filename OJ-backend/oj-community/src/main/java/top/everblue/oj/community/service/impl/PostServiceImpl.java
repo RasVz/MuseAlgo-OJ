@@ -18,7 +18,7 @@ import top.everblue.oj.community.service.PostService;
  * 运营标志位、类型推断这类规则必然只在一处生效。
  * </p>
  * <p>
- * 本类中的 {@link com.baomidou.mybatisplus.extension.service.impl.ServiceImpl}
+ * 本类中的 {@link com.baomidou.mybatisplus.spring.service.impl.ServiceImpl}
  * 使用全限定名书写，而同包其他 {@code *ServiceImpl} 都做了 import。
  * 这不是笔误，是本文件先于其他文件存在、改写时保留了原样；
  * 两种写法在同一包内并存不影响功能。若要统一风格，
@@ -27,7 +27,7 @@ import top.everblue.oj.community.service.PostService;
  */
 @Service
 @RequiredArgsConstructor
-public class PostServiceImpl extends com.baomidou.mybatisplus.extension.service.impl.ServiceImpl<PostMapper, Post>
+public class PostServiceImpl extends com.baomidou.mybatisplus.spring.service.impl.ServiceImpl<PostMapper, Post>
         implements PostService {
 
 }
