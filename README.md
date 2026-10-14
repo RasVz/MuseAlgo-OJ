@@ -60,7 +60,7 @@ MuseAlgo-OJ 是一套面向**信息学奥赛教学**的自托管在线判题系�
 MuseAlgo-OJ/
 ├── OJ-backend/         # Spring Boot 多模块后端（12 个 Maven 模块）
 │   ├── oj-admin/       #   启动模块（Spring Boot 入口 + Flyway 迁移）
-│   ├── oj-api/         #   对外 API 聚合
+│   ├── oj-api/         #   跨模块接口与 DTO 契约
 │   ├── oj-system/      #   用户 / 角色 / 权限
 │   ├── oj-problem/     #   题库、题面、测试用例
 │   ├── oj-judge/       #   判题调度、提交记录、查重
@@ -142,6 +142,10 @@ docker compose -f compose.dev.yml --profile extras up -d   # Meilisearch + Rabbi
 docker compose -f compose.dev.yml --profile "*"    up -d   # 全部
 ```
 
+`extras` 只启动中间件。要启用全文检索或消息事件，还需在本地 Compose 配置中将相应的
+`OJ_SEARCH_ENABLED` / `OJ_RABBITMQ_ENABLED` 改为 `true`，核对连接参数后重新创建后端容器
+（`docker compose -f compose.dev.yml up -d backend`）。只修改 `.env` 不会覆盖 Compose 中显式的 `false`。
+
 **常用命令**
 
 ```bash
@@ -178,9 +182,10 @@ docker compose -f compose.dev.yml down -v            # 停止并清空数据卷
 | `DEEPSEEK_API_URL` | ⭕ | 兼容 OpenAI 格式的接口地址，不设置则用内置默认值 |
 | `AI_MODEL` | ⭕ | 模型名，不设置则用内置默认值 |
 | `COS_SECRET_ID` / `COS_SECRET_KEY` | ⭕ | 对象存储，用于头像与报告文件。不配置时自动降级为本地磁盘存储（`/uploads/`） |
+| `OJ_PUBLIC_BASE_URL` | ⭕ | 同源部署显式设为空以返回 `/uploads/...`；两份 Compose 已覆盖为空，原生启动未设置时默认 `http://localhost:8080` |
 
 > ⚠️ 可选配置请**整行注释掉**，不要写成 `AI_MODEL=` 这样的空赋值——
-> 空字符串会覆盖 `application.yml` 里的默认值。完整变量清单与默认值见
+> 空字符串会覆盖 `application.yml` 里的默认值。`OJ_PUBLIC_BASE_URL=` 是同源部署所需的显式空值，属于例外。完整变量清单与默认值见
 > `OJ-backend/oj-admin/src/main/resources/application.yml`。
 
 ## 生产部署
@@ -207,22 +212,20 @@ curl -fsS localhost:8080/actuator/health     # 期望 {"status":"UP"}
 
 ## 本地开发（不使用 Docker）
 
-需要自行准备 **JDK 17**、**Maven**、**MySQL 8**、**Redis**、**Node.js ≥ 20.19**。
+需要自行准备 **JDK 17**、**MySQL 8**、**Redis**、**Node.js 22.12+**；Maven 可使用仓库包装器。
+先按 [开发指南](docs/DEVELOPMENT.md#路线-b本地原生) 初始化数据库和 `.env`。以下命令均从仓库根目录执行。
 
 ```bash
-# 后端 —— 方式一：用仓库脚本（自动 source .env，先装同级模块再启动）
+# 终端一：后端（加载 .env，先安装模块，再启动服务）
 ./scripts/run-local.sh
-
-# 后端 —— 方式二：手动分两步（安装要 -am，启动不要 -am）
-export JWT_SECRET="$(openssl rand -base64 48)"
-export OJ_DB_PASS=你的数据库密码
-cd OJ-backend
-./mvnw -pl oj-admin -am -DskipTests install    # 1) 先把同级模块装进本地仓库
-./mvnw -pl oj-admin spring-boot:run            # 2) 再启动（不要加 -am）
-
-# 前端（/api 与 /uploads 默认代理到 http://localhost:8080）
-cd OJ-frontend && npm install && npm run dev
 ```
+
+```bash
+# 终端二：前端（/api 与 /uploads 默认代理到 http://localhost:8080）
+(cd OJ-frontend && npm ci && npm run dev)
+```
+
+手动启动后端时，安装阶段使用 `-am`，启动阶段不加 `-am`；完整命令见开发指南。
 
 ## 文档
 
