@@ -19,6 +19,7 @@ public class ProblemListVO {
 
     private Long id;
     private String title;
+    private Byte type;
 
     private String description;
     private Integer privacy; // 0-私有, 1-公开
