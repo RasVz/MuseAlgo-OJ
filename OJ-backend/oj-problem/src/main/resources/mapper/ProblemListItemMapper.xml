@@ -104,4 +104,10 @@
           AND pl.creator_id = #{creatorId}
     </select>
 
+    <select id="selectAssignedClassIds" resultType="java.lang.Long">
+        SELECT DISTINCT pl.class_id FROM problem_list pl
+        JOIN problem_list_item item ON item.list_id = pl.id
+        WHERE item.problem_id = #{problemId} AND pl.class_id IS NOT NULL
+          AND pl.type IN (3, 4) AND (pl.start_time IS NULL OR pl.start_time &lt;= NOW())
+    </select>
 </mapper>

@@ -46,6 +46,7 @@ import java.util.Map;
 public class ProblemManagementApplicationService {
 
     private final ProblemService problemService;
+    private final ProblemReadAccessService readAccess;
     private final ProblemCaseService problemCaseService;
     private final ProblemSampleService problemSampleService;
     private final JdbcTemplate jdbcTemplate;
@@ -58,7 +59,7 @@ public class ProblemManagementApplicationService {
     private final ProblemFormatApplicationService formatApplicationService;
     private final ProblemListQueryApplicationService listQueryApplicationService;
 
-    public ProblemManagementApplicationService(ProblemService problemService,
+    public ProblemManagementApplicationService(ProblemReadAccessService readAccess, ProblemService problemService,
                                                ProblemCaseService problemCaseService,
                                                ProblemSampleService problemSampleService,
                                                JdbcTemplate jdbcTemplate,
@@ -70,6 +71,7 @@ public class ProblemManagementApplicationService {
                                                ProblemStdApplicationService stdApplicationService,
                                                ProblemFormatApplicationService formatApplicationService,
                                                ProblemListQueryApplicationService listQueryApplicationService) {
+        this.readAccess = readAccess;
         this.problemService = problemService;
         this.problemCaseService = problemCaseService;
         this.problemSampleService = problemSampleService;
@@ -265,8 +267,9 @@ public class ProblemManagementApplicationService {
                 page, size, keyword, difficulty, tag, privacy, isPublic, sortBy, sortOrder);
     }
 
-    /** 题目详情：题目 + 多组公开样例（学生可见，无权限限制） */
+    /** 题目详情：校验公开/归属/班级/比赛权限后返回样例，隐藏标准答案 */
     public ProblemDetailVO getDetail(Long problemId) {
+        readAccess.requireReadable(problemId);
         Problem problem = problemService.getById(problemId);
         if (problem == null) {
             throw new IllegalArgumentException("题目不存在");
