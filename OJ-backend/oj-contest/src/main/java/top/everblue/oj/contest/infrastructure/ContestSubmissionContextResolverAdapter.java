@@ -39,12 +39,14 @@ import java.time.LocalDateTime;
 public class ContestSubmissionContextResolverAdapter implements ContestSubmissionContextResolver {
 
     private final ContestMapper contestMapper;
+    private final ContestProblemAccessAdapter access;
     private final ProblemContestMapper problemContestMapper;
     private final VpAttemptMapper vpAttemptMapper;
 
-    public ContestSubmissionContextResolverAdapter(ContestMapper contestMapper,
+    public ContestSubmissionContextResolverAdapter(ContestProblemAccessAdapter access, ContestMapper contestMapper,
                                                    ProblemContestMapper problemContestMapper,
                                                    VpAttemptMapper vpAttemptMapper) {
+        this.access = access;
         this.contestMapper = contestMapper;
         this.problemContestMapper = problemContestMapper;
         this.vpAttemptMapper = vpAttemptMapper;
@@ -75,6 +77,8 @@ public class ContestSubmissionContextResolverAdapter implements ContestSubmissio
             throw new IllegalArgumentException("题目不属于该比赛");
         }
 
+        if (!access.canReadContestProblem(contestId, problemId, userId))
+            throw new top.everblue.oj.common.exception.ForbiddenException("无权向该比赛题目提交");
         LocalDateTime now = LocalDateTime.now();
         // 闭区间判定：恰好在开赛或结束时刻的提交应当被接受，
         // 否则开赛瞬间的提交会被拒、结束瞬间的提交会被判为超时提交
