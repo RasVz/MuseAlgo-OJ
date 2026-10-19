@@ -19,7 +19,7 @@
         <!-- 家长报告：HTTP 调用 headless Chromium -->
         <dependency><groupId>com.squareup.okhttp3</groupId><artifactId>okhttp</artifactId><version>4.12.0</version></dependency>
         <!-- 代码查重：tree-sitter C++ grammar（Java 绑定），AST 级结构指纹；native 加载失败时引擎自动回退 TOKEN 指纹 -->
-        <dependency><groupId>io.github.bonede</groupId><artifactId>tree-sitter</artifactId><version>0.24.4</version></dependency>
+        <dependency><groupId>io.github.bonede</groupId><artifactId>tree-sitter</artifactId><version>0.26.6</version></dependency>
         <dependency><groupId>io.github.bonede</groupId><artifactId>tree-sitter-cpp</artifactId><version>0.23.4</version></dependency>
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
     </dependencies>
