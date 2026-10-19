@@ -77,7 +77,7 @@ public class AuthController {
         // 1. 校验 refreshToken 是否有效
         // 需要处理异常，比如 Token 过期会抛异常
         try {
-            if (jwtUtils.validateToken(refreshToken, jwtUtils.extractUsername(refreshToken))) {
+            if (jwtUtils.validateRefreshToken(refreshToken, jwtUtils.extractUsername(refreshToken))) {
 
                 // 1.5 注销检查：refresh jti 已在黑名单 → 拒绝刷新，要求重新登录
                 //（防"注销后拿旧 refresh 换新 access"绕过注销）
