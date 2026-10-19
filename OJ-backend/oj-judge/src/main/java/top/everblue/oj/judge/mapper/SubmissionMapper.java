@@ -28,6 +28,16 @@ public interface SubmissionMapper extends BaseMapper<Submission> {
                          @Param("attempt") Integer attempt, @Param("phase") String phase);
 
 
+    @Select("SELECT COUNT(*) FROM submission s JOIN contest c ON c.id=s.contest_id " +
+            "WHERE s.contest_id=#{contestId} AND s.vp_attempt_id IS NULL " +
+            "AND s.create_time >= c.start_time AND s.create_time <= c.end_time " +
+            "AND COALESCE(s.status,0)=0 AND COALESCE(s.judge_phase,'') <> 'FAILED'")
+    long countPendingContest(@Param("contestId") Long contestId);
+
+    @Select("SELECT COUNT(*) FROM submission WHERE vp_attempt_id=#{id} " +
+            "AND COALESCE(status,0)=0 AND COALESCE(judge_phase,'') <> 'FAILED'")
+    long countPendingVp(@Param("id") Long id);
+
     /** AI 复盘用：按状态统计提交的用例结果（只取计数，不含测试点原文） */
     @Select("SELECT status, COUNT(*) AS cnt FROM submission_case_result " +
             "WHERE submission_id = #{submissionId} GROUP BY status")
@@ -42,18 +52,18 @@ public interface SubmissionMapper extends BaseMapper<Submission> {
 
     /** VP：时间窗内每题最好成绩（按 contest 归属） */
     @Select("SELECT problem_id AS problemId, MAX(score) AS bestScore FROM submission " +
-            "WHERE vp_attempt_id = #{vpAttemptId} " +
+            "WHERE vp_attempt_id = #{vpAttemptId} AND status BETWEEN 1 AND 5 " +
             "GROUP BY problem_id")
     List<Map<String, Object>> selectVpBestScores(@Param("vpAttemptId") Long vpAttemptId);
 
     @Select("SELECT id, problem_id, status, create_time FROM submission " +
-            "WHERE vp_attempt_id = #{vpAttemptId} ORDER BY create_time ASC, id ASC")
+            "WHERE vp_attempt_id = #{vpAttemptId} AND status BETWEEN 1 AND 5 ORDER BY create_time ASC, id ASC")
     List<Submission> selectVpSubmissions(@Param("vpAttemptId") Long vpAttemptId);
 
     /** 赛中每题最好状态（AC=1 最小） */
     @Select("SELECT problem_id AS problemId, MIN(status) AS bestStatus FROM submission " +
             "WHERE contest_id = #{contestId} AND user_id = #{userId} " +
-            "AND vp_attempt_id IS NULL " +
+            "AND vp_attempt_id IS NULL AND status BETWEEN 1 AND 5 " +
             "GROUP BY problem_id")
     List<Map<String, Object>> selectContestProblemResults(
             @Param("contestId") Long contestId, @Param("userId") Long userId);

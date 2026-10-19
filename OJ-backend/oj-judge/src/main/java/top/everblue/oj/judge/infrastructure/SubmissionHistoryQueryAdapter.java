@@ -22,6 +22,11 @@ public class SubmissionHistoryQueryAdapter implements ContestSubmissionQuery {
     }
 
     @Override
+    public boolean hasPending(Long contestId) {
+        return submissionMapper.countPendingContest(contestId) > 0;
+    }
+
+    @Override
     public List<ContestSubmission> findByContestId(Long contestId) {
         return submissionMapper.selectAllByContestIdOrderByCreateTimeAsc(contestId).stream()
                 .map(submission -> new ContestSubmission(

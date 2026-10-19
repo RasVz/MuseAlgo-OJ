@@ -24,6 +24,7 @@ public class SubmissionApplicationService {
         this.contestSubmissionContextResolver = contestSubmissionContextResolver;
     }
 
+    @org.springframework.transaction.annotation.Transactional(rollbackFor = Exception.class)
     public SubmissionResultResponse submit(SubmitSolutionCommand command) {
         Long userId = SecurityUtils.getUserId();
         if (userId == null) {

@@ -64,11 +64,12 @@ public interface OutboxEventMapper extends BaseMapper<OutboxEvent> {
     /**
      * 标记发布失败并更新重试时间和次数。
      */
-    @Update("UPDATE outbox_event SET retry_count = retry_count + 1, "
+    // MySQL SET从左到右求值，必须先用旧计数判断，再自增；迟到失败也不能覆盖PUBLISHED。
+    @Update("UPDATE outbox_event SET "
+          + "status = CASE WHEN retry_count + 1 >= #{maxRetries} THEN 'FAILED' ELSE 'PENDING' END, "
+          + "retry_count = retry_count + 1, "
           + "next_attempt_at = DATE_ADD(NOW(), INTERVAL #{backoffSeconds} SECOND), "
-          + "last_error = #{error}, "
-          + "status = CASE WHEN retry_count + 1 >= #{maxRetries} THEN 'FAILED' ELSE 'PENDING' END "
-          + "WHERE id = #{id}")
+          + "last_error = #{error} WHERE id = #{id} AND status = 'PENDING'")
     int markFailed(@Param("id") String id, @Param("error") String error,
                    @Param("backoffSeconds") int backoffSeconds, @Param("maxRetries") int maxRetries);
 }
