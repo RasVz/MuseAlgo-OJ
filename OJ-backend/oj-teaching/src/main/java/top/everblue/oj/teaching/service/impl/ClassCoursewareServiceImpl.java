@@ -34,9 +34,7 @@ import java.util.List;
  * 注意此方法是逐条查询的，批量判断可见性时应在调用方收集 coursewareId 后统一处理，避免 N+1。
  * </p>
  * <p>
- * 已知短板：新建课件时 {@code teacherId} 目前是写死的常量，尚未接入 SecurityContext，
- * 因此<strong>列表里的「创建老师」信息对非教师用户不可信</strong>。补齐时应改为从
- * {@code SecurityUtils.getUserId()} 取当前登录教师，不要沿用这个常量。
+ * 新课件的归属取当前登录教师，私有课件绑定必须验证所有者。
  * </p>
  */
 @Service
@@ -46,6 +44,7 @@ public class ClassCoursewareServiceImpl
         implements ClassCoursewareService {
 
     private final CoursewareService coursewareService;
+    private final top.everblue.oj.teaching.application.ClassMembershipApplicationService membership;
     private final ClassStudentService classStudentService;
 
     @Override
@@ -69,17 +68,20 @@ public class ClassCoursewareServiceImpl
     @Transactional
     public void addCoursewareToClass(Long classId, String title, String url,
                                      Long problemListId, String description) {
+        membership.requireClassManager(classId);
         // 1. 根据 url 查找或创建课件
         Courseware cw = coursewareService.getOne(
                 new LambdaQueryWrapper<Courseware>().eq(Courseware::getUrl, url));
         Long coursewareId;
         if (cw != null) {
+            if (!Integer.valueOf(1).equals(cw.getPrivacy()))
+                top.everblue.oj.common.utils.SecurityUtils.requireOwnerOrAdmin(cw.getTeacherId());
             coursewareId = cw.getId();
         } else {
             Courseware ncw = new Courseware();
             ncw.setTitle(title); ncw.setUrl(url);
             ncw.setProblemListId(problemListId); ncw.setDescription(description);
-            ncw.setTeacherId(1L); // TODO: SecurityContext
+            ncw.setTeacherId(top.everblue.oj.common.utils.SecurityUtils.getUserId());
             coursewareService.save(ncw);
             coursewareId = ncw.getId();
         }

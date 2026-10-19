@@ -51,7 +51,18 @@ public class ClassMembershipApplicationService {
         }
     }
 
-    private void requireClassManager(Long classId) {
+    /** 返回是否可管理；学生只能读取自己班级的可见目录。 */
+    public boolean requireClassReader(Long classId) {
+        Class info = classService.getById(classId);
+        if (info == null) throw new IllegalArgumentException("班级不存在");
+        Long actor = SecurityUtils.getUserId();
+        if (SecurityUtils.isAdmin() || (SecurityUtils.isTeacherOrAdmin() && actor != null && actor.equals(info.getTeacherId()))) return true;
+        if (actor != null && classStudentService.count(new LambdaQueryWrapper<ClassStudent>()
+                .eq(ClassStudent::getClassId, classId).eq(ClassStudent::getStudentId, actor)) > 0) return false;
+        throw new top.everblue.oj.common.exception.ForbiddenException("无权查看该班级课件");
+    }
+
+    public void requireClassManager(Long classId) {
         SecurityUtils.requireTeacherOrAdmin();
         Class classInfo = classService.getById(classId);
         if (classInfo == null) {

@@ -31,23 +31,32 @@ public class ClassCoursewareController {
     private final ClassCoursewareService classCoursewareService;
 
     private final CoursewareService coursewareService;
+    private final top.everblue.oj.teaching.application.ClassMembershipApplicationService membership;
+
+    private void requireRelationManager(Long id) {
+        top.everblue.oj.common.utils.SecurityUtils.requireTeacherOrAdmin();
+        ClassCourseware relation = classCoursewareService.getById(id);
+        if (relation == null) throw new IllegalArgumentException("班级课件不存在");
+        membership.requireClassManager(relation.getClassId());
+    }
 
     /**
      * 获取某班级的课程目录
      * 特性：支持排序、适配前端 Tree 结构
-     * 注意：返回所有课件（包括隐藏的），前端根据 isVisible 控制显示
+     * 班级教师/管理员可取隐藏课件；学生仅可读取本班可见目录
      */
     @Operation(summary = "获取班级课件目录")
     @GetMapping("/list")
     public Result<List<Map<String, Object>>> getDirectory(@RequestParam Long classId,
-                                                          @RequestParam Long isVisible) {
+                                                          @RequestParam(defaultValue = "1") Long isVisible) {
 
+        boolean manager = membership.requireClassReader(classId);
         // 1. 查询关联关系 (按 sort 字段正序排列)
         LambdaQueryWrapper<ClassCourseware> relationWrapper = new LambdaQueryWrapper<>();
         relationWrapper.eq(ClassCourseware::getClassId, classId);
 
-        if(isVisible == 1){
-            relationWrapper.eq(ClassCourseware::getIsVisible, isVisible);
+        if(!manager || Long.valueOf(1).equals(isVisible)){
+            relationWrapper.eq(ClassCourseware::getIsVisible, true);
         }
 
         relationWrapper.orderByAsc(ClassCourseware::getSort);
@@ -133,6 +142,7 @@ public class ClassCoursewareController {
     @AuditLog(module = "class", action = "update_class_courseware")
     @PostMapping("/update")
     public Result<?> updateClassCourseware(@RequestBody Map<String, Object> params) {
+        requireRelationManager(Long.valueOf(params.get("id").toString()));
         Long id = Long.valueOf(params.get("id").toString());
 
         LambdaUpdateWrapper<ClassCourseware> updateWrapper = new LambdaUpdateWrapper<>();
@@ -163,6 +173,7 @@ public class ClassCoursewareController {
     @PostMapping("/update-sort-batch")
     @Transactional
     public Result<?> updateSortBatch(@RequestBody List<Map<String, Object>> sortList) {
+        for (Map<String, Object> item : sortList) requireRelationManager(Long.valueOf(item.get("id").toString()));
         for (Map<String, Object> item : sortList) {
             Long id = Long.valueOf(item.get("id").toString());
             Integer sort = Integer.valueOf(item.get("sort").toString());
@@ -182,6 +193,7 @@ public class ClassCoursewareController {
     @AuditLog(module = "class", action = "remove_class_courseware")
     @PostMapping("/remove/{id}")
     public Result<?> removeCoursewareFromClass(@PathVariable Long id) {
+        requireRelationManager(id);
         boolean success = classCoursewareService.removeById(id);
         return success ? Result.success("移除成功") : Result.error("移除失败");
     }

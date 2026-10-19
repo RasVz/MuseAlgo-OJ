@@ -4,8 +4,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -36,9 +34,7 @@ import java.util.UUID;
  * 但也意味着高并发构建会产生大量日志，评估日志量时要算上这部分。
  * </p>
  * <p>
- * 注意本服务<strong>没有超时控制</strong>：slidev 进程卡住会一直占着线程。
- * 目前靠 slidev 自身在 {@code CI=true} 下快速失败来兜底。若引入超大课件导致构建变慢，
- * 应当补上带超时的等待，不要让它无限期占用线程池。
+ * 构建受大小、并发和超时限制；输出先写临时日志，避免输出管道阻塞超时等待。
  * </p>
  */
 @Slf4j
@@ -51,44 +47,64 @@ public class SlidevBuilderService {
         this.paths = paths;
     }
 
+    private final java.util.concurrent.Semaphore buildSlots = new java.util.concurrent.Semaphore(2);
+
+    @org.springframework.beans.factory.annotation.Value("${oj.slidev.build-timeout-seconds:120}")
+    private long buildTimeoutSeconds = 120;
+
     public String buildPresentation(MultipartFile mdFile) throws Exception {
-        String uuid = UUID.randomUUID().toString().replace("-", "");
-        Files.createDirectories(paths.workerDir());
-
-        Path tempMd = paths.workerDir().resolve(uuid + ".md");
-        Path outputDir = paths.outputRoot().resolve(uuid);
-
+        top.everblue.oj.common.utils.SecurityUtils.requireTeacherOrAdmin();
+        if (mdFile.isEmpty() || mdFile.getSize() > 5L * 1024 * 1024)
+            throw new IllegalArgumentException("Markdown课件须为非空且不超过5MB");
+        if (!buildSlots.tryAcquire()) throw new IllegalStateException("课件构建繁忙，请稍后重试");
+        Path tempMd = null;
+        Path buildLog = null;
+        Process process = null;
         try {
+            String uuid = UUID.randomUUID().toString().replace("-", "");
+            Files.createDirectories(paths.workerDir());
+            tempMd = paths.workerDir().resolve(uuid + ".md");
+            buildLog = Files.createTempFile("oj-slidev-", ".log");
             mdFile.transferTo(tempMd);
-
-            List<String> command = List.of(
-                    paths.workerDir().resolve("node_modules/.bin/slidev").toString(),
-                    "build",
-                    tempMd.getFileName().toString(),
-                    "--out", outputDir.toString(),
-                    "--base", paths.publicPath() + uuid + "/"
-            );
-            ProcessBuilder processBuilder = new ProcessBuilder(command);
-            processBuilder.directory(paths.workerDir().toFile());
-            processBuilder.redirectErrorStream(true);
-            processBuilder.environment().put("CI", "true");
-
-            Process process = processBuilder.start();
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    log.info("[Slidev build] {}", line);
-                }
+            List<String> command = List.of(paths.workerDir().resolve("node_modules/.bin/slidev").toString(),
+                    "build", tempMd.getFileName().toString(), "--out", paths.outputRoot().resolve(uuid).toString(),
+                    "--base", paths.publicPath() + uuid + "/");
+            ProcessBuilder builder = new ProcessBuilder(command);
+            builder.directory(paths.workerDir().toFile());
+            builder.redirectErrorStream(true);
+            builder.redirectOutput(buildLog.toFile());
+            builder.environment().put("CI", "true");
+            process = builder.start();
+            if (!process.waitFor(Math.max(1, buildTimeoutSeconds), java.util.concurrent.TimeUnit.SECONDS))
+                throw new IllegalStateException("课件构建超时");
+            if (process.exitValue() != 0) {
+                try (var lines = Files.lines(buildLog)) { lines.limit(200).forEach(line -> log.warn("[Slidev build] {}", line)); }
+                throw new IllegalStateException("Slidev编译失败，请检查课件内容");
             }
-
-            int exitCode = process.waitFor();
-            if (exitCode != 0) {
-                throw new RuntimeException("Slidev 编译失败，请检查 Markdown 语法或本地 Node.js 环境。退出码: " + exitCode);
-            }
+            return paths.presentationUrl(uuid);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw ex;
         } finally {
-            Files.deleteIfExists(tempMd);
+            try {
+                if (process != null) {
+                    try {
+                        process.descendants().forEach(child -> { if (child.isAlive()) child.destroyForcibly(); });
+                    } catch (RuntimeException ex) {
+                        log.warn("无法枚举课件构建子进程，将终止主进程", ex);
+                    } finally {
+                        if (process.isAlive()) {
+                            process.destroyForcibly();
+                            if (!Thread.currentThread().isInterrupted()) process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
+                        }
+                    }
+                }
+            } finally {
+                try {
+                    if (tempMd != null) Files.deleteIfExists(tempMd);
+                    if (buildLog != null) Files.deleteIfExists(buildLog);
+                } finally { buildSlots.release(); }
+            }
         }
-
-        return paths.presentationUrl(uuid);
     }
 }
