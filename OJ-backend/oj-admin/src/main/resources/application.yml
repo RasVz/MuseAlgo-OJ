@@ -125,6 +125,9 @@ judge0:
   # Rosetta 执行 amd64 判题镜像时可设为 false，改用 Judge0 聚合内存限制。
   per-process-memory-limit: ${JUDGE0_PER_PROCESS_MEMORY_LIMIT:true}
 oj:
+  contest:
+    settlement-interval-ms: ${OJ_CONTEST_SETTLEMENT_INTERVAL_MS:5000}
+    settlement-initial-delay-ms: ${OJ_CONTEST_SETTLEMENT_INITIAL_DELAY_MS:5000}
   slidev:
     build-timeout-seconds: ${OJ_SLIDEV_BUILD_TIMEOUT_SECONDS:120}
     # 默认输出到「工作区根」下的 OJ-Coursewares；可用 OJ_SLIDEV_OUTPUT_DIR 覆盖。
@@ -138,7 +141,7 @@ oj:
     # 只有需要从外部直接访问课件时才设置完整前缀，例如 http://oj.example.com。
     public-base-url: ${OJ_SLIDEV_PUBLIC_BASE_URL:}
   messaging:
-    # 默认开启：排名/Rating 事件走 RabbitMQ，判题任务增加 MQ 唤醒（毫秒级响应）。
+    # MQ可加速判题与榜单通知；成绩/Rating按数据库快照与定时固化保证一致。
     # 本地无 broker 时设 OJ_RABBITMQ_ENABLED=false 回退纯 DB 轮询模式。
     rabbitmq-enabled: ${OJ_RABBITMQ_ENABLED:true}
     outbox:
@@ -149,6 +152,7 @@ oj:
       failed-retention-days: 30           # FAILED 保留天数
       archive-batch-size: 200             # 每批处理条数（循环直到取空）
   security:
+    api-docs-public: ${OJ_API_DOCS_PUBLIC:true}
     normalized-rbac: ${OJ_NORMALIZED_RBAC:false}
   search:
     # Meilisearch 全文搜索（任务⑧，2026-08-14 方案第 8 节）：

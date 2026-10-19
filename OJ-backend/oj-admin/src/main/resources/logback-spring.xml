@@ -51,6 +51,13 @@
         </root>
     </springProfile>
 
+    <springProfile name="prod">
+        <!-- SQL参数含源码和用户数据，生产不输出逐条SQL参数。 -->
+        <logger name="top.everblue.oj.judge.mapper" level="INFO" />
+        <logger name="top.everblue.oj.problem.mapper" level="INFO" />
+        <logger name="top.everblue.oj.analytics.mapper" level="INFO" />
+    </springProfile>
+
     <!-- prod：仅 JSON 控制台（docker 采集 stdout）+ JSON 文件，避免混入文本行 -->
     <springProfile name="prod">
         <root level="INFO">

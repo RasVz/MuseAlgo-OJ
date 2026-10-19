@@ -21,6 +21,7 @@ class JudgeExecutionOwnershipIT {
     @Autowired JudgeTaskService tasks;
     @Autowired JudgeCompletionService completion;
     @Autowired JdbcTemplate jdbc;
+    @Autowired OutboxEventMapper outbox;
     Submission submission;
     JudgeTask current;
     @BeforeEach void fixture() {
@@ -65,5 +66,21 @@ class JudgeExecutionOwnershipIT {
         assertTrue(retry.getScheduledAt().isAfter(LocalDateTime.now()));
         tasks.fail(current, "late failure");
         assertEquals("temporary failure", taskMapper.selectById(current.getId()).getLastError());
+    }
+    @Test void outboxRetryBudgetCountsFailuresOnceAndLateFailureCannotUndoPublish() {
+        String event=java.util.UUID.randomUUID().toString();
+        jdbc.update("INSERT INTO outbox_event(id,aggregate_type,aggregate_id,event_type,payload) VALUES (?,'submission',?,'submission.judged','{}')",event,submission.getId());
+        for(int attempt=1;attempt<5;attempt++) {
+            assertEquals(1,outbox.markFailed(event,"broker unavailable",10,5));
+            assertEquals("PENDING",jdbc.queryForObject("SELECT status FROM outbox_event WHERE id=?",String.class,event));
+            assertEquals(attempt,jdbc.queryForObject("SELECT retry_count FROM outbox_event WHERE id=?",Integer.class,event));
+        }
+        outbox.markPublished(event);
+        assertEquals(0,outbox.markFailed(event,"late failure",10,5));
+        assertEquals("PUBLISHED",jdbc.queryForObject("SELECT status FROM outbox_event WHERE id=?",String.class,event));
+        jdbc.update("UPDATE outbox_event SET status='PENDING' WHERE id=?",event);
+        outbox.markFailed(event,"fifth failure",10,5);
+        assertEquals(5,jdbc.queryForObject("SELECT retry_count FROM outbox_event WHERE id=?",Integer.class,event));
+        assertEquals("FAILED",jdbc.queryForObject("SELECT status FROM outbox_event WHERE id=?",String.class,event));
     }
 }
