@@ -20,6 +20,14 @@ import java.util.Map;
 @Mapper
 public interface SubmissionMapper extends BaseMapper<Submission> {
 
+    /** 阶段写入必须与任务行上的状态/代次在同一SQL内校验，不能先查询再无条件更新。 */
+    @Update("UPDATE submission s JOIN judge_task t ON t.submission_id = s.id " +
+            "SET s.judge_phase = #{phase} WHERE s.id = #{submissionId} AND t.id = #{taskId} " +
+            "AND t.status = 'PROCESSING' AND t.attempt_count = #{attempt}")
+    int updateOwnedPhase(@Param("submissionId") Long submissionId, @Param("taskId") Long taskId,
+                         @Param("attempt") Integer attempt, @Param("phase") String phase);
+
+
     /** AI 复盘用：按状态统计提交的用例结果（只取计数，不含测试点原文） */
     @Select("SELECT status, COUNT(*) AS cnt FROM submission_case_result " +
             "WHERE submission_id = #{submissionId} GROUP BY status")

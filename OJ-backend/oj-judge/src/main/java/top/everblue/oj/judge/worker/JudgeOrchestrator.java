@@ -10,12 +10,9 @@ import top.everblue.oj.api.problem.TestCaseView;
 import top.everblue.oj.judge.domain.SubmissionStatus;
 import top.everblue.oj.judge.entity.Submission;
 import top.everblue.oj.judge.entity.SubmissionCode;
-import top.everblue.oj.judge.entity.SubmissionResult;
 import top.everblue.oj.judge.mapper.SubmissionCodeMapper;
 import top.everblue.oj.judge.mapper.SubmissionMapper;
-import top.everblue.oj.judge.mapper.SubmissionResultMapper;
 
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -53,7 +50,7 @@ public class JudgeOrchestrator {
     private final SubmissionMapper submissionMapper;
     private final SubmissionCodeMapper submissionCodeMapper;
     private final ProblemQuery problemQuery;
-    private final SubmissionResultMapper submissionResultMapper;
+    private final JudgeCompletionService completionService;
     private final Executor caseExecutor;
 
     @Value("${oj.judge.persist-normalized-results:false}")
@@ -63,13 +60,13 @@ public class JudgeOrchestrator {
                              SubmissionMapper submissionMapper,
                              SubmissionCodeMapper submissionCodeMapper,
                              ProblemQuery problemQuery,
-                             SubmissionResultMapper submissionResultMapper,
+                             JudgeCompletionService completionService,
                              @Qualifier("judgeCaseExecutor") Executor caseExecutor) {
         this.judgeGateway = judgeGateway;
         this.submissionMapper = submissionMapper;
         this.submissionCodeMapper = submissionCodeMapper;
         this.problemQuery = problemQuery;
-        this.submissionResultMapper = submissionResultMapper;
+        this.completionService = completionService;
         this.caseExecutor = caseExecutor;
     }
 
@@ -80,7 +77,8 @@ public class JudgeOrchestrator {
      * @return 最终 {@link SubmissionStatus}（ACCEPTED 或首个失败用例状态）
      * @throws IllegalStateException 提交不存在或测试用例为空（由调用方走 fail 流程）
      */
-    public SubmissionStatus executeJudge(Long submissionId) {
+    public SubmissionStatus executeJudge(top.everblue.oj.judge.entity.JudgeTask task) {
+        Long submissionId = task.getSubmissionId();
         // 1) 加载数据
         Submission submission = submissionMapper.selectById(submissionId);
         if (submission == null) {
@@ -88,7 +86,7 @@ public class JudgeOrchestrator {
         }
         loadCode(submission); // V50 拆表：源码从 submission_code 补载（判题需要）
         submission.setJudgePhase("COMPILING");
-        submissionMapper.updateById(submission);
+        writePhase(task, submission.getJudgePhase());
 
         int[] limits = problemQuery.findProblemLimits(submission.getProblemId());
 
@@ -99,8 +97,8 @@ public class JudgeOrchestrator {
         }
 
         // 2) 准备 Judge0 参数
-        double timeLimitSec = Math.max(limits[0], 1000) / 1000.0;
-        int memoryLimitKb = Math.max(limits[1], 131072);
+        double timeLimitSec = (limits[0] > 0 ? limits[0] : 1000) / 1000.0;
+        int memoryLimitKb = (limits[1] > 0 ? limits[1] : 131072);
 
         // 3) 用例并行判题，按 subtask 组聚合（ADR-0003）：
         //    组内全部 AC 才得组总分（组内 score 之和），否则整组 0 分；
@@ -138,7 +136,7 @@ public class JudgeOrchestrator {
                 // 任一用例完成（非 CE）即进入 JUDGING 阶段（原串行实现以首个用例为准）
                 if (phaseUpdated.compareAndSet(false, true)) {
                     submission.setJudgePhase("JUDGING");
-                    submissionMapper.updateById(submission);
+                    writePhase(task, submission.getJudgePhase());
                 }
 
                 int judge0Status = numberValue(result.get("status"));
@@ -175,7 +173,9 @@ public class JudgeOrchestrator {
         SubmissionStatus finalStatus = firstFailureStatus.get() != null
                 ? firstFailureStatus.get() : SubmissionStatus.ACCEPTED;
 
-        int subtaskTotal = groupScores.values().stream().mapToInt(Integer::intValue).sum();
+        int subtaskTotal = groupScores.entrySet().stream()
+                .filter(entry -> !Boolean.TRUE.equals(groupFailed.get(entry.getKey())))
+                .mapToInt(Map.Entry::getValue).sum();
         submission.setStatus(finalStatus.code());
         submission.setJudgePhase("FINISHED");
         submission.setRunTime(maxTimeMs.get());
@@ -184,6 +184,7 @@ public class JudgeOrchestrator {
                 ? (subtaskTotal == 0 ? 100 : subtaskTotal)
                 : subtaskTotal);
 
+        submission.setErrorMessage(null);
         Map<String, Object> failureResult = firstFailureResult.get();
         if (failureResult != null && finalStatus == SubmissionStatus.COMPILATION_ERROR) {
             submission.setErrorMessage((String) failureResult.get("compile_output"));
@@ -193,27 +194,16 @@ public class JudgeOrchestrator {
             submission.setErrorMessage(errMsg);
         }
 
-        submissionMapper.updateById(submission);
-
-        if (persistNormalizedResults) {
-            persistNormalizedResult(submission);
-        }
+        completionService.completeWithOutbox(task, submission, persistNormalizedResults);
 
         log.info("【判题】完成 submissionId={}, status={}, time={}ms, memory={}kb, cases={}",
                 submissionId, finalStatus.code(), maxTimeMs.get(), maxMemoryKb.get(), testCases.size());
         return finalStatus;
     }
 
-    private void persistNormalizedResult(Submission submission) {
-        SubmissionResult result = new SubmissionResult();
-        result.setSubmissionId(submission.getId());
-        result.setStatus(submission.getStatus());
-        result.setScore(submission.getScore());
-        result.setRunTime(submission.getRunTime());
-        result.setRunMemory(submission.getRunMemory());
-        result.setErrorMessage(submission.getErrorMessage());
-        result.setJudgedAt(LocalDateTime.now());
-        submissionResultMapper.insert(result);
+    private void writePhase(top.everblue.oj.judge.entity.JudgeTask task, String phase) {
+        if (submissionMapper.updateOwnedPhase(task.getSubmissionId(), task.getId(), task.getAttemptCount(), phase) != 1)
+            throw new StaleJudgeExecutionException();
     }
 
     // ---- 数值转换辅助方法（Judge0 返回 JSON 中 status/time/memory 可能是数字或字符串） ----

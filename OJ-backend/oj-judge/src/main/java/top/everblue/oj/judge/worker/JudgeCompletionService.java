@@ -20,7 +20,7 @@ import java.util.UUID;
  * <p>
  * 必须独立为 Service，因为 Spring AOP 的 @Transactional 只对
  * 外部调用（通过代理）生效，类内部自调用不会触发事务代理。
- * JudgeWorker 通过注入本 Service 来保证 complete + outbox insert 在同一事务中。
+ * JudgeOrchestrator通过本Service将结果、任务完成和Outbox原子提交。
  * </p>
  */
 @Slf4j
@@ -30,6 +30,8 @@ public class JudgeCompletionService {
 
     private final JudgeTaskService judgeTaskService;
     private final OutboxEventMapper outboxEventMapper;
+    private final top.everblue.oj.judge.mapper.SubmissionMapper submissionMapper;
+    private final top.everblue.oj.judge.mapper.SubmissionResultMapper resultMapper;
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     /**
@@ -39,12 +41,20 @@ public class JudgeCompletionService {
      * 则放弃写 Outbox，避免同一提交发布两次 submission.judged 事件。
      * </p>
      */
-    @Transactional
-    public void completeWithOutbox(JudgeTask task) {
-        boolean completed = judgeTaskService.complete(task.getId());
-        if (!completed) {
-            log.warn("【判题Worker】任务已被其他路径迁移，跳过 Outbox 写入 taskId={}", task.getId());
-            return;
+    @Transactional(rollbackFor = Exception.class)
+    public void completeWithOutbox(JudgeTask task, top.everblue.oj.judge.entity.Submission submission,
+                                   boolean persistNormalizedResults) {
+        boolean completed = judgeTaskService.complete(task);
+        if (!completed) throw new StaleJudgeExecutionException();
+        // 条件完成先锁定task行；失败/重领均不能越过该锁。以下写入与完成和事件同事务。
+        if (submissionMapper.updateById(submission) != 1) throw new IllegalStateException("提交结果写入失败");
+        if (persistNormalizedResults) {
+            var result = new top.everblue.oj.judge.entity.SubmissionResult();
+            result.setSubmissionId(submission.getId()); result.setStatus(submission.getStatus());
+            result.setScore(submission.getScore()); result.setRunTime(submission.getRunTime());
+            result.setRunMemory(submission.getRunMemory()); result.setErrorMessage(submission.getErrorMessage());
+            result.setJudgedAt(LocalDateTime.now());
+            resultMapper.upsert(result);
         }
 
         OutboxEvent event = new OutboxEvent();

@@ -77,7 +77,7 @@ public class JudgeTaskWatchdog {
         for (JudgeTask task : stuckTasks) {
             try {
                 // 走标准 fail 流程：自动获得指数退避重试 / 超限 FAILED 语义
-                judgeTaskService.fail(task.getId(),
+                judgeTaskService.fail(task,
                         "看门狗回收：任务卡在 PROCESSING 超过 " + stuckTimeoutMs + "ms（lockedAt=" + task.getLockedAt() + "）");
                 log.warn("【判题看门狗】已回收 taskId={}, submissionId={}, attempt={}",
                         task.getId(), task.getSubmissionId(), task.getAttemptCount());

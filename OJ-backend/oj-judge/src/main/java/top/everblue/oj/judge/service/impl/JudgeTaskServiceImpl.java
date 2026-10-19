@@ -108,8 +108,9 @@ public class JudgeTaskServiceImpl implements JudgeTaskService {
     // ---- 完成 ----
 
     @Override
-    public boolean complete(Long taskId) {
-        int rows = judgeTaskMapper.completeIfProcessing(taskId, LocalDateTime.now(), LocalDateTime.now());
+    public boolean complete(JudgeTask task) {
+        Long taskId = task.getId();
+        int rows = judgeTaskMapper.completeIfProcessing(taskId, task.getAttemptCount(), LocalDateTime.now(), LocalDateTime.now());
         if (rows > 0) {
             log.info("【判题任务】完成 taskId={}", taskId);
             return true;
@@ -121,37 +122,24 @@ public class JudgeTaskServiceImpl implements JudgeTaskService {
     // ---- 失败 + 重试 ----
 
     @Override
-    public void fail(Long taskId, String errorMessage) {
-        JudgeTask current = judgeTaskMapper.selectById(taskId);
-        if (current == null) {
-            log.warn("【判题任务】fail 时 taskId={} 不存在", taskId);
-            return;
-        }
-
-        int nextAttempt = current.getAttemptCount(); // claim 时已 +1
-
-        JudgeTask update = new JudgeTask();
-        update.setId(taskId);
-        update.setLastError(errorMessage);
-        update.setUpdatedAt(LocalDateTime.now());
-
-        if (nextAttempt >= MAX_ATTEMPTS) {
-            // 超过最大重试次数 → 标记为永久失败
-            update.setStatus(JudgeTask.STATUS_FAILED);
-            update.setCompletedAt(LocalDateTime.now());
-            log.warn("【判题任务】重试耗尽 taskId={}, attempts={}, 标记 FAILED",
-                    taskId, nextAttempt);
-            submissionMapper.updateJudgePhase(current.getSubmissionId(), "FAILED");
-        } else {
-            // 未达上限 → 重置为 PENDING，指数退避重试
-            update.setStatus(JudgeTask.STATUS_PENDING);
-            int backoffSeconds = BASE_BACKOFF_SECONDS * (1 << nextAttempt); // 30, 60, 120
-            update.setScheduledAt(LocalDateTime.now().plusSeconds(backoffSeconds));
-            update.setLockedAt(null); // 释放锁
-            log.info("【判题任务】重试调度 taskId={}, attempt={}, backoff={}s",
-                    taskId, nextAttempt, backoffSeconds);
-        }
-
-        judgeTaskMapper.updateById(update);
+    @Transactional
+    public void fail(JudgeTask task, String errorMessage) {
+        int attempt = task.getAttemptCount();
+        boolean exhausted = attempt >= MAX_ATTEMPTS;
+        LocalDateTime now = LocalDateTime.now();
+        var update = new LambdaUpdateWrapper<JudgeTask>()
+                .eq(JudgeTask::getId, task.getId())
+                .eq(JudgeTask::getStatus, JudgeTask.STATUS_PROCESSING)
+                .eq(JudgeTask::getAttemptCount, attempt)
+                .set(JudgeTask::getLastError, errorMessage)
+                .set(JudgeTask::getUpdatedAt, now)
+                .set(JudgeTask::getLockedAt, null)
+                .set(JudgeTask::getStatus, exhausted ? JudgeTask.STATUS_FAILED : JudgeTask.STATUS_PENDING);
+        if (exhausted) update.set(JudgeTask::getCompletedAt, now);
+        else update.set(JudgeTask::getScheduledAt, now.plusSeconds(BASE_BACKOFF_SECONDS * (1 << attempt)));
+        int changed = judgeTaskMapper.update(null, update);
+        // 看门狗扫描后worker可能已完成，或旧worker在新一轮领取后恢复；两者都不能迁移新状态。
+        if (changed > 0 && exhausted) submissionMapper.updateJudgePhase(task.getSubmissionId(), "FAILED");
+        if (changed == 0) log.info("忽略过期判题执行的失败 taskId={}, attempt={}", task.getId(), attempt);
     }
 }
