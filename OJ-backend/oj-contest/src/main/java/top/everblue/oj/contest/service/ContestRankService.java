@@ -11,8 +11,8 @@ import java.util.List;
  * 两个概念必须分清，混淆会导致读错数据：
  * </p>
  * <ul>
- *   <li><b>实时榜</b>：来自 Redis，随每次提交变动，比赛中对外可见，
- *       由 {@link top.everblue.oj.contest.messaging.ContestRankConsumer} 持续更新。</li>
+ *   <li><b>实时榜</b>：来自数据库提交快照，随已判结果变动，按赛制控制可见性，
+ *       消息加速通知，定时任务轮询补送，不依赖缓存完整性。</li>
  *   <li><b>最终榜</b>：来自 contest_rank 表，在比赛结束时一次性固化，之后不再变化，
  *       用于赛后查询与导出。</li>
  * </ul>
@@ -24,7 +24,7 @@ import java.util.List;
 public interface ContestRankService {
 
     /**
-     * 比赛结束后固化最终成绩：把实时榜落库、按名次计算评分变化并写入评分流水。
+     * 比赛结束后固化最终成绩：按数据库快照落库、按名次计算评分并写入完成标记。
      * <p>
      * 应保持<b>幂等</b>——重复调用不得把评分算两遍。
      * </p>

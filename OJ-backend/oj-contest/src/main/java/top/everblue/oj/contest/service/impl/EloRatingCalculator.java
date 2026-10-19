@@ -60,6 +60,11 @@ public class EloRatingCalculator implements RatingCalculator {
      */
     @Override
     public List<UserRating> calculate(Long contestId, List<Long> userIds, List<Integer> currentRatings) {
+        return calculate(contestId,userIds,currentRatings,java.util.stream.IntStream.rangeClosed(1,userIds.size()).boxed().toList());
+    }
+
+    @Override
+    public List<UserRating> calculate(Long contestId,List<Long> userIds,List<Integer> currentRatings,List<Integer> ranks) {
         int n = userIds.size();
         if (n <= 1) {
             // 单人比赛不计算 rating（或者给 +0）
@@ -94,7 +99,9 @@ public class EloRatingCalculator implements RatingCalculator {
         // ---- 第 3 步：对每个人计算表现分 → 新 rating ----
         List<UserRating> results = new ArrayList<>();
         for (int i = 0; i < n; i++) {
-            int actualRank = i + 1;            // userIds 已按排名排序（第 0 个是冠军）
+            int groupEnd=i;
+            while(groupEnd+1<n && ranks.get(groupEnd+1).equals(ranks.get(i))) groupEnd++;
+            double actualRank=(ranks.get(i)+groupEnd+1)/2.0; // 并列组使用平均位置，避免按用户ID偏置评分
             double seed = seeds[i];
             int oldRating = currentRatings.get(i);
 
@@ -116,17 +123,15 @@ public class EloRatingCalculator implements RatingCalculator {
                 newRating = oldRating - MAX_DELTA;
             }
 
-            // 底线保护：仅夹紧 rating，不回改 delta。这是刻意的取舍——
-//            触底时实际变动小于记录在案的 ratingChange，宁可让流水与等式略有出入，
-//            也不要为了凑等式而把分数抬到 MIN_RATING 以下（那会让"底线"名存实亡）。
+            // 触底后按实际新旧分差记录流水，保持当前分与变更记录一致。
             if (newRating < MIN_RATING) newRating = MIN_RATING;
 
             UserRating record = new UserRating();
             record.setUserId(userIds.get(i));
             record.setContestId(contestId);
             record.setRating(newRating);
-            record.setRatingChange(delta);
-            record.setRank(actualRank);
+            record.setRatingChange(newRating-oldRating);
+            record.setRank(ranks.get(i));
             record.setCreateTime(LocalDateTime.now());
             results.add(record);
 
@@ -168,7 +173,7 @@ public class EloRatingCalculator implements RatingCalculator {
      * @return 表现分（double，二分区间中点）
      */
     private double findPerformanceRating(List<Integer> ratings, int excludeIdx,
-                                         double currentSeed, int actualRank, double geoMean) {
+                                         double currentSeed, double actualRank, double geoMean) {
         // 种子范围：在几何平均周围搜索。±1000 覆盖了 elo 体系下所有现实分差，
         // 区间外的选手（远超或远低于全场水平）其表现分必然落在这 ±1000 之内。
         double lo = Math.max(geoMean - 1000, MIN_RATING);

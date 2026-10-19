@@ -32,7 +32,7 @@ public interface VpAttemptService {
     VpAttemptVO start(Long contestId, Long userId);
 
     /**
-     * 交卷，冻结本次 VP 的成绩与名次。
+     * 交卷停止接收提交；有在途判题时先返回SETTLING，完成后冻结成绩。
      *
      * @param contestId 比赛 ID
      * @param userId 用户 ID

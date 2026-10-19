@@ -72,6 +72,8 @@ public class Contest implements Serializable {
 
     /** 赛后自动查重是否已执行（V48，0-未执行 1-已执行） */
     private Integer plagiarismChecked;
+    @com.fasterxml.jackson.annotation.JsonProperty(access = com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+    private LocalDateTime rankFinalizedAt;
 
     @TableField(exist = false)
     private Boolean registered = false;

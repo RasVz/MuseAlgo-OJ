@@ -95,7 +95,7 @@ public class VpAttemptServiceImpl implements VpAttemptService {
         if (running != null) {
             // 已有会话时不新建：VP 可反复重考，每次重考都叠加时长会让刷分变得无成本。
             // 但若旧会话已超时，就在此处顺带交卷，避免留下永远处于 RUNNING 的僵尸记录
-            if (running.getEndTime().isBefore(now)) {
+            if (VpAttempt.STATUS_SETTLING.equals(running.getStatus()) || !running.getEndTime().isAfter(now)) {
                 return finalize(running);
             }
             return toVO(running);
@@ -129,6 +129,7 @@ public class VpAttemptServiceImpl implements VpAttemptService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public VpAttemptVO finish(Long contestId, Long userId) {
+        contestService.getByIdForUpdate(contestId);
         VpAttempt running = findRunning(contestId, userId);
         if (running == null) {
             return toVO(latest(contestId, userId));
@@ -146,9 +147,10 @@ public class VpAttemptServiceImpl implements VpAttemptService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public VpAttemptVO getMy(Long contestId, Long userId) {
+        contestService.getByIdForUpdate(contestId);
         VpAttempt running = findRunning(contestId, userId);
         if (running != null) {
-            if (running.getEndTime().isBefore(LocalDateTime.now())) {
+            if (VpAttempt.STATUS_SETTLING.equals(running.getStatus()) || !running.getEndTime().isAfter(LocalDateTime.now())) {
                 return finalize(running);
             }
             return toVO(running);
@@ -170,7 +172,15 @@ public class VpAttemptServiceImpl implements VpAttemptService {
     private VpAttemptVO finalize(VpAttempt attempt) {
         LocalDateTime now = LocalDateTime.now();
         Contest contest = contestService.getById(attempt.getContestId());
-        boolean oiMode = contest != null && "OI".equalsIgnoreCase(contest.getMode());
+        if (VpAttempt.STATUS_RUNNING.equals(attempt.getStatus())) {
+            attempt.setStatus(VpAttempt.STATUS_SETTLING);
+            if(attempt.getEndTime().isAfter(now)) attempt.setEndTime(now);
+            attempt.setSubmitTime(now);
+            attempt.setUpdateTime(now);
+            vpAttemptMapper.updateById(attempt);
+        }
+        if(contest==null || contest.getRankFinalizedAt()==null || contestVpQuery.hasPending(attempt.getId())) return toVO(attempt);
+        boolean oiMode = "OI".equalsIgnoreCase(contest.getMode());
         int score = oiMode ? contestVpQuery.findBestScores(attempt.getId())
                 .stream().mapToInt(ContestVpQuery.VpProblemScore::bestScore).sum() : 0;
         AcmResult acm = oiMode ? new AcmResult(0, 0) : calculateAcmResult(attempt);
@@ -191,7 +201,6 @@ public class VpAttemptServiceImpl implements VpAttemptService {
             }
         }
         attempt.setStatus(VpAttempt.STATUS_FINISHED);
-        attempt.setSubmitTime(now);
         attempt.setScore(score);
         attempt.setSolvedCount(acm.solvedCount());
         attempt.setPenaltyTime(acm.penaltyTime());
@@ -264,6 +273,7 @@ public class VpAttemptServiceImpl implements VpAttemptService {
         }
         List<Long> problemIds = problemContestMapper.selectList(
                         new LambdaQueryWrapper<top.everblue.oj.contest.entity.ProblemContest>()
+                                .select(top.everblue.oj.contest.entity.ProblemContest::getProblemId)
                                 .eq(top.everblue.oj.contest.entity.ProblemContest::getContestId, contestId))
                 .stream().map(top.everblue.oj.contest.entity.ProblemContest::getProblemId).distinct().toList();
         if (problemIds.isEmpty()) {
@@ -305,8 +315,8 @@ public class VpAttemptServiceImpl implements VpAttemptService {
         return vpAttemptMapper.selectOne(new LambdaQueryWrapper<VpAttempt>()
                 .eq(VpAttempt::getContestId, contestId)
                 .eq(VpAttempt::getUserId, userId)
-                .eq(VpAttempt::getStatus, VpAttempt.STATUS_RUNNING)
-                .last("LIMIT 1"));
+                .in(VpAttempt::getStatus, VpAttempt.STATUS_RUNNING,VpAttempt.STATUS_SETTLING)
+                .orderByDesc(VpAttempt::getId).last("LIMIT 1"));
     }
 
     /**

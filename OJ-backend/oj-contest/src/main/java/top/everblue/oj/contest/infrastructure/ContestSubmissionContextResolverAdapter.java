@@ -69,7 +69,7 @@ public class ContestSubmissionContextResolverAdapter implements ContestSubmissio
      */
     @Override
     public SubmissionContext resolve(Long contestId, Long problemId, Long userId) {
-        Contest contest = contestMapper.selectById(contestId);
+        Contest contest = contestMapper.selectByIdForUpdate(contestId);
         if (contest == null) {
             throw new IllegalArgumentException("比赛不存在");
         }

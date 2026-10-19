@@ -63,6 +63,9 @@ public class ContestManagementApplicationService {
         validateTime(command);
         Contest contest = new Contest();
         applyEditableFields(contest, command);
+        String mode=command.getMode()==null ? "ACM" : command.getMode().trim().toUpperCase(java.util.Locale.ROOT);
+        if(!java.util.Set.of("ACM","OI").contains(mode)) throw new IllegalArgumentException("比赛模式仅支持ACM或OI");
+        contest.setMode(mode);
         contest.setAuthorId(actorId);
         contest.setDuration(durationMinutes(contest));
         if (!contestService.save(contest)) {
@@ -78,12 +81,18 @@ public class ContestManagementApplicationService {
      * @throws IllegalArgumentException id 为空或赛程时间不合法时抛出
      * @throws IllegalStateException 比赛不存在、越权或落库失败时抛出
      */
+    @org.springframework.transaction.annotation.Transactional(rollbackFor=Exception.class)
     public void update(Contest command) {
         if (command.getId() == null) {
             throw new IllegalArgumentException("ID不能为空");
         }
         Contest existing = requireManagedContest(command.getId());
         validateTime(command);
+        if(command.getMode()!=null && !command.getMode().equalsIgnoreCase(existing.getMode()))
+            throw new IllegalStateException("已创建比赛不能更改赛制");
+        if(existing.getRankFinalizedAt()!=null && (!java.util.Objects.equals(existing.getStartTime(),command.getStartTime())
+                || !java.util.Objects.equals(existing.getEndTime(),command.getEndTime())))
+            throw new IllegalStateException("已固化比赛不能更改赛程");
         applyEditableFields(existing, command);
         existing.setDuration(durationMinutes(existing));
         if (!contestService.updateById(existing)) {
@@ -97,6 +106,7 @@ public class ContestManagementApplicationService {
      * @param contestId 比赛 ID
      * @throws IllegalStateException 比赛不存在、越权或删除失败时抛出
      */
+    @org.springframework.transaction.annotation.Transactional(rollbackFor=Exception.class)
     public void delete(Long contestId) {
         requireManagedContest(contestId);
         if (!contestService.removeById(contestId)) {
@@ -117,7 +127,7 @@ public class ContestManagementApplicationService {
      */
     private Contest requireManagedContest(Long contestId) {
         SecurityUtils.requireTeacherOrAdmin();
-        Contest contest = contestService.getById(contestId);
+        Contest contest = contestService.getByIdForUpdate(contestId);
         if (contest == null) {
             throw new IllegalArgumentException("比赛不存在");
         }

@@ -25,6 +25,12 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class VpAttemptServiceImplTest {
+    @org.junit.jupiter.api.BeforeAll
+    static void mybatisMetadata() {
+        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(
+                new org.apache.ibatis.builder.MapperBuilderAssistant(new com.baomidou.mybatisplus.core.MybatisConfiguration(), "test"), VpAttempt.class);
+    }
+
 
     @Test
     void getMyFinalizesExpiredAttemptInsideTransaction() throws Exception {
@@ -77,6 +83,7 @@ class VpAttemptServiceImplTest {
         when(attemptMapper.selectOne(any())).thenReturn(attempt);
         Contest contest = new Contest();
         contest.setMode("ACM");
+        contest.setRankFinalizedAt(LocalDateTime.now().minusDays(1));
         when(contestService.getById(1L)).thenReturn(contest);
         when(vpQuery.findSubmissions(9L)).thenReturn(List.of(
                 new ContestVpQuery.VpSubmission(100L, (byte) 2, start.plusMinutes(5)),
@@ -90,7 +97,7 @@ class VpAttemptServiceImplTest {
         assertEquals(60, result.getPenaltyTime());
         assertEquals(1, result.getTotalParticipants());
         assertEquals(VpAttempt.STATUS_FINISHED, result.getStatus());
-        verify(attemptMapper).updateById(attempt);
+        verify(attemptMapper,org.mockito.Mockito.times(2)).updateById(attempt);
     }
 
     private static VpAttemptServiceImpl service(VpAttemptMapper attemptMapper,

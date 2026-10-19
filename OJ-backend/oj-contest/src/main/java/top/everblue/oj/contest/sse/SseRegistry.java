@@ -52,6 +52,8 @@ public class SseRegistry {
 
     private final Map<Long, List<SseEmitter>> emitters = new ConcurrentHashMap<>();
 
+    public java.util.Set<Long> activeContestIds() { return java.util.Set.copyOf(emitters.keySet()); }
+
     /**
      * 注册一个比赛观众连接，并把清理动作挂在连接的三种终止回调上。
      * <p>
@@ -75,7 +77,7 @@ public class SseRegistry {
      * <p>
      * 单个连接的发送失败<b>只摘除该连接</b>，不影响同一场比赛的其他观众——
      * 榜单推送是尽力而为的通知语义，某观众断线不应阻塞其余观众的实时性，
-     * 真正的数据一致性由 {@link #getAllRanks} 之类的快照查询兜底（前端重连时会拉到全量）。
+     * 真正的数据一致性由数据库快照查询兜底（前端重连时会拉到全量）。
      * </p>
      * 本方法不捕获 {@code RuntimeException}：{@code send} 声明的是 {@link IOException}，
      * 在 Spring 的实现里非法状态（如连接已 complete）同样走 IOException 分支，已被覆盖。
