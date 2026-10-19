@@ -216,6 +216,32 @@ class SubmissionControllerSecurityTest {
         assertEquals(200, result.getCode());
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    void anonymousMineOnlyCannotBypassHiddenSubmissions() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), "test"), Submission.class);
+        SubmissionService service = mock(SubmissionService.class);
+        when(service.page(any(Page.class), any(LambdaQueryWrapper.class))).thenReturn(new Page<Submission>(1, 15));
+        UserQuery users = mock(UserQuery.class);
+        when(users.findUserIdsWithSubmissionsHidden()).thenReturn(List.of(20L));
+        var controller = controller(service, users, mock(ProblemQuery.class), mock(ContestScheduleQuery.class));
+        controller.list(1, 15, null, null, null, null, true, false);
+        var captor = org.mockito.ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        org.mockito.Mockito.verify(service).page(any(Page.class), captor.capture());
+        assertTrue(captor.getValue().getCustomSqlSegment().contains("user_id NOT IN"));
+    }
+
+    @Test
+    void detailPreservesNumericScore() {
+        login(10L);
+        var service = mock(SubmissionService.class);
+        var submission = new Submission(); submission.setId(5L); submission.setUserId(10L); submission.setProblemId(100L);
+        submission.setStatus((byte)1); submission.setScore(73);
+        when(service.getById(5L)).thenReturn(submission);
+        var controller = controller(service, mock(UserQuery.class), mock(ProblemQuery.class), mock(ContestScheduleQuery.class));
+        assertEquals(73, controller.detail(5L).getData().getScore());
+    }
+
     private static void login(Long userId) {
         User user = new User();
         user.setId(userId);

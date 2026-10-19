@@ -135,7 +135,7 @@ public class SubmissionController {
         }
 
         // 隐私：非"只看自己"且非管理员时，隐藏关闭了分享的用户的提交（本人自己的记录始终可见）
-        if (!Boolean.TRUE.equals(mineOnly) && !SecurityUtils.isAdmin()) {
+        if (!(Boolean.TRUE.equals(mineOnly) && loginUserId != null) && !SecurityUtils.isAdmin()) {
             List<Long> hiddenUserIds = userQuery.findUserIdsWithSubmissionsHidden().stream()
                     .filter(id -> !id.equals(loginUserId))
                     .toList();
