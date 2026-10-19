@@ -71,7 +71,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public Result<String> handleException(Exception e) {
         log.error("未处理的异常", e);
-        return Result.error("系统开小差了: " + e.getMessage());
+        return Result.error("系统暂时不可用，请稍后重试");
     }
 
     @ExceptionHandler(ForbiddenException.class)
