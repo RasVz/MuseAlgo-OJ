@@ -24,7 +24,7 @@
 
             <div class="info-item">
               <span class="label">类型</span>
-              <span class="value">个人精选</span>
+              <span class="value">{{ ({ 1: '个人精选', 2: '官方题单', 3: '班级题单', 4: '班级作业' })[detail.type] || '题单' }}</span>
             </div>
             <div class="info-item">
               <span class="label">总热度</span>

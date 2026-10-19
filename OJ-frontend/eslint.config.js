@@ -10,7 +10,7 @@ export default defineConfig([
     files: ['**/*.{js,mjs,jsx,vue}'],
   },
 
-  globalIgnores(['**/dist/**', '**/dist-ssr/**', '**/coverage/**', '**/archived/**']),
+  globalIgnores(['**/dist/**', '**/dist-ssr/**', '**/coverage/**', '**/archived/**', '**/playwright-report/**', '**/test-results/**']),
 
   {
     languageOptions: {
@@ -25,7 +25,7 @@ export default defineConfig([
     // 单独成块而不是把 globals.node 混进上面的 browser 配置——
     // 那样浏览器侧代码误写 process/require 也不会报错，等于丢掉了这道检查。
     name: 'app/node-env-files',
-    files: ['vite.config.js', '**/*.config.js', 'scripts/**/*.{js,mjs,cjs}'],
+    files: ['vite.config.js', '**/*.config.js', 'scripts/**/*.{js,mjs,cjs}', 'tests/e2e/**/*.js'],
     languageOptions: {
       globals: {
         ...globals.node,
