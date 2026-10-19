@@ -126,6 +126,7 @@ judge0:
   per-process-memory-limit: ${JUDGE0_PER_PROCESS_MEMORY_LIMIT:true}
 oj:
   slidev:
+    build-timeout-seconds: ${OJ_SLIDEV_BUILD_TIMEOUT_SECONDS:120}
     # 默认输出到「工作区根」下的 OJ-Coursewares；可用 OJ_SLIDEV_OUTPUT_DIR 覆盖。
     # 注意：相对路径基于 findWorkspaceRoot()（从进程工作目录向上找同时含
     # OJ-backend / OJ-Slidev 的目录）解析；发行形态（单 jar / 生产镜像）没有这套

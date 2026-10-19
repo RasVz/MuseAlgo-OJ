@@ -73,7 +73,7 @@ public class JwtAuthenticationTokenFilter extends OncePerRequestFilter {
                     UserDetails userDetails = userDetailsService.loadUserByUsername(username);
 
                     // 黑名单检查：已注销的 token（jti 命中）视为未认证；无 jti 的存量 token 跳过（兼容）
-                    if (jwtUtils.validateToken(token, userDetails.getUsername())
+                    if (jwtUtils.validateAccessToken(token, userDetails.getUsername())
                             && !jwtBlacklistService.isRevoked(jwtUtils.extractJti(token))) {
                         UsernamePasswordAuthenticationToken authentication =
                                 new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
