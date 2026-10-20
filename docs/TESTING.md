@@ -20,7 +20,7 @@ python3 tests/run_suite.py --output /tmp/oj-integration
 - 真实 MySQL/Redis 的 `-Pintegration`，含权限、任务代次、事务回滚、并发固化、空榜和 VP 延迟判题。
 - API 登录→选题→真实 AC/WA/CE；教师建班→邀请码入班→作业发布→学生提交→教师看到完成。
 - 对前端构建产物运行两个 Chromium 用例：实际页面登录、题目与已判详情；作业题单显示。
-- ACM/OI 整场比赛，在判题机暂停时结束比赛，确认等待在途判题；恢复后自动固化，再重复重建/固化及 VP。
+- ACM/OI 整场比赛，暂停Judge0 API服务和异步worker后结束比赛，确认提交仍在途且没有提前固化；恢复后自动固化，再重复重建/固化及VP。仅暂停worker不能延迟`wait=true`同步判题，不能用机器较慢偶然形成的延迟代替故障注入。
 - 同一流程分别运行无 MQ、有 MQ、broker 故障三种模式；故障后重启 broker。成绩不依赖 MQ 缓存。
 
 本地只需快速验证主流程时，可加 `--core-only`（保留集成、真实API和浏览器，跳过扩展MQ故障矩阵）；CI默认仍执行完整矩阵。
