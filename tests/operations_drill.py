@@ -65,7 +65,7 @@ def main(args):
             assert sql(source,file,"SELECT MAX(CAST(version AS UNSIGNED)) FROM flyway_schema_history WHERE success=1;")=='54'
             result=subprocess.run(['docker','compose','--env-file',str(file),'-p',source,'-f',str(ROOT/'docker-compose.prod.yml'),
                                    'exec','-T','mysql','sh','-c','MYSQL_PWD="$OJ_DB_PASS" mysql -umusealgo_app oj_db -e "CREATE TABLE forbidden_ddl(id INT)"'],
-                                  stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+                                  env=base_env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
             assert result.returncode!=0 and b'denied' in result.stderr.lower()
             web='http://127.0.0.1:'+values['WEB_PORT']
             assert status(web+'/')[0]==200
@@ -90,7 +90,7 @@ def main(args):
             evidence['backup']={'manifest_sha256':hashlib.sha256((backup/'manifest.json').read_bytes()).hexdigest(),'all_four_parts_verified':True,'probe_healthy':True}
             # Negative monitoring test without a real application failure.
             sql(source,file,"INSERT INTO submission(problem_id,user_id,language,status,judge_phase) SELECT 1,id,'cpp',0,'JUDGING' FROM user WHERE username='drill-user'; INSERT INTO judge_task(submission_id,status,locked_at,attempt_count) SELECT MAX(id),'PROCESSING',NOW()-INTERVAL 20 MINUTE,1 FROM submission;")
-            probe=subprocess.run(['python3',str(ROOT/'scripts/ops.py'),'--project',source,'--env-file',str(file),'check','--backup-root',str(backup.parent)],stdout=subprocess.PIPE)
+            probe=subprocess.run(['python3',str(ROOT/'scripts/ops.py'),'--project',source,'--env-file',str(file),'check','--backup-root',str(backup.parent)],env=base_env,stdout=subprocess.PIPE)
             assert probe.returncode==1 and json.loads(probe.stdout)['stalled_judges']>=1
             evidence['alert_negative']=True
             sql(source,file,"DELETE FROM judge_task; DELETE FROM submission;")
@@ -105,7 +105,7 @@ def main(args):
             if args.previous_backend_image:
                 override=base/'rollback.yml';override.write_text('services:\n  backend:\n    image: '+args.previous_backend_image+'\n')
                 command=['docker','compose','--env-file',str(file),'-p',source,'-f',str(ROOT/'docker-compose.prod.yml'),'-f',str(override)]
-                subprocess.run(command+['up','-d','--wait','backend'],check=True)
+                subprocess.run(command+['up','-d','--wait','backend'],env=base_env,check=True)
                 assert before==sql(source,file,"SELECT username,nickname FROM user WHERE username='drill-user';")
                 assert json.loads(status(backend+'/actuator/health')[1])['status']=='UP'
                 compose(source,file,'up','-d','--wait','backend')
