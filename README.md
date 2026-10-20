@@ -71,7 +71,7 @@ MuseAlgo-OJ/
 │   ├── oj-analytics/   #   学情统计
 │   ├── oj-framework/   #   基础配置 / 安全 / JWT
 │   ├── oj-common/      #   通用工具与常量
-│   └── db/             #   建表快照与演示种子数据
+│   └── db/             #   演示种子数据与判题用例
 ├── OJ-frontend/        # 学生 / 教师主站（Vue 3 + Vite）
 ├── OJ-Slidev/          # Slidev 课件工程
 ├── docker/             # 容器辅助配置（Maven 镜像、Judge0 配置、数据库初始化目录）
