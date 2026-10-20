@@ -1,15 +1,14 @@
 version: 2
 
-# 依赖自动更新：每周检查一次，把可升级的依赖提成 PR。
-# 这样漏洞公告出来后不必手工盯版本。
+# 依赖版本更新：每月检查，每个生态最多保留一个待处理 PR。
+# minor/patch 更新按生态分组；大版本单独审核，安全更新与漏洞告警继续保留。
 updates:
   # 后端 Maven 依赖（多模块，统一读根 pom）
   - package-ecosystem: maven
     directory: /OJ-backend
     schedule:
-      interval: weekly
-      day: monday
-    open-pull-requests-limit: 5
+      interval: monthly
+    open-pull-requests-limit: 1
     commit-message:
       prefix: "chore(deps)"
     # Spring Boot 保持 3.x；跨主版本迁移需单独验证整套 starter 和业务行为。
@@ -17,34 +16,35 @@ updates:
       - dependency-name: "org.springframework*"
         update-types: ["version-update:semver-major"]
     groups:
-      # 把 Spring 全家桶合并成一个 PR，避免刷屏
-      spring:
+      backend-routine:
         patterns:
-          - "org.springframework*"
+          - "*"
+        update-types: ["minor", "patch"]
 
   # 前端 npm 依赖
   - package-ecosystem: npm
     directory: /OJ-frontend
     schedule:
-      interval: weekly
-      day: monday
-    open-pull-requests-limit: 5
+      interval: monthly
+    open-pull-requests-limit: 1
     commit-message:
       prefix: "chore(deps)"
     groups:
-      vue:
+      frontend-routine:
         patterns:
-          - "vue*"
-          - "@vue/*"
-      element-plus:
-        patterns:
-          - "element-plus"
-          - "@element-plus/*"
+          - "*"
+        update-types: ["minor", "patch"]
 
   # GitHub Actions 自身版本
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: monthly
+    open-pull-requests-limit: 1
     commit-message:
       prefix: "chore(ci)"
+    groups:
+      actions-routine:
+        patterns:
+          - "*"
+        update-types: ["minor", "patch"]
