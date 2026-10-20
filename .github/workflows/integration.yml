@@ -1,0 +1,48 @@
+name: integration
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  core-flows:
+    name: 数据库、真实判题和浏览器链路
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    env:
+      TZ: Asia/Shanghai
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: OJ-frontend/package-lock.json
+      - name: 安装浏览器依赖
+        working-directory: OJ-frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: 独立环境完整验收（自动清理容器和卷）
+        run: python3 tests/run_suite.py --output "$RUNNER_TEMP/oj-integration"
+      - name: 保存失败证据和测试报告
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-evidence
+          path: |
+            ${{ runner.temp }}/oj-integration/*.log
+            ${{ runner.temp }}/oj-integration/*.json
+            ${{ runner.temp }}/oj-integration/browser-report/
+            ${{ runner.temp }}/oj-integration/browser-results/
+            OJ-frontend/playwright-report/
+            OJ-frontend/test-results/
+            OJ-backend/**/surefire-reports/
+          retention-days: 7
