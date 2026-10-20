@@ -17,7 +17,8 @@ docker compose -f compose.dev.yml up -d
 
 ## 分支与提交
 
-- 从 `master` 切出功能分支，命名建议 `feat/简述`、`fix/简述`、`docs/简述`。
+- 只长期维护 `master`；从它切出临时功能分支，命名建议 `feat/简述`、`fix/简述`、`docs/简述`，通过 PR 合并后自动删除源分支。
+- Dependabot 常规版本更新按月检查，minor/patch 按生态分组，每个生态最多一个待处理版本更新 PR；大版本单独审核，安全更新与漏洞告警继续保留。
 - 提交信息使用 **Conventional Commits** 前缀：`feat` / `fix` / `refactor` / `perf` / `docs` / `test` / `chore`。
   示例：`fix(judge): 修正非 <script> 注解中的 XML 转义`
 - 一个提交只做一件事，避免把格式化与逻辑改动混在一起。
