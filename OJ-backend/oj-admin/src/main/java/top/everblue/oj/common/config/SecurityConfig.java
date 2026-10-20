@@ -53,7 +53,10 @@ import top.everblue.oj.common.filter.JwtAuthenticationTokenFilter;
 @EnableMethodSecurity
 public class SecurityConfig {
 
-    // 1. 必须注入我们的 JWT 过滤器！你之前的代码漏了这个
+    @org.springframework.beans.factory.annotation.Value("${oj.security.api-docs-public:true}")
+    private boolean publicApiDocs;
+
+    // JWT 验证过滤器
     @Autowired
     private JwtAuthenticationTokenFilter jwtAuthenticationTokenFilter;
 
@@ -96,7 +99,8 @@ public class SecurityConfig {
                         .requestMatchers("/auth/refresh").permitAll()
                         .requestMatchers("/auth/logout").permitAll() // 注销=尽力而为+幂等（无 token 也返回成功），匿名可调
                         .requestMatchers("/error").permitAll() // 【关键】防止报错时跳转 /error 产生 403
-                        .requestMatchers("/actuator/health", "/actuator/info", "/actuator/prometheus").permitAll() // 运维可观测性端点
+                        .requestMatchers("/actuator/health").permitAll()
+                        .requestMatchers("/actuator/**").hasRole("ADMIN") // 运维可观测性端点
                         .requestMatchers("/metrics/batch").permitAll() // 前端体验埋点上报（匿名聚合，无敏感数据，@RateLimit byIp 限频）
                         .requestMatchers("/coursewares/**", "/api/coursewares/**").permitAll() // 本地 Slidev 静态课件
                         .requestMatchers("/uploads/**").permitAll() // 本地文件上传（COS 未配置时的降级存储）
@@ -128,7 +132,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/user/learning-plan/{id:\\d+}").permitAll()
 
                         // Swagger 文档 (如果有)
-                        .requestMatchers("/doc.html", "/webjars/**", "/v3/api-docs/**").permitAll()
+                        .requestMatchers("/doc.html", "/webjars/**", "/v3/api-docs/**")
+                        .access(new org.springframework.security.web.access.expression.WebExpressionAuthorizationManager(
+                                publicApiDocs ? "permitAll" : "hasRole('ADMIN')"))
 
                         // === 其他接口必须登录 ===
                         .anyRequest().authenticated()

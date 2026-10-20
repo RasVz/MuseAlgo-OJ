@@ -122,6 +122,14 @@ public class JwtUtils {
         return (extractedUsername.equals(username) && !isTokenExpired(token));
     }
 
+    public boolean validateAccessToken(String token, String username) {
+        return validateToken(token, username) && "access".equals(extractClaims(token).get("type"));
+    }
+
+    public boolean validateRefreshToken(String token, String username) {
+        return validateToken(token, username) && "refresh".equals(extractClaims(token).get("type"));
+    }
+
     private Claims extractClaims(String token) {
         return Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload();
     }

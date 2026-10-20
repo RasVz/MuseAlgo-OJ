@@ -37,7 +37,7 @@ public class RankController {
     @Operation(summary = "获取全站排行榜")
     @GetMapping("/list")
     public Result<List<RankVO>> getRankList(@RequestParam(defaultValue = "50") int limit) {
-        // 限制一下最大查询数量，防止前端传个 10000 把 Redis 查爆
+        // 限制一下最大查询数量，防止前端传个 10000 造成过大的数据库查询
         // 必须服务端设上限：limit 是前端可控参数，不设防就等于开放了任意深度的榜单遍历
         if (limit > 100) {
             limit = 100;
@@ -62,7 +62,7 @@ public class RankController {
                 return Result.success(-1L);
             }
 
-            // 3. 查询 Redis
+            // 3. 查询数据库当前名次
             Long rank = rankService.getMyRank(userId);
             return Result.success(rank);
 

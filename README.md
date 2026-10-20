@@ -37,7 +37,7 @@ MuseAlgo-OJ 是一套面向**信息学奥赛教学**的自托管在线判题系�
 | 模块 | 能力 |
 |---|---|
 | **题库与判题** | 支持多种语言的题目管理、测试用例、样例、题解；单题/批量导入（XML / FPS / ZIP） |
-| **比赛** | 支持 ACM 与 **OI 赛制 + subtask 部分分**；赛中实时榜单、赛后自动查重与重测 |
+| **比赛** | 支持 ACM 与 **OI 赛制 + subtask 部分分**；赛中实时榜单、赛后自动查重 |
 | **班级教学** | 建班、拉学生、按班下发题单与课件、作业与进度跟踪 |
 | **课件系统** | 基于 [Slidev](https://sli.dev/) 生成课件，在线 iframe 预览与下发 |
 | **AI 助教** | 接入大模型（默认 DeepSeek）提供题目讲解、代码诊断、提示；支持流式输出与 RAG 检索增强 |
@@ -177,7 +177,8 @@ docker compose -f compose.dev.yml down -v            # 停止并清空数据卷
 | 变量 | 必填 | 说明 |
 |---|---|---|
 | `JWT_SECRET` | ✅ | JWT 签名密钥，≥32 字节随机串。缺失或过短后端启动即失败 |
-| `OJ_DB_PASS` | ✅ | 数据库口令。产品部署必填（开发栈由 compose 固定为 `123456`） |
+| `OJ_DB_PASS` | ✅ | 应用数据库口令，生产使用至少32位随机十六进制（开发栈固定覆盖为 `123456`） |
+| `OJ_DB_MIGRATION_PASS` / `OJ_DB_ROOT_PASS` | ✅ 生产 | 独立迁移账号与root口令；不注入业务后端，详见运维指南 |
 | `DEEPSEEK_API_KEY` | ⭕ | AI 助教密钥。缺失时 AI 功能自动降级，其余功能不受影响 |
 | `DEEPSEEK_API_URL` | ⭕ | 兼容 OpenAI 格式的接口地址，不设置则用内置默认值 |
 | `AI_MODEL` | ⭕ | 模型名，不设置则用内置默认值 |
@@ -198,7 +199,7 @@ docker build -f deploy/Dockerfile.backend  -t musealgo-oj/backend:latest  .
 docker build -f deploy/Dockerfile.frontend -t musealgo-oj/frontend:latest .
 
 # 2. 准备密钥
-cp .env.example .env && vi .env      # 填 JWT_SECRET 与 OJ_DB_PASS
+cp .env.example .env && vi .env      # 填JWT与三种独立数据库口令（应用、迁移、root）
 chmod 600 .env
 
 # 3. 启动（前端 Nginx 托管静态产物，/api 反代后端；MySQL/Redis 不对外暴露端口）
@@ -207,6 +208,8 @@ curl -fsS localhost:8080/actuator/health     # 期望 {"status":"UP"}
 ```
 
 生产编排与开发编排使用不同项目名（`musealgo-prod` / `musealgo-dev`），数据卷互不干扰。判题机 Judge0 需要 `privileged` 权限，单独部署后用 `JUDGE0_URLS` 接入。
+
+生产新装采用应用CRUD账号与独立迁移服务；已有数据卷须先按[运维指南](docs/OPERATIONS.md)配置账号。
 
 完整说明（systemd 方案、Nginx、密钥轮换、升级回滚、上线检查清单）见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)。
 
@@ -237,6 +240,8 @@ curl -fsS localhost:8080/actuator/health     # 期望 {"status":"UP"}
 | [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | 常见问题与排错（启动失败、端口冲突、判题不返回、登录失败…） |
 
 > 运行起来后，接口文档（Knife4j / OpenAPI 3）在 **http://localhost:8080/doc.html**。
+
+核心链路验收见 [TESTING.md](docs/TESTING.md)，备份恢复与告警见 [OPERATIONS.md](docs/OPERATIONS.md)。
 
 ## 第三方组件与许可
 

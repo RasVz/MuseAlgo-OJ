@@ -23,11 +23,11 @@ import java.time.LocalDateTime;
  * </p>
  * <ul>
  *   <li>{@link #STATUS_RUNNING}：已开始、计时中，尚未交卷。</li>
- *   <li>{@link #STATUS_FINISHED}：已交卷冻结，此时 {@code endTime}、{@code submitTime} 与成绩字段才最终确定。</li>
+ *   <li>{@link #STATUS_FINISHED}：等待判题后冻结成绩；endTime/submitTime在交卷时已固定。</li>
  * </ul>
  * <p>
  * {@code totalParticipants} 与 {@code rankNum} 是<b>本次 VP 内的相对值</b>，
- * 基数是「同场参加 VP 的人数」而非正式参赛人数，跨 VP 无可比性。
+ * 基数是「正式参赛人数加本人」而非其他VP会话数，跨 VP 无可比性。
  * </p>
  */
 @Getter
@@ -47,6 +47,8 @@ public class VpAttempt implements Serializable {
      * VP 已交卷：计时停止，成绩与名次冻结，之后的提交不再计入本次 VP。
      */
     public static final String STATUS_FINISHED = "FINISHED";
+    /** 已停止答题，等待在途判题和正式榜固化。 */
+    public static final String STATUS_SETTLING = "SETTLING";
 
     @TableId(value = "id", type = IdType.AUTO)
     private Long id;

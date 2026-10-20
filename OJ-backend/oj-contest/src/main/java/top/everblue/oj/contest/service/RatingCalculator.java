@@ -27,4 +27,8 @@ public interface RatingCalculator {
      * @return 每个参赛者的 rating 记录（含 delta）
      */
     List<UserRating> calculate(Long contestId, List<Long> userIds, List<Integer> currentRatings);
+
+    default List<UserRating> calculate(Long contestId, List<Long> userIds, List<Integer> currentRatings, List<Integer> ranks) {
+        return calculate(contestId,userIds,currentRatings);
+    }
 }

@@ -19,6 +19,11 @@ public class ContestVpQueryAdapter implements ContestVpQuery {
     }
 
     @Override
+    public boolean hasPending(Long vpAttemptId) {
+        return submissionMapper.countPendingVp(vpAttemptId) > 0;
+    }
+
+    @Override
     public List<VpProblemScore> findBestScores(Long vpAttemptId) {
         return submissionMapper.selectVpBestScores(vpAttemptId).stream()
                 .map(row -> new VpProblemScore(

@@ -69,7 +69,7 @@ class AuthControllerLogoutTest {
 
     @Test
     void refresh_refreshToken已注销返回401() {
-        when(jwtUtils.validateToken(REFRESH, "stu")).thenReturn(true);
+        when(jwtUtils.validateRefreshToken(REFRESH, "stu")).thenReturn(true);
         when(jwtUtils.extractUsername(REFRESH)).thenReturn("stu");
         when(jwtUtils.extractJti(REFRESH)).thenReturn("jti-refresh");
         when(jwtBlacklistService.isRevoked("jti-refresh")).thenReturn(true);
@@ -81,7 +81,7 @@ class AuthControllerLogoutTest {
 
     @Test
     void refresh_未注销正常刷新() {
-        when(jwtUtils.validateToken(REFRESH, "stu")).thenReturn(true);
+        when(jwtUtils.validateRefreshToken(REFRESH, "stu")).thenReturn(true);
         when(jwtUtils.extractUsername(REFRESH)).thenReturn("stu");
         when(jwtUtils.extractJti(REFRESH)).thenReturn("jti-refresh");
         when(jwtBlacklistService.isRevoked("jti-refresh")).thenReturn(false);
@@ -92,4 +92,11 @@ class AuthControllerLogoutTest {
         assertEquals(200, result.getCode());
         assertEquals("new-access", result.getData());
     }
+    @Test
+    void accessTokenCannotBeUsedToRefreshSession() {
+        JwtUtils realJwt = new JwtUtils(java.util.UUID.randomUUID().toString().repeat(2));
+        AuthController controller = new AuthController(userService, authenticationManager, realJwt, jwtBlacklistService);
+        assertEquals(401, controller.refreshToken(Map.of("refreshToken", realJwt.generateAccessToken("stu"))).getCode());
+    }
+
 }

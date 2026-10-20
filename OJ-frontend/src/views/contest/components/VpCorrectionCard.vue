@@ -4,12 +4,15 @@
       <div class="card-header">
         <span>虚拟参赛 & 赛后订正</span>
         <el-button v-if="vpAttempt && vpAttempt.status === 'RUNNING'" size="small" type="primary" :loading="vpBusy" @click="doFinishVp">交卷</el-button>
-        <el-button v-else size="small" type="primary" :loading="vpBusy" @click="doStartVp">开始虚拟参赛</el-button>
+        <el-button v-else-if="vpAttempt?.status !== 'SETTLING'" size="small" type="primary" :loading="vpBusy" @click="doStartVp">开始虚拟参赛</el-button>
       </div>
     </template>
 
     <div v-if="vpAttempt && vpAttempt.status === 'RUNNING'" class="vp-running">
       <span>倒计时 <b>{{ formatVpTime(vpRemaining) }}</b>，按比赛真实时长计时，提交计入 VP 成绩</span>
+    </div>
+    <div v-else-if="vpAttempt?.status === 'SETTLING'" role="status" aria-live="polite">
+      已交卷，正在等待判题和正式榜结算。成绩完成后会自动更新。
     </div>
     <div v-else-if="vpAttempt && vpAttempt.status === 'FINISHED'" class="vp-result">
       <el-tag type="success">
@@ -38,7 +41,7 @@
 // 逻辑分两段：比赛进行中隐藏；比赛结束（isContestFinished 变 true）后拉取 VP 记录与罚时公示。
 // 倒计时在前端本地递减，真正的时间边界由服务端裁定——
 // 前端只负责显示，超时也会主动调 finishVp 兜底交卷。
-import { ref, watch } from 'vue'
+import { ref, watch, onBeforeUnmount } from 'vue'
 import { getVp, startVp, finishVp, getCorrection } from '@/api/contest'
 import { unwrapResultData } from '@/api/contestRank'
 
@@ -53,18 +56,27 @@ const vpRemaining = ref(0)
 const vpBusy = ref(false)
 const corrections = ref([])
 let vpTimer = null
+let disposed = false
 
 // 剩余秒数由服务端下发，前端不自行推算起始时间：
 // 刷新页面后重新拉一次就能准确续上，无需保存本地时间戳。
 const loadVp = async () => {
   try {
     const res = await getVp(props.contestId)
+    if (disposed) return
     vpAttempt.value = unwrapResultData(res) || null
     if (vpAttempt.value?.status === 'RUNNING') {
       vpRemaining.value = vpAttempt.value.remainingSeconds ?? 0
       startVpTimer()
+    } else if (vpAttempt.value?.status === 'SETTLING') {
+      startSettlementPolling()
+    } else {
+      stopVpTimer()
     }
-  } catch (e) { console.error(e) }
+  } catch (e) {
+    console.error(e)
+    if (!disposed && ['RUNNING', 'SETTLING'].includes(vpAttempt.value?.status)) startSettlementPolling()
+  }
 }
 
 const doStartVp = async () => {
@@ -75,6 +87,10 @@ const doStartVp = async () => {
     if (vpAttempt.value?.status === 'RUNNING') {
       vpRemaining.value = vpAttempt.value.remainingSeconds ?? 0
       startVpTimer()
+    } else if (vpAttempt.value?.status === 'SETTLING') {
+      startSettlementPolling()
+    } else {
+      stopVpTimer()
     }
   } finally { vpBusy.value = false }
 }
@@ -87,6 +103,7 @@ const doFinishVp = async () => {
     const res = await finishVp(props.contestId)
     vpAttempt.value = unwrapResultData(res) || null
     stopVpTimer()
+    if (vpAttempt.value?.status === 'SETTLING') startSettlementPolling()
   } finally { vpBusy.value = false }
 }
 
@@ -94,15 +111,26 @@ const doFinishVp = async () => {
 // 归零时主动交卷，避免用户忘点导致 VP 超时挂起。
 const startVpTimer = () => {
   stopVpTimer()
+  if (disposed) return
   vpTimer = setInterval(() => {
     vpRemaining.value -= 1
-    if (vpRemaining.value <= 0) doFinishVp()
+    if (vpRemaining.value <= 0) {
+      stopVpTimer()
+      loadVp()
+    }
   }, 1000)
 }
 
 const stopVpTimer = () => {
-  if (vpTimer) { clearInterval(vpTimer); vpTimer = null }
+  if (vpTimer) { clearInterval(vpTimer); clearTimeout(vpTimer); vpTimer = null }
 }
+
+const startSettlementPolling = () => {
+  stopVpTimer()
+  if (disposed) return
+  vpTimer = setTimeout(loadVp, 3000)
+}
+onBeforeUnmount(() => { disposed = true; stopVpTimer() })
 
 const formatVpTime = (seconds) => {
   const s = Math.max(0, seconds)

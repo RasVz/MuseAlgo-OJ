@@ -17,7 +17,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest
+@WebMvcTest(properties="oj.security.api-docs-public=false")
 @Import({ SecurityConfig.class, JwtAuthenticationTokenFilter.class, SecurityProbeController.class })
 class SecurityConfigTest {
 
@@ -49,6 +49,13 @@ class SecurityConfigTest {
     void authenticatedUserWithoutRoleStillGets403() throws Exception {
         mockMvc.perform(get("/api/probe/admin")
                         .with(user("student").roles("STUDENT")))
+                .andExpect(status().isForbidden());
+    }
+    @Test
+    void productionDocsAndMetricsRejectAnonymousAndStudents() throws Exception {
+        mockMvc.perform(get("/doc.html")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/actuator/prometheus")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/actuator/prometheus").with(user("student").roles("STUDENT")))
                 .andExpect(status().isForbidden());
     }
 }

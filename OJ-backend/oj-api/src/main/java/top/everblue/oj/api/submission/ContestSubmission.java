@@ -2,7 +2,7 @@ package top.everblue.oj.api.submission;
 
 import java.time.LocalDateTime;
 
-/** 比赛提交只读视图 — 提供给已判提交历史的跨模块消费者，不含源码等敏感字段。 */
+/** 比赛提交只读视图 — 提供给提交历史的跨模块消费者，不含源码等敏感字段。 */
 public record ContestSubmission(
         Long id,
         Long contestId,
@@ -21,7 +21,7 @@ public record ContestSubmission(
     public static final byte ST_RUNTIME_ERROR = 4;
     public static final byte ST_TIME_LIMIT_EXCEEDED = 5;
 
-    /** 将 status byte 映射为 RankRedisService 可识别的状态字符串。 */
+    /** 将 status byte 映射为 可读状态字符串。 */
     public static String statusLabel(Byte status) {
         if (status == null) return "UNKNOWN";
         return switch (status) {

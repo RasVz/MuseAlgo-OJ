@@ -60,7 +60,7 @@ class JudgeWorkerTest {
             return null;
         }).when(judgeExecutor).execute(any(Runnable.class));
 
-        worker = new JudgeWorker(judgeTaskService, judgeCompletionService, judgeOrchestrator,
+        worker = new JudgeWorker(judgeTaskService, judgeOrchestrator,
                 judgeMetrics, judgeExecutor);
         ReflectionTestUtils.setField(worker, "batchSize", 8);
     }
@@ -80,12 +80,9 @@ class JudgeWorkerTest {
 
         worker.pollAndJudge();
 
-        verify(judgeOrchestrator, times(1)).executeJudge(10L);
-        verify(judgeOrchestrator, times(1)).executeJudge(11L);
+        verify(judgeOrchestrator, times(1)).executeJudge(org.mockito.ArgumentMatchers.argThat(t -> t.getSubmissionId().equals(10L)));
+        verify(judgeOrchestrator, times(1)).executeJudge(org.mockito.ArgumentMatchers.argThat(t -> t.getSubmissionId().equals(11L)));
 
-        ArgumentCaptor<JudgeTask> captor = ArgumentCaptor.forClass(JudgeTask.class);
-        verify(judgeCompletionService, times(2)).completeWithOutbox(captor.capture());
-        assertEquals(List.of(1L, 2L), captor.getAllValues().stream().map(JudgeTask::getId).toList());
     }
 
     @Test
@@ -95,20 +92,20 @@ class JudgeWorkerTest {
         worker.pollAndJudge();
 
         verify(judgeOrchestrator, never()).executeJudge(any());
-        verify(judgeCompletionService, never()).completeWithOutbox(any());
+
     }
 
     @Test
     void singleTaskFailureDoesNotAffectSiblings() {
         when(judgeTaskService.claimBatch(8)).thenReturn(List.of(task(1L, 10L), task(2L, 11L)));
-        doThrow(new IllegalStateException("judge0 down")).when(judgeOrchestrator).executeJudge(10L);
+        doThrow(new IllegalStateException("judge0 down")).when(judgeOrchestrator).executeJudge(org.mockito.ArgumentMatchers.argThat(t -> t.getSubmissionId().equals(10L)));
 
         worker.pollAndJudge();
 
         // 失败任务走 fail 流程；同批其他任务正常完成
-        verify(judgeTaskService).fail(eq(1L), anyString());
-        verify(judgeOrchestrator, times(1)).executeJudge(11L);
-        verify(judgeCompletionService, times(1)).completeWithOutbox(any(JudgeTask.class));
+        verify(judgeTaskService).fail(org.mockito.ArgumentMatchers.argThat(t -> t.getId().equals(1L) && t.getAttemptCount() == 1), anyString());
+        verify(judgeOrchestrator, times(1)).executeJudge(org.mockito.ArgumentMatchers.argThat(t -> t.getSubmissionId().equals(11L)));
+
     }
 
     @Test

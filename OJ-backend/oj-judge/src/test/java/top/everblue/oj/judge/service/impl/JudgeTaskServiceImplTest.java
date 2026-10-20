@@ -76,4 +76,24 @@ class JudgeTaskServiceImplTest {
         verify(judgeTaskMapper, never()).claimTasks(anyInt());
         verify(judgeTaskMapper, never()).updateById(any(JudgeTask.class));
     }
+    @Test
+    void completionUsesClaimedAttemptInsteadOfCurrentStatusAlone() {
+        JudgeTask old = task(1L, 10L, 1);
+        when(judgeTaskMapper.completeIfProcessing(org.mockito.ArgumentMatchers.eq(1L), org.mockito.ArgumentMatchers.eq(1), any(), any())).thenReturn(0);
+        org.junit.jupiter.api.Assertions.assertFalse(service.complete(old));
+    }
+
+    @Test
+    void staleFailureCannotOverwriteReclaimedTaskOrSubmission() {
+        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(new org.apache.ibatis.builder.MapperBuilderAssistant(
+                new com.baomidou.mybatisplus.core.MybatisConfiguration(), "test"), JudgeTask.class);
+        JudgeTask old = task(1L, 10L, 3);
+        service.fail(old, "late failure");
+        var captor = org.mockito.ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper.class);
+        verify(judgeTaskMapper).update(org.mockito.ArgumentMatchers.isNull(), captor.capture());
+        assertTrue(captor.getValue().getSqlSegment().contains("attempt_count"));
+        assertTrue(captor.getValue().getSqlSegment().contains("status"));
+        org.mockito.Mockito.verifyNoInteractions(submissionMapper);
+    }
+
 }

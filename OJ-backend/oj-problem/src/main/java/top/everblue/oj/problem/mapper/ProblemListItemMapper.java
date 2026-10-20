@@ -20,6 +20,9 @@ import java.util.List;
  * @since 2025-12-12
  */
 public interface ProblemListItemMapper extends BaseMapper<ProblemListItem> {
+    /** 已开放的班级题单/作业授予成员题目访问权；个人收藏不授予私有题访问权。 */
+    List<Long> selectAssignedClassIds(@Param("problemId") Long problemId);
+
     List<ProblemVO> selectProblemsWithStatus(@Param("listId") Long listId, @Param("userId") Long userId);
 
     /**

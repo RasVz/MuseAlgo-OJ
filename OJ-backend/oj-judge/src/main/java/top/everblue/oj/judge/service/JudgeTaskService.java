@@ -5,7 +5,7 @@ import top.everblue.oj.judge.entity.JudgeTask;
 import java.util.List;
 
 /**
- * 判题任务服务。
+ * 判题任务服务。领取次数同时作为执行代次，未来重判不得将其重置或减小。
  */
 public interface JudgeTaskService {
 
@@ -32,20 +32,20 @@ public interface JudgeTaskService {
     /**
      * 标记任务完成（条件更新）。
      * <p>
-     * 仅当任务仍处于 PROCESSING 时才生效；若任务已被看门狗重置或标记失败，
+     * 仅当任务仍处于 PROCESSING 且领取代次匹配时才生效；若任务已被看门狗重置或标记失败，
      * 返回 false，调用方应放弃后续动作（如写 Outbox 事件），避免重复发布。
      * </p>
      *
      * @return true = 完成状态写入成功；false = 任务状态已被其他路径迁移
      */
-    boolean complete(Long taskId);
+    boolean complete(JudgeTask task);
 
     /**
      * 标记任务失败。
      * <p>
-     * 如果 attempt_count 未达上限 → 重置为 PENDING + 指数退避重试。<br>
+     * 仅迁移调用方持有的领取代次。如果 attempt_count 未达上限 → 重置为 PENDING + 指数退避重试。<br>
      * 如果已达上限（≥3）→ 标记为 FAILED，不再重试。
      * </p>
      */
-    void fail(Long taskId, String errorMessage);
+    void fail(JudgeTask task, String errorMessage);
 }

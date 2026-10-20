@@ -91,27 +91,7 @@
         LIMIT #{limit}
     </select>
 
-    <!--
-      completeIfProcessing: 条件完成，解决看门狗与原 Worker 的竞态。
-      只有任务仍在 PROCESSING（即仍是同一个 Worker 的锁）时才允许置为 COMPLETED；
-      若任务已被看门狗重置为 PENDING 或被标记 FAILED，本更新影响 0 行，
-      调用方据此放弃写入 Outbox 事件，避免同一提交发布两次评测完成事件。
-
-      这条 WHERE 条件是整个判题链路唯一的「锁持有者校验」——judge_task 没有 owner/worker_id
-      列，无法按身份比对，只能用 status 作代理判断。典型竞态：
-        T0 Worker A 领取任务（status=PROCESSING）
-        T1 Worker A 长时间无响应，看门狗判定卡死并重置为 PENDING
-        T2 Worker B 重新领取同一任务（status=PROCESSING）
-        T3 Worker A 突然恢复并判出结果，调用 completeIfProcessing → 更新成功！
-      注意 T3 这一步**会**成功，因为此时 status 又是 PROCESSING 了。也就是说，
-      真正的去重保证不在这条 SQL，而在 submission 侧的 judge_phase 流转与
-      Outbox 事件的幂等消费上。此处条件更新解决的是更常见的一档：
-      看门狗已把它标成 FAILED 时，迟到的完成必须被丢弃（影响 0 行 → 跳过写 Outbox），
-      否则会为一个已判失败的提交补发一条「评测完成」事件。
-
-      若将来要彻底修掉 T3 那一档，需要给 judge_task 加 worker_id 列并在本 WHERE 中比对；
-      在没有该列之前，不要试图靠这里加条件绕过。
-    -->
+    <!-- 状态与领取代次同时匹配。完成事务持有任务行锁，直到结果和Outbox一起提交。 -->
     <update id="completeIfProcessing">
         UPDATE judge_task
         SET status = 'COMPLETED',
@@ -119,6 +99,7 @@
             updated_at = #{updatedAt}
         WHERE id = #{taskId}
           AND status = 'PROCESSING'
+          AND attempt_count = #{attempt}
     </update>
 
 </mapper>

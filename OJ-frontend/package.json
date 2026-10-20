@@ -12,7 +12,8 @@
     "preview": "vite preview",
     "lint": "eslint . --fix --cache",
     "lint:ci": "eslint . --max-warnings=0",
-    "format": "prettier --write --experimental-cli src/"
+    "format": "prettier --write --experimental-cli src/",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@dicebear/avataaars": "^9.4.2",
@@ -38,6 +39,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
+    "@playwright/test": "^1.64.1",
     "@vitejs/plugin-vue": "^6.0.2",
     "@vue/eslint-config-prettier": "^10.2.0",
     "eslint": "^9.39.1",

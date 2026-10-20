@@ -61,8 +61,9 @@ import java.util.concurrent.TimeUnit;
  * 到期即释放，不做显式清理；比赛结束后由 {@link #deleteContestRankCache} 按需主动删除。
  * </p>
  */
-@Service
+@Deprecated
 @RequiredArgsConstructor
+/** 历史增量实现，仅保留兼容测试；不注册为运行时服务，新代码使用 ContestRankCalculator。 */
 public class RankRedisService {
 
     /**

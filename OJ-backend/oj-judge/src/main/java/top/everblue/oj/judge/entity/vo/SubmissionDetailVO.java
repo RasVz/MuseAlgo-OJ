@@ -19,7 +19,7 @@ public class SubmissionDetailVO {
     private String language;
     private Integer runTime;
     private Integer runMemory;
-    private String score;
+    private Integer score;
     private String errorMessage;
     private LocalDateTime createTime;
 

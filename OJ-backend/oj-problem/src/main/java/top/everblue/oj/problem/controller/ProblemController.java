@@ -70,9 +70,10 @@ public class ProblemController {
 
     @Operation(summary = "获取比赛题目列表")
     @GetMapping("/contest/{contestId}")
-    public Result<List<Problem>> getProblemsByContest(@PathVariable Long contestId) {
+    public Result<List<ProblemDetailVO>> getProblemsByContest(@PathVariable Long contestId) {
         return Result.success(problemService.list(
-                new LambdaQueryWrapper<Problem>().eq(Problem::getContestId, contestId).orderByAsc(Problem::getId)));
+                new LambdaQueryWrapper<Problem>().eq(Problem::getContestId, contestId).orderByAsc(Problem::getId))
+                .stream().map(problem -> appService.getDetail(problem.getId())).toList());
     }
 
     @Operation(summary = "题目列表（分页检索）")

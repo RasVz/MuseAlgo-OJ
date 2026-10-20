@@ -32,3 +32,9 @@ docker/mysql-init/*.sql*
 docs/
 .github/
 *.md
+
+# Test evidence can contain ephemeral auth tokens; never send it into release build contexts.
+**/test-results/
+**/playwright-report/
+**/__pycache__/
+tests/

@@ -62,7 +62,8 @@ public class SubmissionServiceImpl extends ServiceImpl<SubmissionMapper, Submiss
 
         submission.setStatus(SubmissionStatus.PENDING.code());
         submission.setJudgePhase("QUEUED");
-        submission.setCreateTime(LocalDateTime.now());
+        // submission.create_time 为 DATETIME(0)，显式取整秒，避免数据库舍入将接收时间推到未来。
+        submission.setCreateTime(LocalDateTime.now().withNano(0));
         submission.setRunTime(0);
         submission.setRunMemory(0);
         submission.setScore(0);

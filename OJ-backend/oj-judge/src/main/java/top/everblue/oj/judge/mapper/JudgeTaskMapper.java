@@ -41,7 +41,7 @@ public interface JudgeTaskMapper extends BaseMapper<JudgeTask> {
      * 查询卡在 PROCESSING 状态超过指定时间的任务（看门狗用）。
      * <p>
      * 只读查询不加锁：看门狗随后会对每条任务走 {@code fail()} 的标准重试流程，
-     * 状态迁移由 UPDATE 的乐观语义保证，最坏情况是 Worker 恰好正常完成，重复一次无害。
+     * 状态迁移由 UPDATE 的乐观语义保证，状态与代次不匹配时更新0行，不得覆盖已完成或重新领取的任务。
      * </p>
      *
      * @param deadline 锁定时间早于此时间点的 PROCESSING 任务视为卡住
@@ -50,7 +50,7 @@ public interface JudgeTaskMapper extends BaseMapper<JudgeTask> {
     List<JudgeTask> selectStuckTasks(@Param("deadline") LocalDateTime deadline, @Param("limit") int limit);
 
     /**
-     * 条件完成：仅当任务仍处于 PROCESSING 时才置为 COMPLETED。
+     * 条件完成：任务状态与领取代次都匹配时才置为 COMPLETED。
      * <p>
      * 防止"看门狗已重置任务、原 Worker 迟到完成"把状态写回 COMPLETED 的竞态。
      * </p>
@@ -58,6 +58,7 @@ public interface JudgeTaskMapper extends BaseMapper<JudgeTask> {
      * @return 受影响行数（0 = 任务已被看门狗或其他路径迁走，调用方应放弃后续动作）
      */
     int completeIfProcessing(@Param("taskId") Long taskId,
+                             @Param("attempt") Integer attempt,
                              @Param("completedAt") LocalDateTime completedAt,
                              @Param("updatedAt") LocalDateTime updatedAt);
 }

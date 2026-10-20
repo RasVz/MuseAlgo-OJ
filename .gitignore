@@ -62,3 +62,7 @@ release.properties
 .reasonix/
 .workbuddy/
 .workbuddy-ai/
+
+# Browser acceptance evidence (kept outside the public source tree)
+OJ-frontend/test-results/
+OJ-frontend/playwright-report/

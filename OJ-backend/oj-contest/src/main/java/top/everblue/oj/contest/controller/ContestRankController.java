@@ -102,7 +102,7 @@ public class ContestRankController {
     }
 
     /**
-     * 从 submission 重建 Redis 实时排行榜
+     * 从 submission 校验重建实时排行榜
      */
     @Operation(summary = "重建实时排行榜")
     @AuditLog(module = "contest", action = "rebuild_rank")

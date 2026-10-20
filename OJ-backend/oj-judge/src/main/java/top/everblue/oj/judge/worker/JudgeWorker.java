@@ -42,7 +42,6 @@ import java.util.List;
 public class JudgeWorker {
 
     private final JudgeTaskService judgeTaskService;
-    private final JudgeCompletionService judgeCompletionService;
     private final JudgeOrchestrator judgeOrchestrator;
     private final JudgeMetrics judgeMetrics;
     private final ThreadPoolTaskExecutor judgeExecutor;
@@ -51,12 +50,10 @@ public class JudgeWorker {
     private int batchSize;
 
     public JudgeWorker(JudgeTaskService judgeTaskService,
-                       JudgeCompletionService judgeCompletionService,
                        JudgeOrchestrator judgeOrchestrator,
                        JudgeMetrics judgeMetrics,
                        @Qualifier("judgeExecutor") ThreadPoolTaskExecutor judgeExecutor) {
         this.judgeTaskService = judgeTaskService;
-        this.judgeCompletionService = judgeCompletionService;
         this.judgeOrchestrator = judgeOrchestrator;
         this.judgeMetrics = judgeMetrics;
         this.judgeExecutor = judgeExecutor;
@@ -110,12 +107,11 @@ public class JudgeWorker {
             Timer.Sample sample = judgeMetrics.startExecution();
 
             try {
-                judgeOrchestrator.executeJudge(task.getSubmissionId());
-                judgeCompletionService.completeWithOutbox(task);
+                judgeOrchestrator.executeJudge(task);
                 judgeMetrics.recordCompleted(sample);
             } catch (Exception e) {
                 log.error("【判题Worker】判题失败 taskId={}: {}", task.getId(), e.getMessage());
-                judgeTaskService.fail(task.getId(), e.getMessage());
+                judgeTaskService.fail(task, e.getMessage());
                 judgeMetrics.recordFailed(sample);
             }
         } finally {

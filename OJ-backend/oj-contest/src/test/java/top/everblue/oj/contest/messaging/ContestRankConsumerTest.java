@@ -23,16 +23,15 @@ class ContestRankConsumerTest {
     @Test
     void vpSubmissionNeverUpdatesOfficialRank() throws Exception {
         ContestSubmissionQuery query = mock(ContestSubmissionQuery.class);
-        RankRedisService rankRedisService = mock(RankRedisService.class);
+        var ranks = mock(top.everblue.oj.contest.service.ContestRankService.class);
         when(query.findById(5L)).thenReturn(Optional.of(new ContestSubmission(
                 5L, 1L, 9L, 10L, 100L, (byte) 1, "cpp", LocalDateTime.now(), 100)));
-        ContestRankConsumer consumer = new ContestRankConsumer(query, rankRedisService,
-                mock(SseRegistry.class), mock(ContestRankMapper.class));
+        ContestRankConsumer consumer = new ContestRankConsumer(query, ranks, mock(SseRegistry.class));
         String payload = new com.fasterxml.jackson.databind.ObjectMapper()
                 .writeValueAsString(new SubmissionJudgedEvent(5L, 8L, LocalDateTime.now().toString()));
 
         consumer.onSubmissionJudged(payload);
 
-        verify(rankRedisService, never()).submitProblem(any(), any(), any(), any(), anyInt(), any());
+        verify(ranks, never()).getRealtimeTopN(any(), any());
     }
 }

@@ -94,7 +94,7 @@ public class CoursewareController {
         }
         // 私有课件越权防护（P1 遗留新债修复）：
         // 公开课件（privacy=1）所有人可看；私有课件仅 owner / 管理员 / 班级内学习者可看
-        if (courseware.getPrivacy() != null && courseware.getPrivacy() == 0) {
+        if (!Integer.valueOf(1).equals(courseware.getPrivacy())) {
             Long userId = getCurrentUserId();
             boolean isOwner = userId != null && userId.equals(courseware.getTeacherId());
             if (!isOwner && !SecurityUtils.isAdmin()) {
@@ -197,6 +197,7 @@ public class CoursewareController {
     @AuditLog(module = "courseware", action = "create_courseware")
     @PostMapping("/add")
     public Result<String> add(@RequestBody Courseware courseware) {
+        SecurityUtils.requireTeacherOrAdmin();
         Long userId = getCurrentUserId();
         if (userId == null) return Result.error("未登录");
 
@@ -211,6 +212,7 @@ public class CoursewareController {
     @AuditLog(module = "courseware", action = "update_courseware")
     @PostMapping("/update")
     public Result<String> update(@RequestBody Courseware courseware) {
+        SecurityUtils.requireTeacherOrAdmin();
         if (courseware.getId() == null) return Result.error("ID不能为空");
 
         Courseware existing = coursewareService.getById(courseware.getId());
@@ -230,6 +232,7 @@ public class CoursewareController {
     @AuditLog(module = "courseware", action = "delete_courseware")
     @PostMapping("/delete/{id}")
     public Result<String> delete(@PathVariable Long id) {
+        SecurityUtils.requireTeacherOrAdmin();
         Courseware existing = coursewareService.getById(id);
         if (existing == null) return Result.error("课件不存在");
         // 越权防护：仅课件创建者或管理员可删除（P1 技术债修复）
@@ -248,6 +251,7 @@ public class CoursewareController {
     @AuditLog(module = "courseware", action = "upload_markdown")
     @PostMapping("/upload-md")
     public Result<String> uploadAndBuildMarkdown(@RequestParam("file") MultipartFile file) {
+        SecurityUtils.requireTeacherOrAdmin();
 
         // 校验一下是不是 md 文件
         String filename = file.getOriginalFilename();
@@ -262,7 +266,7 @@ public class CoursewareController {
             return Result.success("课件生成成功！", presentationUrl);
         } catch (Exception e) {
             log.error("课件生成失败", e);
-            return Result.error("课件生成失败: " + e.getMessage());
+            return Result.error("课件生成失败，请检查课件内容或联系管理员");
         }
     }
 }

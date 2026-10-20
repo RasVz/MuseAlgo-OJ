@@ -15,6 +15,17 @@ import top.everblue.oj.contest.entity.Contest;
  */
 public interface ContestMapper extends BaseMapper<Contest> {
 
+    /** 所有比赛 Rating 事务串行，避免不同比赛覆盖同一用户当前分。 */
+    @Select("SELECT id FROM contest_settlement_guard WHERE id=1 FOR UPDATE")
+    Integer lockSettlement();
+
+    @org.apache.ibatis.annotations.Update("UPDATE contest SET rank_finalized_at=NOW() WHERE id=#{id} AND rank_finalized_at IS NULL")
+    int markRankFinalized(@Param("id") Long id);
+
+    @Select("SELECT COUNT(*) FROM contest WHERE is_deleted=0 AND rank_finalized_at IS NULL " +
+            "AND end_time IS NOT NULL AND (end_time < #{end} OR (end_time = #{end} AND id < #{id}))")
+    long countEarlierUnsettled(@Param("id") Long id, @Param("end") java.time.LocalDateTime end);
+
     /**
      * 悲观锁读取比赛行（{@code SELECT ... FOR UPDATE}）。
      * <p>

@@ -1,0 +1,76 @@
+# Dedicated CI resources; always use a unique project name and never an existing business volume.
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: ${OJ_CI_DB_PASSWORD:?required}
+      MYSQL_DATABASE: oj_db
+      TZ: Asia/Shanghai
+    ports: ["127.0.0.1:${OJ_CI_MYSQL_PORT:-13320}:3306"]
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ../docker/mysql-init/00-schema.sql:/docker-entrypoint-initdb.d/00-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", 'MYSQL_PWD="$$MYSQL_ROOT_PASSWORD" mysql -h127.0.0.1 -uroot --batch --skip-column-names oj_db -e "SELECT 1 FROM flyway_schema_history LIMIT 1"']
+      interval: 3s
+      timeout: 3s
+      retries: 60
+  redis:
+    image: redis:6.0
+    ports: ["127.0.0.1:${OJ_CI_REDIS_PORT:-16320}:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    profiles: [mq]
+    environment:
+      RABBITMQ_DEFAULT_USER: ci
+      RABBITMQ_DEFAULT_PASS: ${OJ_CI_MQ_PASSWORD:?required}
+    ports:
+      - "127.0.0.1:${OJ_CI_MQ_PORT:-15673}:5672"
+      - "127.0.0.1:${OJ_CI_MQ_ADMIN_PORT:-15674}:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+  judge0-server:
+    image: judge0/judge0:1.13.1
+    platform: linux/amd64
+    profiles: [judge]
+    privileged: true
+    ports: ["127.0.0.1:${OJ_CI_JUDGE_PORT:-23520}:2358"]
+    environment:
+      REDIS_PASSWORD: judge0redispassword
+      POSTGRES_PASSWORD: judge0dbpassword
+    volumes: ["../docker/judge0.conf:/judge0.conf:ro"]
+    depends_on: [judge0-db, judge0-redis]
+  judge0-worker:
+    image: judge0/judge0:1.13.1
+    platform: linux/amd64
+    profiles: [judge]
+    privileged: true
+    command: ["./scripts/workers"]
+    environment:
+      REDIS_PASSWORD: judge0redispassword
+      POSTGRES_PASSWORD: judge0dbpassword
+    volumes: ["../docker/judge0.conf:/judge0.conf:ro"]
+    depends_on: [judge0-db, judge0-redis]
+  judge0-db:
+    image: postgres:13.0
+    profiles: [judge]
+    environment:
+      POSTGRES_USER: judge0
+      POSTGRES_PASSWORD: judge0dbpassword
+      POSTGRES_DB: judge0
+    volumes: ["judge-data:/var/lib/postgresql/data"]
+  judge0-redis:
+    image: redis:6.0
+    profiles: [judge]
+    command: ["redis-server", "--requirepass", "judge0redispassword"]
+volumes:
+  mysql-data:
+  judge-data:

@@ -14,14 +14,17 @@ import java.util.List;
 public class SubmissionApplicationService {
 
     private final SubmissionService submissionService;
+    private final top.everblue.oj.api.problem.ProblemAccessQuery problemAccess;
     private final ContestSubmissionContextResolver contestSubmissionContextResolver;
 
-    public SubmissionApplicationService(SubmissionService submissionService,
+    public SubmissionApplicationService(top.everblue.oj.api.problem.ProblemAccessQuery problemAccess, SubmissionService submissionService,
                                         ContestSubmissionContextResolver contestSubmissionContextResolver) {
+        this.problemAccess = problemAccess;
         this.submissionService = submissionService;
         this.contestSubmissionContextResolver = contestSubmissionContextResolver;
     }
 
+    @org.springframework.transaction.annotation.Transactional(rollbackFor = Exception.class)
     public SubmissionResultResponse submit(SubmitSolutionCommand command) {
         Long userId = SecurityUtils.getUserId();
         if (userId == null) {
@@ -37,6 +40,7 @@ public class SubmissionApplicationService {
             submission.setContestId(context.contestId());
             submission.setVpAttemptId(context.vpAttemptId());
         }
+        if (command.getContestId() == null) problemAccess.requirePracticeSubmission(command.getProblemId());
         submission.setLanguage(command.getLanguage().trim());
         submission.setCode(command.getCode());
 

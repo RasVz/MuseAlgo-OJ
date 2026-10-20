@@ -24,6 +24,7 @@ import static org.mockito.Mockito.when;
 class SubmissionApplicationServiceTest {
 
     @Mock SubmissionService submissionService;
+    @Mock top.everblue.oj.api.problem.ProblemAccessQuery problemAccess;
     @Mock ContestSubmissionContextResolver contextResolver;
 
     @AfterEach
@@ -47,13 +48,24 @@ class SubmissionApplicationServiceTest {
             return submission;
         });
 
-        new SubmissionApplicationService(submissionService, contextResolver).submit(command);
+        new SubmissionApplicationService(problemAccess, submissionService, contextResolver).submit(command);
 
         ArgumentCaptor<Submission> captor = ArgumentCaptor.forClass(Submission.class);
         verify(submissionService).submitCode(captor.capture());
         assertEquals(1L, captor.getValue().getContestId());
         assertEquals(9L, captor.getValue().getVpAttemptId());
         assertEquals(10L, captor.getValue().getUserId());
+    }
+
+    @Test
+    void ordinarySubmissionCannotSkipProblemAccessPolicy() {
+        login(10L);
+        var command = new SubmitSolutionCommand(); command.setProblemId(100L); command.setLanguage("cpp"); command.setCode("x");
+        org.mockito.Mockito.doThrow(new top.everblue.oj.common.exception.ForbiddenException("private"))
+                .when(problemAccess).requirePracticeSubmission(100L);
+        org.junit.jupiter.api.Assertions.assertThrows(top.everblue.oj.common.exception.ForbiddenException.class,
+                () -> new SubmissionApplicationService(problemAccess, submissionService, contextResolver).submit(command));
+        org.mockito.Mockito.verifyNoInteractions(submissionService);
     }
 
     private void login(Long userId) {

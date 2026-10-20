@@ -61,10 +61,12 @@ public class Problem implements Serializable {
 
     @ApiModelProperty("AI 生成的标准答案(C++ 代码，仅教师可见)")
     @TableField("std_answer")
+    @com.fasterxml.jackson.annotation.JsonProperty(access = com.fasterxml.jackson.annotation.JsonProperty.Access.WRITE_ONLY)
     private String stdAnswer;
 
     @ApiModelProperty("标准答案算法思路讲解(仅教师可见)")
     @TableField("std_explanation")
+    @com.fasterxml.jackson.annotation.JsonProperty(access = com.fasterxml.jackson.annotation.JsonProperty.Access.WRITE_ONLY)
     private String stdExplanation;
 
     @ApiModelProperty("标准答案是否已通过测试数据验证（0-未测试，1-已测试）")

@@ -9,6 +9,9 @@ import java.util.List;
  */
 public interface ContestVpQuery {
 
+    /** 已接收的 VP 提交是否仍在判题。 */
+    boolean hasPending(Long vpAttemptId);
+
     /** VP 会话时间窗内每题最好成绩 */
     List<VpProblemScore> findBestScores(Long vpAttemptId);
 
