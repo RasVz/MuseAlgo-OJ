@@ -32,6 +32,7 @@ FROM maven:3.9-eclipse-temurin-17 AS build
 WORKDIR /src
 
 ARG MAVEN_MIRROR=""
+ARG MAVEN_PREFETCH="true"
 
 # 先只复制各模块 pom，让「下载依赖」这一层能被缓存复用
 COPY OJ-backend/pom.xml               ./pom.xml
@@ -53,12 +54,12 @@ RUN --mount=type=cache,target=/root/.m2 \
       mkdir -p /root/.m2 && \
       printf '<settings><mirrors><mirror><id>mirror</id><mirrorOf>*</mirrorOf><url>%s</url></mirror></mirrors></settings>' "$MAVEN_MIRROR" > /root/.m2/settings.xml; \
     fi && \
-    mvn -B -q dependency:go-offline -DskipTests || true
+    if [ "$MAVEN_PREFETCH" = "true" ]; then timeout 180s mvn -B dependency:go-offline -DskipTests || true; fi
 
 # 再复制源码编译，产出可执行 jar
 COPY OJ-backend/ ./
 RUN --mount=type=cache,target=/root/.m2 \
-    mvn -B -DskipTests package
+    mvn -B -Daether.connector.connectTimeout=15000 -Daether.connector.requestTimeout=60000 -DskipTests package
 
 # ---------- 阶段 2：安装 Slidev 课件工程依赖 ----------
 # 只装 dependencies、不装 devDependencies：playwright-chromium 只用于导出 PDF/PPTX，
