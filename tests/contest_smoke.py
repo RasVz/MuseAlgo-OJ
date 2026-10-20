@@ -42,16 +42,19 @@ def main():
                 'startTime':fmt(now-dt.timedelta(minutes=1)), 'endTime':fmt(now+dt.timedelta(minutes=5))}
         contest=call('/contest/add',config,admin);cid=contest['id']
         call('/api/problem-contest/add',{'contestId':cid,'problemId':1,'visible':1,'score':100},admin)
-        compose('pause','judge0-worker')
+        # wait=true executes in the API process; suspending only the async worker does not delay judging.
+        compose('pause','judge0-server','judge0-worker')
         try:
             submitted=call('/submission/submit',{'problemId':1,'contestId':cid,'language':'cpp','code':AC},student)
             sid=submitted['id']
             config.update(id=cid, endTime=fmt(dt.datetime.now()+dt.timedelta(seconds=2)))
             call('/contest/update',config,admin)
             time.sleep(3)  # End the contest while its real judge task is still pending.
+            pending=call('/submission/detail?id='+str(sid),token=student)
+            assert pending['status']==0 and pending.get('judgePhase')!='FAILED',pending
             assert call(f'/contest/{cid}/rank/final',token=admin)==[]
         finally:
-            compose('unpause','judge0-worker')
+            compose('unpause','judge0-server','judge0-worker')
         wait_result(student,sid)
         for _ in range(45):
             final=call(f'/contest/{cid}/rank/final',token=admin)
