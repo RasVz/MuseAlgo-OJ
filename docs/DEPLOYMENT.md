@@ -56,14 +56,17 @@ docker build -f deploy/Dockerfile.frontend -t musealgo-oj/frontend:latest \
 
 前端镜像内置的 Nginx 配置（`deploy/nginx.conf`）已把 `/api` 反向代理到 **`backend:8080`**——也就是说它期望后端在同一 Docker 网络里且服务名为 `backend`。若你的拓扑不同，请改 `proxy_pass`。
 
+依赖预取是可跳过的加速步骤，默认最长180秒；网络环境下预取缓慢时可用 `--build-arg MAVEN_PREFETCH=false` 直接进入正常编译。编译仍按锁定的Maven依赖解析，不跳过依赖或复用旧代码。网络超时参数参照 [Maven Resolver 1.9 配置](https://maven.apache.org/resolver-archives/resolver-1.9.22/configuration.html)。
+
 ### 2.2 编排与启动
 
-仓库根目录自带**可直接使用**的 [`docker-compose.prod.yml`](../docker-compose.prod.yml)（不是示例片段），它编排四个服务：
+仓库根目录的生产编排文件 [`docker-compose.prod.yml`](../docker-compose.prod.yml) 包含五个服务：
 
 | 服务 | 镜像 | 端口 | 说明 |
 |---|---|---|---|
 | `mysql` | `mysql:8.0` | 不映射 | 首次启动自动执行 `docker/mysql-init/00-schema.sql` 建基线 |
 | `redis` | `redis:6.0` | 不映射 | AOF 持久化 |
+| `migrate` | 后端发行镜像 | 不映射 | 独立DDL账号一次性运行Flyway，成功后启动业务 |
 | `backend` | `musealgo-oj/backend:latest` | `127.0.0.1:8080` | 默认只绑本机，供运维探活 |
 | `frontend` | `musealgo-oj/frontend:latest` | `80`（`WEB_PORT` 可改） | Nginx 托管静态产物 + `/api` 反代后端 + `/coursewares`、`/uploads` 静态目录 |
 
@@ -73,7 +76,7 @@ docker build -f deploy/Dockerfile.frontend -t musealgo-oj/frontend:latest \
 
 ```bash
 cp .env.example .env
-vi .env                 # 至少填 JWT_SECRET 与 OJ_DB_PASS
+vi .env                 # 填 JWT_SECRET、OJ_DB_PASS、OJ_DB_ROOT_PASS、OJ_DB_MIGRATION_PASS
 chmod 600 .env
 
 docker compose -f docker-compose.prod.yml up -d
@@ -81,7 +84,7 @@ docker compose -f docker-compose.prod.yml ps
 curl -fsS localhost:8080/actuator/health        # 期望 {"status":"UP"}
 ```
 
-后端健康检查通过的含义是**完整链路已就绪**：容器 → MySQL 连接 → Flyway 迁移执行完毕 → 应用启动完成。任一环失败，健康检查都不会是 `UP`。
+后端健康检查通过的含义是**完整链路已就绪**：MySQL结构初始化 → migrate独立进程迁移成功 → 应用以CRUD账号连接并启动。任一环失败，健康检查都不会是 `UP`。
 
 常用运维命令：
 
@@ -105,7 +108,9 @@ docker compose -f docker-compose.prod.yml exec -T mysql sh -c \
 
 ---
 
-## 三、方式 B：systemd 单机 jar（最省资源）
+## 三、方式 B：systemd 单机 jar
+
+本轮运行演练以Compose为准；原生systemd命令需在目标Linux发行版上单独验收。
 
 适用于使用 systemd 的 Linux 服务器。先安装并启动 MySQL 8、Redis，配置它们只监听本机；
 服务器安装 JRE 17，构建环境另需 JDK 17 与 Node.js（建议 22.12+）。MySQL/Redis 的安装方式、
@@ -123,18 +128,20 @@ mysql -uroot -p
 
 ```sql
 CREATE DATABASE oj_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER 'oj'@'127.0.0.1' IDENTIFIED BY 'REPLACE_WITH_YOUR_DATABASE_PASSWORD';
-GRANT ALL PRIVILEGES ON oj_db.* TO 'oj'@'127.0.0.1';
+CREATE USER 'musealgo_migrator'@'127.0.0.1' IDENTIFIED BY 'REPLACE_WITH_MIGRATION_PASSWORD';
+GRANT ALL PRIVILEGES ON oj_db.* TO 'musealgo_migrator'@'127.0.0.1';
+CREATE USER 'musealgo_app'@'127.0.0.1' IDENTIFIED BY 'REPLACE_WITH_APPLICATION_PASSWORD';
+GRANT SELECT,INSERT,UPDATE,DELETE ON oj_db.* TO 'musealgo_app'@'127.0.0.1';
 EXIT;
 ```
 
 从仓库根目录导入结构基线；命令会提示输入专用账号的口令：
 
 ```bash
-mysql --default-character-set=utf8mb4 -h127.0.0.1 -uoj -p oj_db < docker/mysql-init/00-schema.sql
+mysql --default-character-set=utf8mb4 -h127.0.0.1 -umusealgo_migrator -p oj_db < docker/mysql-init/00-schema.sql
 ```
 
-基线包含结构与迁移历史，不含业务数据。账号需要本库 DDL 权限以执行 Flyway；不要授予全局权限。
+基线包含结构与迁移历史，不含业务数据。只有迁移账号需要本库DDL权限，不授予全局权限；长驻后端使用CRUD账号。
 生产环境不导入演示账号。Redis 如果设置了口令，后续环境文件也要配置 `OJ_REDIS_PASS`。
 
 ### 3.2 构建、账号与目录
@@ -171,8 +178,12 @@ sudoedit /etc/musealgo/oj.env
 ```dotenv
 JWT_SECRET=REPLACE_WITH_GENERATED_RANDOM_SECRET
 OJ_DB_HOST=127.0.0.1
-OJ_DB_USER=oj
-OJ_DB_PASS=REPLACE_WITH_YOUR_DATABASE_PASSWORD
+OJ_DB_USER=musealgo_app
+OJ_DB_PASS=REPLACE_WITH_APPLICATION_PASSWORD
+SPRING_FLYWAY_ENABLED=false
+SPRING_PROFILES_ACTIVE=prod
+OJ_API_DOCS_PUBLIC=false
+TZ=Asia/Shanghai
 OJ_REDIS_HOST=127.0.0.1
 # Redis 启用认证时取消注释并填写：
 #OJ_REDIS_PASS=REPLACE_WITH_YOUR_REDIS_PASSWORD
@@ -213,7 +224,18 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
-先确认 MySQL/Redis 已就绪，再启动后端；需要自动依赖管理时将发行版对应的数据库/缓存服务名加入 `After=` 与 `Requires=`。
+首次安装或更换jar后，先在可信运维shell中运行独立迁移入口，口令不写进命令参数或运行环境文件：
+
+```bash
+read -r -s OJ_DB_MIGRATION_PASS
+export OJ_DB_MIGRATION_PASS
+OJ_DB_HOST=127.0.0.1 java -cp /opt/musealgo/oj-admin.jar \
+  -Dloader.main=top.everblue.oj.FlywayMigrationRunner \
+  org.springframework.boot.loader.launch.PropertiesLauncher
+unset OJ_DB_MIGRATION_PASS
+```
+
+迁移成功并确认MySQL/Redis就绪后，再启动后端；需要自动依赖管理时将发行版对应的数据库/缓存服务名加入 `After=` 与 `Requires=`。
 
 ```bash
 sudo systemctl daemon-reload
@@ -342,31 +364,11 @@ JUDGE0_URLS=http://<judge0 地址>:2358
 
 ---
 
-## 七、升级与回滚
+## 七、升级、备份、恢复与回滚
 
-```bash
-# 1. 先备份数据库（重要）
-backup_file="backup-$(date +%F-%H%M%S).sql"
-if docker compose -f docker-compose.prod.yml exec -T mysql sh -c \
-  'exec mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction --no-tablespaces --set-gtid-purged=OFF oj_db' > "$backup_file"; then
-  gzip "$backup_file" || exit 1
-else
-  rm -f "$backup_file"
-  echo '数据库备份失败，停止升级' >&2
-  exit 1
-fi
+完整命令与权限边界见 [运维指南](OPERATIONS.md)。生产迁移已从业务启动拆到一次性 migrate 服务；默认业务账号无DDL权限。已有卷须先按指南配置账号，不能仅更换环境变量。
 
-# 2. 换新产物（Docker 方案：重新构建镜像后 up -d，只重建变更的服务）
-docker build -f deploy/Dockerfile.backend -t musealgo-oj/backend:latest .
-docker compose -f docker-compose.prod.yml up -d
-
-# 3. 观察
-curl -fsS localhost:8080/actuator/health   # 应为 {"status":"UP"}
-```
-
-- 数据库结构变更由 **Flyway 在启动时自动执行**，无需手工跑 SQL。
-- ⚠️ **Flyway 迁移只前进不后退**。回滚旧版本程序**不会**回滚已执行的迁移，因此回滚前请确认旧版本能兼容新表结构（通常是兼容的，因为迁移以新增列/表为主）。
-- 升级前务必先备份数据库。
+升级前用 `python3 scripts/ops.py backup --output /srv/oj-backups/<时间>` 暂停业务并保存数据库、用例、上传及课件。恢复在全新Compose项目进行，先校验哈希，再核对业务数据后切换入口。Flyway不降级；旧镜像不兼容新结构时，必须用对应旧备份恢复到新项目。
 
 ---
 
@@ -379,7 +381,7 @@ curl -fsS localhost:8080/actuator/health   # 应为 {"status":"UP"}
 - [ ] **没有**导入 `db-seed.sh` 的演示账号（`admin/123456`）到生产库
 - [ ] 同源上传使用显式空值 `OJ_PUBLIC_BASE_URL=`；资源不同源时配置真实资源基础地址，并验证上传文件可访问
 - [ ] Nginx 已开启 HTTPS（证书可用 certbot 申请）
-- [ ] 已配置数据库定期备份
-- [ ] `/actuator/prometheus` 只对监控网络开放（或加访问控制）
+- [ ] 已配置数据库、用例、上传、课件的一致备份，并在新项目恢复验收
+- [ ] 网关阻断内部接口文档与actuator；监控/告警探针已接入明确接收方
 - [ ] 未使用对象存储时，Nginx 的 `/uploads/` 已指向后端的 `OJ_UPLOAD_DIR`，且危险后缀已被拒绝
 - [ ] 课件功能若启用，`/coursewares/` 与后端 `OJ_SLIDEV_OUTPUT_DIR` 指向同一份持久卷

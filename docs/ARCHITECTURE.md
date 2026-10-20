@@ -127,7 +127,7 @@ sequenceDiagram
 
 | 组件 | 缺失时的行为 |
 |---|---|
-| RabbitMQ | 关闭后判题任务仍由数据库轮询处理；实时榜单当前依赖消息消费者，需启用 MQ，或由管理员手动重建。自动榜单降级尚待实现 |
+| RabbitMQ | MQ仅加速判题与榜单通知；关闭或故障时判题任务轮询、数据库权威榜单及定时固化继续运行。重复消息不重复加分/Rating，详见 [验收规则](TESTING.md#计分与固化规则) |
 | Meilisearch | `OJ_SEARCH_ENABLED=false` → 题目搜索回退 `LIKE` 查询；另有断路器，故障时自动短路降级 |
 | 对象存储 COS | 未配置 → 走本地文件存储（`OJ_UPLOAD_DIR`） |
 | 大模型 API | `DEEPSEEK_API_KEY` 为空 → AI 功能返回空结果并降级提示，**其余功能完全不受影响** |
