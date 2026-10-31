@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 安全问题报告
+    url: https://github.com/RasVz/MuseAlgo-OJ/security/advisories/new
+    about: 请勿通过公开 Issue 报告安全漏洞，改用私密漏洞报告。
+  - name: 使用与部署问题
+    url: https://github.com/RasVz/MuseAlgo-OJ/discussions
+    about: 部署、配置、使用方法类问题请到 Discussions 讨论。

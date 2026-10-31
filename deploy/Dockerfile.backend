@@ -1,0 +1,146 @@
+# ============================================================
+# MuseAlgo-OJ 后端镜像（多阶段构建）
+# ------------------------------------------------------------
+# 构建（在仓库根目录执行，构建上下文必须是仓库根）：
+#   docker build -f deploy/Dockerfile.backend -t musealgo-oj/backend:latest .
+#
+# 推荐用发行构建入口（串行构建 + 注入 OCI 追溯标签 + 生成发行清单）：
+#   scripts/build-release.sh
+#
+# 国内网络较慢时可指定镜像源：
+#   docker build -f deploy/Dockerfile.backend \
+#     --build-arg MAVEN_MIRROR=https://maven.aliyun.com/repository/public \
+#     --build-arg NPM_REGISTRY=https://registry.npmmirror.com \
+#     -t musealgo-oj/backend:latest .
+#
+# 运行：
+#   docker run -d -p 8080:8080 --env-file .env \
+#     -v oj-testcases:/data/testcases \
+#     -v oj-uploads:/data/uploads \
+#     -v oj-coursewares:/app/OJ-Coursewares \
+#     musealgo-oj/backend:latest
+#
+# 为什么运行镜像里既有 JRE 又有 Node：
+#   课件系统以「外部进程」方式调用 Slidev（见 oj-teaching 的 SlidevBuilderService），
+#   它必须能在本容器内执行 OJ-Slidev/node_modules/.bin/slidev。
+#   因此运行镜像包含 Node 22 运行时和已装好依赖的 OJ-Slidev 工程。
+#   如果你不需要「上传 Markdown 在线生成课件」，可以不用本镜像，
+#   改走 docs/DEPLOYMENT.md 第三节的 systemd 单 jar 方案（只需 JRE）。
+#
+# 注意：生产环境务必设置 JWT_SECRET 与 OJ_DB_PASS，否则启动即失败（刻意设计）。
+# ============================================================
+
+# ---------- 阶段 1：编译后端 ----------
+FROM maven:3.9-eclipse-temurin-17 AS build
+WORKDIR /src
+
+ARG MAVEN_MIRROR=""
+ARG MAVEN_PREFETCH="true"
+
+# 先只复制各模块 pom，让「下载依赖」这一层能被缓存复用
+COPY OJ-Backend/pom.xml               ./pom.xml
+COPY OJ-Backend/oj-admin/pom.xml      ./oj-admin/pom.xml
+COPY OJ-Backend/oj-api/pom.xml        ./oj-api/pom.xml
+COPY OJ-Backend/oj-common/pom.xml     ./oj-common/pom.xml
+COPY OJ-Backend/oj-framework/pom.xml  ./oj-framework/pom.xml
+COPY OJ-Backend/oj-system/pom.xml     ./oj-system/pom.xml
+COPY OJ-Backend/oj-problem/pom.xml    ./oj-problem/pom.xml
+COPY OJ-Backend/oj-judge/pom.xml      ./oj-judge/pom.xml
+COPY OJ-Backend/oj-contest/pom.xml    ./oj-contest/pom.xml
+COPY OJ-Backend/oj-community/pom.xml  ./oj-community/pom.xml
+COPY OJ-Backend/oj-teaching/pom.xml   ./oj-teaching/pom.xml
+COPY OJ-Backend/oj-ai/pom.xml         ./oj-ai/pom.xml
+COPY OJ-Backend/oj-analytics/pom.xml  ./oj-analytics/pom.xml
+
+RUN --mount=type=cache,target=/root/.m2 \
+    if [ -n "$MAVEN_MIRROR" ]; then \
+      mkdir -p /root/.m2 && \
+      printf '<settings><mirrors><mirror><id>mirror</id><mirrorOf>*</mirrorOf><url>%s</url></mirror></mirrors></settings>' "$MAVEN_MIRROR" > /root/.m2/settings.xml; \
+    fi && \
+    if [ "$MAVEN_PREFETCH" = "true" ]; then timeout 180s mvn -B dependency:go-offline -DskipTests || true; fi
+
+# 再复制源码编译，产出可执行 jar
+COPY OJ-Backend/ ./
+RUN --mount=type=cache,target=/root/.m2 \
+    mvn -B -Daether.connector.connectTimeout=15000 -Daether.connector.requestTimeout=60000 -DskipTests package
+
+# ---------- 阶段 2：安装 Slidev 课件工程依赖 ----------
+# 只装 dependencies、不装 devDependencies：playwright-chromium 只用于导出 PDF/PPTX，
+# 在线构建课件（slidev build）用不到，装进来会让镜像无谓增大数百 MB。
+FROM node:22-slim AS slidev
+WORKDIR /slidev
+
+ARG NPM_REGISTRY=""
+
+COPY OJ-Slidev/package.json OJ-Slidev/package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm \
+    if [ -n "$NPM_REGISTRY" ]; then npm config set registry "$NPM_REGISTRY"; fi && \
+    npm ci --no-audit --no-fund --omit=dev
+
+COPY OJ-Slidev/ ./
+
+# ---------- 阶段 3：开发镜像（Maven + Node，供 compose.dev.yml 使用）----------
+# 开发栈的后端容器既要在容器内跑 Maven，又要能执行 Slidev 构建，
+# 因此把 Node 运行时叠加到 Maven 镜像上（两个基础镜像同属 Debian/Ubuntu 系，已验证可运行）。
+FROM maven:3.9-eclipse-temurin-17 AS dev
+COPY --from=node:22-slim /usr/local /usr/local
+
+# ---------- 阶段 4：运行时 ----------
+FROM eclipse-temurin:17-jre
+WORKDIR /app
+
+# 发行追溯标签：由 scripts/build-release.sh 注入（也可 docker build --build-arg 手动指定）。
+# 这些标签与发行清单里的提交 SHA / 版本 / 构建时间相互印证；缺失时保持 unknown，便于识别非发行构建。
+ARG GIT_SHA="unknown"
+ARG BUILD_VERSION="dev"
+ARG BUILD_TIME="unknown"
+ARG BUILD_SOURCE="https://github.com/RasVz/MuseAlgo-OJ"
+
+LABEL org.opencontainers.image.title="MuseAlgo-OJ backend" \
+      org.opencontainers.image.description="MuseAlgo-OJ 后端运行时（JRE 17 + Node 22 + Slidev 课件工程）" \
+      org.opencontainers.image.source="$BUILD_SOURCE" \
+      org.opencontainers.image.revision="$GIT_SHA" \
+      org.opencontainers.image.version="$BUILD_VERSION" \
+      org.opencontainers.image.created="$BUILD_TIME"
+
+# 判题用例、上传文件、课件产物的默认落点，建议挂载持久卷
+ENV OJ_TESTCASE_PATH=/data/testcases \
+    OJ_UPLOAD_DIR=/data/uploads \
+    OJ_SLIDEV_WORKER_DIR=/app/OJ-Slidev \
+    OJ_SLIDEV_OUTPUT_DIR=/app/OJ-Coursewares \
+    JAVA_OPTS="-Xmx2g"
+
+# 运行账号：显式固定 uid/gid=10001，避免不同基础镜像自动分配的组 ID 漂移导致卷权限不一致。
+# 运行期以非 root 身份启动，/app 归 root，只有下面列出的目录对运行账号可写。
+RUN groupadd -g 10001 musealgo \
+    && useradd -u 10001 -g musealgo -m -d /home/musealgo -s /usr/sbin/nologin musealgo
+
+# 可写目录必须「先在镜像里建好并 chown」——命名卷首次挂载时会把镜像里的目录内容与属主
+# 一起复制进卷；若镜像里没有该目录，卷会以 root 属主出现，非 root 进程写不进去。
+#   /app/logs              —— logback 所有 profile 都写 logs/oj-<profile>.json.log（WORKDIR=/app）
+#   /app/OJ-Slidev         —— SlidevBuilderService 把临时 Markdown 写进 workerDir
+#   /app/OJ-Coursewares    —— 课件构建输出
+RUN mkdir -p /data/testcases /data/uploads /app/logs /app/OJ-Coursewares \
+    && chown musealgo:musealgo /data/testcases /data/uploads /app/logs /app/OJ-Coursewares \
+    && chmod 0755 /data/testcases /data/uploads /app/logs /app/OJ-Coursewares
+
+# Node 运行时：课件构建需要在本容器内执行 slidev CLI
+COPY --from=node:22-slim /usr/local /usr/local
+
+# Slidev 课件工程（含 node_modules）。用 --chown 在拷贝层直接定属主，
+# 避免事后 chown -R 复制整个 node_modules 树（会让镜像增大一层）。
+COPY --chown=10001:10001 --from=slidev /slidev/ /app/OJ-Slidev/
+
+# 应用 jar：root 拥有且只读，被攻破的进程无法覆写自身产物（防持久化）。
+COPY --from=build /src/oj-admin/target/oj-admin-*.jar /app/app.jar
+RUN chmod 0444 /app/app.jar
+
+USER musealgo
+
+# 镜像级健康检查：直接 docker run 时也有探活；Compose 的 backend 服务会覆盖为同等检查，
+# 一次性 migrate 服务在 compose 中显式 healthcheck.disable 关闭它。
+HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=3 \
+    CMD curl -fsS http://127.0.0.1:8080/actuator/health | grep -q '"status":"UP"' || exit 1
+
+EXPOSE 8080
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar /app/app.jar"]

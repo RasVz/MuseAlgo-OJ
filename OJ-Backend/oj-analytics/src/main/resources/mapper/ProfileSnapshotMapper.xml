@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.musealgo.oj.analytics.mapper.ProfileSnapshotMapper">
+
+    <!--
+      ========================================================================
+      学生画像快照（student_profile_snapshot）的持久化。
+      ========================================================================
+      快照 = 某个统计周期结束时冻结下来的一份画像 JSON，外加一份可分享的报告文件地址。
+      它的价值在于「不可变的历史记录」：期中的实时数据每天都在变，
+      而「期中某次测评时这个学生的水平如何」必须被固定下来供日后对比与追溯。
+
+      写入策略因此是「幂等覆盖」而非「追加」：同一个学生同一个周期反复触发生成
+      （重跑任务、老师手动刷新）都应更新同一条记录，而不是堆出多条。
+      这一点完全靠数据库唯一键 uk_profile_student_period (student_id, period_start)
+      + ON DUPLICATE KEY UPDATE 实现，应用层不做「先查再决定插或改」的判断——
+      那在并发下必然出现重复行。
+      ========================================================================
+    -->
+
+    <!--
+        幂等写入快照：同一学生同一周期重复生成时更新而非报错。
+        依赖 uk_profile_student_period (student_id, period_start) 唯一键。
+    -->
+    <insert id="upsert">
+        <!--
+          没有写 period_start 的更新分支：它是唯一键的一部分，改它等于换一条记录，
+          不属于「更新快照」的语义。
+
+          report_url = COALESCE(VALUES(report_url), report_url) 保留旧值：
+          服务端 PDF/COS 链路未接入，当前生成流程不再写 report_url；该列只承载历史数据，
+          这里用 COALESCE 保证重跑快照时不会把旧的报告地址覆盖成空。
+        -->
+        INSERT INTO student_profile_snapshot
+            (student_id, class_id, period_start, period_end, snapshot_json, report_url)
+        VALUES
+            (#{studentId}, #{classId}, #{periodStart}, #{periodEnd}, #{snapshotJson}, #{reportUrl})
+        ON DUPLICATE KEY UPDATE
+            class_id      = VALUES(class_id),
+            period_end    = VALUES(period_end),
+            snapshot_json = VALUES(snapshot_json),
+            report_url    = COALESCE(VALUES(report_url), report_url),
+            <!--
+              重新生成同周期快照意味着用最新数据重算了画像，该快照不再是「重判后过期」的，
+              必须复位 stale=0；否则 T8 标脏过的周期即使重建成功也会被读取方永久忽略。
+              新插入行的 stale 走列默认值 0，不需要写在 INSERT 列清单里。
+            -->
+            stale         = 0
+    </insert>
+
+    <!--
+      重判后把快照标记为过期（T8，stale 列由 V56 迁移引入）。
+
+      为什么只标脏不重建：重判的核心事务已经提交，这里在 AFTER_COMMIT 阶段执行；
+      重建画像需要聚合大量提交数据，放进同一条链路会让重判失败面变大、耗时变长。
+      T8-2 会基于 stale 做重试/对账与重建（重建时 upsert 会复位 stale=0）。
+
+      WHERE 命中唯一键 (student_id, period_start)：调用方只持有这两个业务键，
+      且重复标记幂等。不写 update_time = update_time：该列定义带 ON UPDATE
+      CURRENT_TIMESTAMP，标脏本身就是一次真实变更，刷新时间符合语义。
+    -->
+    <update id="markStaleForPeriod">
+        UPDATE student_profile_snapshot
+        SET stale = 1
+        WHERE student_id = #{studentId}
+          AND period_start = #{periodStart}
+    </update>
+
+</mapper>

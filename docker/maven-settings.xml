@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Maven 容器内使用的 settings.xml
+  作用：把 central 指向阿里云公共仓库，避免容器内构建时直连 Maven Central 超时。
+  用法：mvn -s /maven-settings.xml ...
+-->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">
+  <mirrors>
+    <mirror>
+      <!-- id 必须保持 central：与宿主 ~/.m2 中缓存的仓库 id 一致，
+           否则 Maven 会对每个已缓存依赖重新做「可下载性校验」，构建显著变慢 -->
+      <id>central</id>
+      <name>Aliyun Public Repository</name>
+      <url>https://maven.aliyun.com/repository/public</url>
+      <mirrorOf>central</mirrorOf>
+    </mirror>
+  </mirrors>
+</settings>

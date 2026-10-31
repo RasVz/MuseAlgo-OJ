@@ -1,0 +1,666 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.musealgo.oj.judge.mapper.SubmissionMapper">
+
+    <!--
+      ========================================================================
+      提交记录（submission）的查询层。
+      ========================================================================
+      表里同时承载两类数据：**最终判题结论**（status 0-5、score、run_time）与
+      **进行中的阶段**（judge_phase: QUEUED/COMPILING/JUDGING/FINISHED/FAILED）。
+      两者刻意分开：status 保持历史语义不变（对外展示「已判完是什么结果」），
+      judge_phase 只描述「现在走到哪一步」，让前端能在判题过程中给出比「等待中」更细的反馈。
+      迁移文件中的注释不可改动（会导致 Flyway checksum mismatch）。
+
+      两个贯穿本文件的重要过滤条件：
+        vp_attempt_id IS NULL —— 排除「虚拟参赛（VP）」的提交。VP 复盘不算正式成绩，
+                                  必须与真实参赛者的排名、统计隔离，所以凡是与比赛/排名/
+                                  班级学情相关的查询都带上这一条。
+        status = 1            —— 全库统一的「AC」判定。所有 passed / acceptedCount /
+                                  solvedCount 都以 status=1 为准，不要改成 status > 0。
+
+      【大字段铁律】V52 拆分后源码存于 submission_code，submission 表不再有 code 列。
+      列表类查询一律 include List_Column_List（不含 error_message），
+      只有详情类查询才用 BaseResultMap 的全量字段——否则列表页每行都要回表读错误信息，
+      行数一多查询耗时随数据量线性劣化。
+
+      【注解与 XML 的分工】SubmissionMapper 接口上有十余个 @Select/@Update 方法
+      （VP 最好成绩、查重取代码、按用例统计等），与本文件的 XML id **完全不重叠**。
+      这是刻意保持的：MyBatis 中同一 id 不可同时存在注解与 XML 定义——
+      会以 XML 为准、注解被静默忽略并打 ERROR 日志。新增方法前先在本文件里查同名 id，
+      已存在就改写 XML，不要两边都写。
+      ========================================================================
+    -->
+
+    <!-- 通用查询映射结果 -->
+    <resultMap id="BaseResultMap" type="com.musealgo.oj.judge.entity.Submission">
+        <id column="id" property="id" />
+        <result column="contest_id" property="contestId" />
+        <result column="vp_attempt_id" property="vpAttemptId" />
+        <result column="problem_id" property="problemId" />
+        <result column="user_id" property="userId" />
+        <result column="code" property="code" />
+        <result column="language" property="language" />
+        <result column="score" property="score" />
+        <result column="status" property="status" />
+        <result column="run_time" property="runTime" />
+        <result column="run_memory" property="runMemory" />
+        <result column="error_message" property="errorMessage" />
+        <result column="create_time" property="createTime" />
+    </resultMap>
+
+    <!-- 通用查询结果列（V52 起 submission 已无 code 列，源码查 submission_code） -->
+    <sql id="Base_Column_List">
+        id, contest_id, vp_attempt_id, problem_id, user_id, language, score, status, run_time, run_memory, error_message, create_time
+    </sql>
+
+    <!-- 列表轻量列（不含 code/error_message 大字段，避免列表页每行拉全量代码，B1） -->
+    <sql id="List_Column_List">
+        id, contest_id, vp_attempt_id, problem_id, user_id, language, score, status, run_time, run_memory, create_time
+    </sql>
+
+    <!-- 分页查询比赛提交记录：某场比赛的提交流水，供选手查看自己的/所有人的提交历史 -->
+    <select id="selectContestSubmissionPage" resultMap="BaseResultMap">
+        <!--
+          分页插件在此 SQL 外面自动追加 LIMIT，故本体不写分页语句。
+
+          - include List_Column_List 而非 Base_Column_List：列表页不需要 error_message，
+            省掉它能让本页走覆盖索引，少一次回表。
+          - vp_attempt_id IS NULL：排除虚拟参赛的提交（理由见文件头）。
+          - mineOnly 用三个条件联合判断（mineOnly 为真 **且** currentUserId 非空）：
+            防止调用方只传 mineOnly=true 却没传用户 ID 时退化成「不加任何限制」，
+            把全场比赛的所有人提交暴露给当前用户。currentUserId 为空时静默不过滤是刻意的
+            （此时按「看全部」处理，由上层保证权限）。
+          - ORDER BY id DESC：用自增主键而非 create_time 排序。id 单调递增且是主键，
+            走主键索引可避免 filesort；create_time 无索引且可能存在同秒并列，
+            排序不稳定会导致分页出现重复/遗漏行。
+        -->
+        SELECT
+            <include refid="List_Column_List"/>
+        FROM submission
+        WHERE contest_id = #{contestId}
+          AND vp_attempt_id IS NULL
+        <if test="mineOnly != null and mineOnly and currentUserId != null">
+            AND user_id = #{currentUserId}
+        </if>
+        <if test="problemId != null">
+            AND problem_id = #{problemId}
+        </if>
+        <if test="language != null and language != ''">
+            AND language = #{language}
+        </if>
+        <if test="status != null">
+            AND status = #{status}
+        </if>
+        ORDER BY id DESC
+    </select>
+
+    <!-- 统计用户最近一段时间每天的提交次数：用于个人主页的提交日历/热力图 -->
+    <select id="selectUserDailySubmissionStats" resultType="map">
+        <!--
+          时间窗用 [startTime, endTime) **左闭右开**。
+          相邻区间的统计必须能无缝拼接且不重复计数，若写成 <= 会让落在边界的那一秒被两个区间
+          各算一次，热力图上的总数会大于实际提交数。这里两个比较符都包在 CDATA 里：
+          XML 中裸写 < 和 > 会被当成标签起始符导致解析失败，CDATA 段内原样输出，
+          是本文件处理比较运算的固定写法（不要改成 &lt; / &gt;，两种都可行但风格需统一）。
+          没有出现的日期不会返回行（不是补 0），前端按日期区间自行填零。
+
+          注意本条虽是 startTime/endTime 参数名，却是半开区间——同一个文件里
+          selectHomeworkSubmissionPage 用同名参数、闭区间。**参数名推不出开闭性**，
+          判断依据只能是这条 SQL 在做什么（周期切片用半开，按时刻筛选用闭开）。
+          详见 selectHomeworkSubmissionPage 处的对应说明。
+        -->
+        SELECT
+            DATE_FORMAT(create_time, '%Y-%m-%d') AS submitDate,
+            COUNT(*) AS submitCount
+        FROM submission
+        WHERE user_id = #{userId}
+          AND create_time <![CDATA[>=]]> #{startTime}
+          AND create_time <![CDATA[<]]> #{endTime}
+        GROUP BY DATE_FORMAT(create_time, '%Y-%m-%d')
+        ORDER BY submitDate ASC
+    </select>
+
+    <!-- 查询某场比赛的全部提交记录，按提交时间升序（赛后排名重建；列表语义，不取 code） -->
+    <select id="selectAllByContestIdOrderByCreateTimeAsc" resultMap="BaseResultMap">
+        <!--
+          给赛后重建排名用，语义是**完整流水**而非分页结果，所以字段用 List_Column_List
+          就够（重建只需要时间、题目、状态、分数，不需要错误信息）。
+
+          排序为 create_time ASC, id ASC —— 双字段排序：create_time 是业务时间，
+          同一秒内的多条提交（尤其是压测或脚本批量提交）必须靠 id 二次定序才能得到
+          确定性的顺序。排名重建依赖这个顺序计算首 AC 时间，少了 id 会导致罚时抖动、
+          每次重建结果不一致。
+        -->
+        SELECT
+            <include refid="List_Column_List"/>
+        FROM submission
+        WHERE contest_id = #{contestId}
+          AND vp_attempt_id IS NULL
+        ORDER BY create_time ASC, id ASC
+    </select>
+
+    <!-- 教师查看某班级某次作业的提交流水：作业提交明细页，支持按学生/题目/时间筛选 -->
+    <select id="selectHomeworkSubmissionPage" resultType="map">
+        <!--
+          两个 INNER JOIN 是**双重收窄**，各自排除一类不应出现的行，缺一不可：
+            INNER JOIN class_student   —— 只看本班学生的提交；用 INNER 而非 LEFT 是刻意的：
+                                         已被移出班级的学生（class_student 已删）其提交
+                                         不应再出现在教师视野里，LEFT 会把它们漏出来。
+            INNER JOIN problem_list_item —— 只看本次作业（homeworkId）包含的题目；
+                                         学生在别的练习里做的提交同样要排除。
+          两条 JOIN 都把关联条件写在 ON 上而非 WHERE 上，与 INNER 等价，但语义更清楚：
+          「这两个 JOIN 决定行是否保留」，而 WHERE 只负责可选筛选。
+
+          后面 problem / user 用 LEFT JOIN：这两个是纯展示性补充信息
+          （题目标题、学生显示名）。题目被删除或用户被注销时提交记录本身仍有价值，
+          LEFT 能保留这行数据；若用 INNER 会让历史提交凭空消失。
+
+          学生名的三级回退 COALESCE(NULLIF(cs.remark,''), NULLIF(u.nickname,''), u.username)：
+          教师在 class_student.remark 里录的学号/姓名最贴近教学场景，优先显示；
+          remark 可能为空串（不是 NULL），所以必须用 NULLIF 先把空串转成 NULL，
+          否则 COALESCE 会选中空串导致列表显示成空白。昵称为空时再退回登录用户名，
+          保证任何情况下都有一列可读的名字。
+
+          时间窗是**闭区间** [startTime, endTime]（两端都带等号），与本文件画像统计用的
+          [from, to) 半开区间不同。这是按业务语义分的，不是笔误：
+            本查询按「教师筛选一个具体时间段的提交流水」工作，
+            用户选了 14:00 这个时刻就期望看到 14:00 的提交，故闭区间；
+            画像统计按「从 0 点起每 7 天一段」切片，相邻段必须首尾不重不漏才能拼回完整区间，
+            故必须左闭右开。若无脑「统一成一种」，要么边界那次提交被漏掉，
+            要么相邻两段把边界那次算两遍、总提交数对不上。
+          同一个文件里两种写法并存，不要看到另一种就顺手统一。
+        -->
+        SELECT
+        s.id,
+        s.user_id AS studentId,
+        COALESCE(NULLIF(cs.remark, ''), NULLIF(u.nickname, ''), u.username) AS studentName,
+        s.problem_id AS problemId,
+        p.title AS problemTitle,
+        s.language,
+        s.status,
+        s.score,
+        s.run_time AS runTime,
+        s.run_memory AS runMemory,
+        s.error_message AS errorMessage,
+        s.create_time AS createTime
+        FROM submission s
+        INNER JOIN class_student cs ON cs.student_id = s.user_id AND cs.class_id = #{classId}
+        INNER JOIN problem_list_item pli ON pli.problem_id = s.problem_id AND pli.list_id = #{homeworkId}
+        LEFT JOIN user u ON u.id = s.user_id
+        LEFT JOIN problem p ON p.id = s.problem_id
+        WHERE 1 = 1
+        <if test="studentId != null">
+            AND s.user_id = #{studentId}
+        </if>
+        <if test="problemId != null">
+            AND s.problem_id = #{problemId}
+        </if>
+        <if test="startTime != null">
+            AND s.create_time <![CDATA[>=]]> #{startTime}
+        </if>
+        <if test="endTime != null">
+            AND s.create_time <![CDATA[<=]]> #{endTime}
+        </if>
+        ORDER BY s.create_time DESC, s.id DESC
+    </select>
+
+    <!-- ============================================================ -->
+    <!-- 画像统计 (consumed by ProfileQueryAdapter)                    -->
+    <!-- ============================================================ -->
+
+    <!--
+        按 tag 聚合某学生在 [from, to) 的提交数据。
+        一次 AC 的判定：该学生在该题目上只有一条提交且 status=1。
+        最高难度：取该 tag 下尝试过的题目中最大的 p.difficulty。
+    -->
+    <select id="selectProfileByTag" resultType="com.musealgo.oj.api.profile.TagStat">
+        <!--
+          三条 JOIN 全部是 INNER：画像只针对「有提交且打了标签」的题目，
+          未尝试过的题目不该出现在 attempted 的分母里。
+
+          firstTryPassed（一次 AC 题数）是本查询最容易改错的一列。
+          它的语义不是「第一次提交就 AC」，而是「该学生在该题上的**最早一条**提交就是 AC」——
+          判定方式是「不存在比它更早的提交」，即 s2 的 COUNT(*) = 0。
+          为什么用相关子查询而不是 MIN(create_time) = create_time 的自连接：
+          同秒多条提交时自连接会同时判 true 造成重复计数，而子查询只问「有没有更早的」，
+          结果唯一确定。注意 s2 的 WHERE 里刻意**没有**限定 s2.user_id = #{userId}
+          而是沿用外层的 s.user_id——本查询按单学生聚合，两者等价，
+          但沿用外层值使条件在批量多学生场景下也自动成立（见 selectClassProfileByDimension）。
+
+          avgAcTimeMs 用 AVG(CASE WHEN status=1 THEN run_time END) 再 COALESCE 兜 0：
+          AVG 会自动忽略 CASE 产生的 NULL，只对 AC 提交求均值；该 tag 下若一次都没 AC，
+          AVG 返回 NULL，外层 COALESCE 兜成 0 避免前端拿到 null。
+          maxDifficulty 用 MAX 而非 AVG：反映「这个标签下学生碰到的最高难度」，
+          用均值会把难题和简单题的信息混掉，失去画像价值。
+        -->
+        SELECT
+            t.id              AS tagId,
+            t.name            AS tagName,
+            t.parent_id       AS parentId,
+            t.dimension       AS dimension,
+            COUNT(DISTINCT s.problem_id)                                    AS attempted,
+            COUNT(DISTINCT CASE WHEN s.status = 1 THEN s.problem_id END)    AS passed,
+            COUNT(DISTINCT CASE
+                WHEN s.status = 1
+                     AND (SELECT COUNT(*) FROM submission s2
+                          WHERE s2.user_id = s.user_id
+                            AND s2.problem_id = s.problem_id
+                            AND s2.create_time &lt; s.create_time) = 0
+                THEN s.problem_id END)                                       AS firstTryPassed,
+            COUNT(s.id)                                                     AS totalSubmissions,
+            COALESCE(AVG(CASE WHEN s.status = 1 THEN s.run_time END), 0)    AS avgAcTimeMs,
+            COALESCE(MAX(p.difficulty), 0)                                  AS maxDifficulty
+        FROM submission s
+        JOIN problem_tag pt ON pt.problem_id = s.problem_id
+        JOIN tag t          ON t.id = pt.tag_id
+        JOIN problem p      ON p.id = s.problem_id
+        WHERE s.user_id = #{userId}
+          AND s.create_time &gt;= #{from}
+          AND s.create_time &lt;  #{to}
+        GROUP BY t.id, t.name, t.parent_id, t.dimension
+    </select>
+
+    <!--
+        按知识域（dimension）上卷汇总。
+        返回 map 列表，每条 {dimension, attempted, passed, firstTryPassed, totalSubmissions}。
+    -->
+    <select id="selectProfileByDimension" resultType="map">
+        <!--
+          「上卷」的含义：把同一 dimension 下的所有标签（DP、图论、贪心……）合并成一行，
+          得到知识域级别的掌握度。用 GROUP BY t.dimension 实现，而不是查出各标签行后
+          在应用层相加——后者需要把明细全部拉回内存，班级规模下不可接受。
+
+          没有 JOIN problem 表：本查询不涉及难度与耗时，少一次关联即少一次行放大。
+
+          与 selectProfileByTag 共用同一套 firstTryPassed 判定（相关子查询问「有无更早提交」），
+          保证标签级与知识域级的指标口径完全一致。否则会出现「各标签的 attempted 之和
+          大于知识域的 attempted」这种对不上的数据（同一题目可挂多个标签，上卷时
+          COUNT(DISTINCT problem_id) 做了去重，而各标签行各自去重后相加必然大于整体）。
+        -->
+        SELECT
+            t.dimension       AS dimension,
+            COUNT(DISTINCT s.problem_id)                                    AS attempted,
+            COUNT(DISTINCT CASE WHEN s.status = 1 THEN s.problem_id END)    AS passed,
+            COUNT(DISTINCT CASE
+                WHEN s.status = 1
+                     AND (SELECT COUNT(*) FROM submission s2
+                          WHERE s2.user_id = s.user_id
+                            AND s2.problem_id = s.problem_id
+                            AND s2.create_time &lt; s.create_time) = 0
+                THEN s.problem_id END)                                       AS firstTryPassed,
+            COUNT(s.id)                                                     AS totalSubmissions
+        FROM submission s
+        JOIN problem_tag pt ON pt.problem_id = s.problem_id
+        JOIN tag t          ON t.id = pt.tag_id
+        WHERE s.user_id = #{userId}
+          AND s.create_time &gt;= #{from}
+          AND s.create_time &lt;  #{to}
+          AND t.parent_id IS NOT NULL   <!-- 只统计叶子/中间节点，避免知识域自身被重复算 -->
+        GROUP BY t.dimension
+    </select>
+
+    <!-- 学生历史所有 AC 过的题目 id（推荐题单排除用） -->
+    <select id="selectSolvedProblemIds" resultType="long">
+        <!--
+          给「推荐题单」用：把学生已经 AC 过的题全部排除，只推没做过的。
+          DISTINCT 是必需的——同一题提交多次会返回重复 id，导致排除逻辑按重复项匹配。
+          没有时间窗：本查询的语义是「历史全部做过」，与统计类的 [from, to) 不同。
+          没有 vp_attempt_id 过滤：VP 练习也是真实提交，做过的题就该被排除。
+        -->
+        SELECT DISTINCT problem_id
+        FROM submission
+        WHERE user_id = #{userId}
+          AND status = 1
+    </select>
+
+    <!--
+        批量聚合多个学生在各知识域的统计（班级百分位计算用）。
+        一次查询带回 userId + dimension + 四个计数，应用层在内存里组装与算 mastery。
+    -->
+    <select id="selectClassProfileByDimension" resultType="map">
+        <!--
+          班级百分位需要「全班每个人的每个知识域掌握度」作为参照系，
+          因此一次查询带回所有学生的行（user_id 进 GROUP BY），
+          在应用层排序取分位——避免按学生逐个调用 selectProfileByDimension
+          造成 N+1 次查询（一个班 50 人就是 50 条 SQL）。
+
+          这也解释了 firstTryPassed 的子查询里为什么用 s.user_id 而不是 #{userId}：
+          查询是多用户的，必须按当前行所属的学生判断「有没有更早的提交」。
+
+          t.parent_id IS NOT NULL：只统计叶子/中间层标签，上卷维度时排除根节点，
+          与 selectProfileByDimension 保持同口径。
+        -->
+        SELECT
+            s.user_id       AS userId,
+            t.dimension     AS dimension,
+            COUNT(DISTINCT s.problem_id)                                    AS attempted,
+            COUNT(DISTINCT CASE WHEN s.status = 1 THEN s.problem_id END)    AS passed,
+            COUNT(DISTINCT CASE
+                WHEN s.status = 1
+                     AND (SELECT COUNT(*) FROM submission s2
+                          WHERE s2.user_id = s.user_id
+                            AND s2.problem_id = s.problem_id
+                            AND s2.create_time &lt; s.create_time) = 0
+                THEN s.problem_id END)                                       AS firstTryPassed,
+            COUNT(s.id)                                                     AS totalSubmissions
+        FROM submission s
+        JOIN problem_tag pt ON pt.problem_id = s.problem_id
+        JOIN tag t          ON t.id = pt.tag_id
+        WHERE s.user_id IN
+        <foreach collection="studentIds" item="sid" open="(" separator="," close=")">
+            #{sid}
+        </foreach>
+          AND s.create_time &gt;= #{from}
+          AND s.create_time &lt;  #{to}
+          AND t.parent_id IS NOT NULL
+        GROUP BY s.user_id, t.dimension
+    </select>
+
+    <!--
+        周概览：总提交次数、AC 次数、AC 题数（去重）、活跃天数。
+    -->
+    <select id="selectWeekOverview" resultType="com.musealgo.oj.api.profile.ProfileQuery$WeekOverview">
+        <!--
+          四个指标都从同一批 submission 行算出，无 JOIN、无 GROUP BY——
+          是本文件里最简单也最容易写错的一处口径区分：
+            totalSubmissions      = COUNT(*)，含所有状态
+            acceptedCount         = AC 的**次数**（同一题 AC 两次算 2），衡量练习强度
+            acceptedProblemCount  = AC 的**题数**（去重），衡量覆盖广度
+            activeDays            = 有过提交的自然日数
+          前者与后两者故意不是同一个数，别在优化时「顺手」把 COUNT(*) 改成去重，
+          那会让「练习强度」和「覆盖广度」显示成一样的值，画像就失去意义。
+          activeDays 用 DATE() 而非 DATE_FORMAT()：结果只用于计数，格式越轻越好。
+        -->
+        SELECT
+            COUNT(*)                                                        AS totalSubmissions,
+            COALESCE(SUM(CASE WHEN s.status = 1 THEN 1 ELSE 0 END), 0)     AS acceptedCount,
+            COUNT(DISTINCT CASE WHEN s.status = 1 THEN s.problem_id END)    AS acceptedProblemCount,
+            COUNT(DISTINCT DATE(s.create_time))                             AS activeDays
+        FROM submission s
+        WHERE s.user_id = #{userId}
+          AND s.create_time &gt;= #{from}
+          AND s.create_time &lt;  #{to}
+    </select>
+
+    <!-- ============================================================ -->
+    <!-- 练习分析（T7，consumed by ProfileQueryAdapter）                -->
+    <!-- ============================================================ -->
+    <!--
+      与上方「画像统计」的关键口径差异（改任何一条前先读这里）：
+
+        1. 比赛与 VP 提交：练习分析明确计入（contest_id / vp_attempt_id 非空也统计）。
+           画像旧查询（selectProfileByTag / selectProfileByDimension /
+           selectClassProfileByDimension / selectWeekOverview）**当前没有** vp_attempt_id
+           或 contest_id 过滤，VP 提交同样进入画像与周报统计；与文件头「比赛/排名/班级学情
+           一律排除 VP」的约定不一致。这是既有行为，改动会改变历史报告数值，
+           需产品确认后再统一口径，不要在单个查询里先改。
+        2. 只排除两类「还没有可信结论」的提交：
+             status = 0           待判（含排队/判题中）
+             judge_phase = FAILED 基础设施失败（不是选手的错，不能算错题）
+           因此过滤条件统一为 status != 0 AND judge_phase != 'FAILED'，
+           而旧画像用 status = 1 判定 AC 是另一套语义，不要互相套用。
+        3. JOIN problem 且 p.is_deleted = 0：题目被删除后其提交不再进入练习统计；
+           但**不**限制 problem.is_public —— 私有题也是学生真实练习的一部分。
+        4. 时间窗是半开区间 [from, to)，from/to 都为 null 表示全部时间。
+           30 天窗口的应用层计算见 PracticeAnalyticsService，SQL 层不做 NOW() 运算
+           （否则跨时区/跨零点时统计口径会漂移）。
+        5. firstTryPassed 的判定：该用户在该题上「最早一条被统计的提交」是 AC。
+           用 ROW_NUMBER() 按 (create_time, id) 升序编号，rn=1 即最早一条：
+             - create_time 是 DATETIME(0)，同秒并列时靠自增 id 定序，结果唯一确定；
+             - 不用 MIN(create_time)=create_time 的自连接，同秒多条会同时命中造成重复计数；
+             - 注意 rn 是在**当前时间窗过滤之后**编号的，所以 30 天窗口的「一次通过」
+               是「近 30 天内该题最早一条提交就 AC」，与窗口外的历史提交无关。
+        6. 五个查询共用 Practice_Row_Source 片段，保证过滤条件、firstTry 判定完全同口径；
+           任一查询单独改条件都会让总览与明细对不上。
+    -->
+
+    <!--
+      练习分析的统一取数子查询：过滤 + 每题最早一条标记。
+      外层查询统一以 s 为别名引用，可用的列：
+        id / problem_id / status / create_time / run_time / difficulty / rn
+      其中 difficulty 来自 JOIN problem，供难度分桶与 tag 最高难度使用，
+      这样明细查询不必重复 JOIN problem（is_deleted 过滤已经在片段里完成）。
+    -->
+    <sql id="Practice_Row_Source">
+        SELECT
+            s.id,
+            s.problem_id,
+            s.status,
+            s.create_time,
+            s.run_time,
+            p.difficulty,
+            ROW_NUMBER() OVER (PARTITION BY s.problem_id ORDER BY s.create_time ASC, s.id ASC) AS rn
+        FROM submission s
+        INNER JOIN problem p ON p.id = s.problem_id AND p.is_deleted = 0
+        WHERE s.user_id = #{userId}
+          AND s.status != 0
+          AND COALESCE(s.judge_phase, '') != 'FAILED'
+        <if test="from != null">
+          AND s.create_time &gt;= #{from}
+        </if>
+        <if test="to != null">
+          AND s.create_time &lt; #{to}
+        </if>
+    </sql>
+
+    <!--
+      练习总览。
+      acRate 是百分数（0-100，1 位小数），分母为纳入统计的提交数；
+      没有提交时 NULLIF 让除法返回 NULL，再由 COALESCE 兜 0，避免除零与前端 null。
+      solvedProblemCount 与 acceptedSubmissions 故意不同：前者是去重题数（广度），
+      后者是 AC 次数（强度），两者不能互换。
+    -->
+    <select id="selectPracticeOverview" resultType="com.musealgo.oj.api.profile.ProfileQuery$PracticeOverview">
+        SELECT
+            COUNT(*)                                                        AS totalSubmissions,
+            COALESCE(SUM(CASE WHEN s.status = 1 THEN 1 ELSE 0 END), 0)     AS acceptedSubmissions,
+            COUNT(DISTINCT CASE WHEN s.status = 1 THEN s.problem_id END)   AS solvedProblemCount,
+            COUNT(DISTINCT s.problem_id)                                   AS attemptedProblemCount,
+            COALESCE(ROUND(SUM(CASE WHEN s.status = 1 THEN 1 ELSE 0 END) * 100.0
+                           / NULLIF(COUNT(*), 0), 1), 0)                   AS acRate,
+            COUNT(DISTINCT CAST(s.create_time AS DATE))                    AS activeDays
+        FROM (<include refid="Practice_Row_Source"/>) s
+    </select>
+
+    <!--
+      练习分析：按 tag 聚合。
+      firstTryPassed 直接看 rn=1 且 status=1 —— 与旧画像的相关子查询等价，
+      但窗口函数只算一次，避免对每行再发一条子查询。
+      totalSubmissions / avgAcTimeMs / maxDifficulty 沿用旧画像的字段语义，
+      MasteryCalculator 依赖 maxDifficulty 计算难度覆盖，不能省。
+    -->
+    <select id="selectPracticeByTag" resultType="com.musealgo.oj.api.profile.TagStat">
+        SELECT
+            t.id              AS tagId,
+            t.name            AS tagName,
+            t.parent_id       AS parentId,
+            t.dimension       AS dimension,
+            COUNT(DISTINCT s.problem_id)                                    AS attempted,
+            COUNT(DISTINCT CASE WHEN s.status = 1 THEN s.problem_id END)    AS passed,
+            COUNT(DISTINCT CASE WHEN s.rn = 1 AND s.status = 1
+                                THEN s.problem_id END)                       AS firstTryPassed,
+            COUNT(s.id)                                                     AS totalSubmissions,
+            COALESCE(AVG(CASE WHEN s.status = 1 THEN s.run_time END), 0)    AS avgAcTimeMs,
+            COALESCE(MAX(s.difficulty), 0)                                  AS maxDifficulty
+        FROM (<include refid="Practice_Row_Source"/>) s
+        INNER JOIN problem_tag pt ON pt.problem_id = s.problem_id
+        INNER JOIN tag t          ON t.id = pt.tag_id
+        GROUP BY t.id, t.name, t.parent_id, t.dimension
+    </select>
+
+    <!--
+      练习分析：按知识域上卷。
+      t.parent_id IS NOT NULL 与旧画像上卷一致：根维度标签本身也会出现在 problem_tag 里
+      （题目可以挂根标签），若不排除，同一道题会被维度行重复计数。
+    -->
+    <select id="selectPracticeByDimension" resultType="map">
+        SELECT
+            t.dimension       AS dimension,
+            COUNT(DISTINCT s.problem_id)                                    AS attempted,
+            COUNT(DISTINCT CASE WHEN s.status = 1 THEN s.problem_id END)    AS passed,
+            COUNT(DISTINCT CASE WHEN s.rn = 1 AND s.status = 1
+                                THEN s.problem_id END)                       AS firstTryPassed,
+            COUNT(s.id)                                                     AS totalSubmissions
+        FROM (<include refid="Practice_Row_Source"/>) s
+        INNER JOIN problem_tag pt ON pt.problem_id = s.problem_id
+        INNER JOIN tag t          ON t.id = pt.tag_id
+        WHERE t.parent_id IS NOT NULL
+        GROUP BY t.dimension
+    </select>
+
+    <!--
+      练习分析：难度分桶（800-3000，100 一档）。
+      FLOOR(difficulty / 100) * 100 把任意 difficulty 归到所在 100 分档位
+      （例如 1250 → 1200）；GREATEST/LEAST 把异常值夹到 800-3000 区间，
+      保证返回的 rating 一定是合法桶号。只返回有数据的桶，800..3000 全量补齐在应用层做。
+    -->
+    <select id="selectPracticeDifficulty" resultType="com.musealgo.oj.api.profile.ProfileQuery$DifficultyCount">
+        SELECT
+            GREATEST(800, LEAST(3000, FLOOR(s.difficulty / 100) * 100))    AS rating,
+            COUNT(DISTINCT CASE WHEN s.status = 1 THEN s.problem_id END)   AS solved,
+            COUNT(DISTINCT s.problem_id)                                   AS attempted
+        FROM (<include refid="Practice_Row_Source"/>) s
+        GROUP BY GREATEST(800, LEAST(3000, FLOOR(s.difficulty / 100) * 100))
+    </select>
+
+    <!--
+      练习分析：已通过题目列表（每题一条）。
+      同一题可能 AC 多次，solvedAt 取**首次** AC 时间（MIN(create_time)），
+      语义是「这道题是什么时候被拿下的」；排序按 solvedAt 倒序，
+      再以 problem_id 倒序做稳定兜底，避免同一秒 AC 的多题顺序随机导致前端列表抖动。
+      LIMIT 参数由调用方传入（固定 LIST_LIMIT=50），SQL 不写死。
+    -->
+    <select id="selectPracticeSolvedProblems"
+            resultType="com.musealgo.oj.api.profile.ProfileQuery$ProblemAttemptRow">
+        SELECT
+            s.problem_id          AS problemId,
+            MIN(s.create_time)    AS occurredAt
+        FROM (<include refid="Practice_Row_Source"/>) s
+        WHERE s.status = 1
+        GROUP BY s.problem_id
+        ORDER BY MIN(s.create_time) DESC, s.problem_id DESC
+        LIMIT #{limit}
+    </select>
+
+    <!--
+      练习分析：尝试过但（在当前时间窗内）没有 AC 的题目。
+      HAVING SUM(status=1)=0 而不是在应用层过滤：否则要先拉回全部题目再筛，
+      列表 LIMIT 也会失效（过滤后不足 50 条）。
+      lastAttemptAt 取窗口内最后一次提交时间，按它倒序，最近在磕的题排最前。
+    -->
+    <select id="selectPracticeTriedProblems"
+            resultType="com.musealgo.oj.api.profile.ProfileQuery$ProblemAttemptRow">
+        SELECT
+            s.problem_id          AS problemId,
+            MAX(s.create_time)    AS occurredAt
+        FROM (<include refid="Practice_Row_Source"/>) s
+        GROUP BY s.problem_id
+        HAVING SUM(CASE WHEN s.status = 1 THEN 1 ELSE 0 END) = 0
+        ORDER BY MAX(s.create_time) DESC, s.problem_id DESC
+        LIMIT #{limit}
+    </select>
+
+    <!--
+        班级学情聚合（ClassInsightService 用）：班级概览。
+        时间窗 [from, to)，status=1 视为 AC；submission 经 class_student 归属班级。
+    -->
+    <select id="selectClassInsightSummary" resultType="map">
+        <!--
+          用 INNER JOIN class_student 而非 LEFT：统计对象就是「本班学生的提交」，
+          非本班学生的提交与本概览无关，LEFT 只会引入噪声行。
+          关联条件 cs.class_id = #{classId} 写在 ON 上（INNER 之下与 WHERE 等价），
+          一眼能看出它是「限定归属」而非「筛选已有数据」。
+
+          四个指标里 activeStudentCount 与 problemCount 用 COUNT(DISTINCT ...)：
+          概览要回答的是「多少人参与」「涉及多少题」，重复提交不能放大这两个数；
+          而 totalSubmissions / acceptedCount 故意用普通计数——
+          它们衡量的是练习量，学生刷 50 次就该计 50。
+        -->
+        SELECT
+            COUNT(*)                                                        AS totalSubmissions,
+            COALESCE(SUM(CASE WHEN s.status = 1 THEN 1 ELSE 0 END), 0)      AS acceptedCount,
+            COUNT(DISTINCT s.user_id)                                       AS activeStudentCount,
+            COUNT(DISTINCT s.problem_id)                                    AS problemCount
+        FROM submission s
+        INNER JOIN class_student cs ON cs.student_id = s.user_id AND cs.class_id = #{classId}
+        WHERE s.create_time <![CDATA[>=]]> #{from}
+          AND s.create_time <![CDATA[<]]>  #{to}
+    </select>
+
+    <!-- 班级学情聚合：每日提交/AC 趋势 -->
+    <select id="selectClassInsightDaily" resultType="map">
+        <!--
+          班级归属与时间窗过滤与 selectClassInsightSummary 完全一致，两条查询必须同口径，
+          否则「概览里的总提交数」会和「趋势图各点之和」对不上。
+          同样是「次数」而非「题数」：submitCount / acCount 都用普通 COUNT/SUM，
+          因为趋势图要看的是每天的投入量波动。
+        -->
+        SELECT
+            DATE_FORMAT(s.create_time, '%Y-%m-%d') AS submitDate,
+            COUNT(*)                                AS submitCount,
+            COALESCE(SUM(CASE WHEN s.status = 1 THEN 1 ELSE 0 END), 0) AS acCount
+        FROM submission s
+        INNER JOIN class_student cs ON cs.student_id = s.user_id AND cs.class_id = #{classId}
+        WHERE s.create_time <![CDATA[>=]]> #{from}
+          AND s.create_time <![CDATA[<]]>  #{to}
+        GROUP BY DATE_FORMAT(s.create_time, '%Y-%m-%d')
+        ORDER BY submitDate ASC
+    </select>
+
+    <!-- 班级学情聚合：题目维度（提交量降序，含通过率分子分母） -->
+    <select id="selectClassInsightProblems" resultType="map">
+        <!--
+          找出「全班都栽在这道题上」的题目：按提交量降序排，最上面的就是难点的集中区。
+          用 LEFT JOIN problem 而非 INNER：题目被下架/删除后，历史提交统计仍需保留
+          （教师要复盘「上周那批数据」），此时用 COALESCE 兜一个占位标题
+          '题目 #<id>' 保证前端不显示空白。COALESCE + NULLIF 的组合同样是为了处理空串。
+
+          submitCount 与 acCount 同时返回而非直接算通过率：分母可能为 0
+          （题目加了但没人提交），直接相除会得到 NULL 或除零，
+          交由应用层按 0 处理并决定是否隐藏该行，更灵活。
+        -->
+        SELECT
+            s.problem_id AS problemId,
+            COALESCE(NULLIF(p.title, ''), CONCAT('题目 #', s.problem_id)) AS problemTitle,
+            COUNT(*)     AS submitCount,
+            COALESCE(SUM(CASE WHEN s.status = 1 THEN 1 ELSE 0 END), 0) AS acCount
+        FROM submission s
+        INNER JOIN class_student cs ON cs.student_id = s.user_id AND cs.class_id = #{classId}
+        LEFT JOIN problem p ON p.id = s.problem_id
+        WHERE s.create_time <![CDATA[>=]]> #{from}
+          AND s.create_time <![CDATA[<]]>  #{to}
+        GROUP BY s.problem_id, p.title
+        ORDER BY submitCount DESC
+    </select>
+
+    <!-- 班级学情聚合：学生维度（提交量降序） -->
+    <select id="selectClassInsightStudents" resultType="map">
+        <!--
+          学生名沿用全项目统一的三级回退：class_student.remark（教师填的学号/姓名）
+          > 昵称 > 登录用户名。NULLIF(remark, '') 不可省：remark 常是空串而非 NULL，
+          不做转换会让 COALESCE 选中空串，教师看到一列空白。
+
+          GROUP BY 里必须列出 u.nickname, u.username, cs.remark 三个表达式：
+          MySQL 的 ONLY_FULL_GROUP_BY 下，SELECT 引用了非聚合列就必须出现在 GROUP BY 中。
+          这看着冗余（按 s.user_id 分组理论上唯一决定这些值），但去掉会直接报错。
+
+          lastSubmitTime = MAX(create_time) 用于标出「谁已经很久没做题了」，
+          是教师识别掉队学生的信号，故不可省。
+        -->
+        SELECT
+            s.user_id AS userId,
+            COALESCE(NULLIF(cs.remark, ''), NULLIF(u.nickname, ''), u.username) AS studentName,
+            COUNT(*)  AS submitCount,
+            COALESCE(SUM(CASE WHEN s.status = 1 THEN 1 ELSE 0 END), 0) AS acCount,
+            MAX(s.create_time) AS lastSubmitTime
+        FROM submission s
+        INNER JOIN class_student cs ON cs.student_id = s.user_id AND cs.class_id = #{classId}
+        LEFT JOIN user u ON u.id = s.user_id
+        WHERE s.create_time <![CDATA[>=]]> #{from}
+          AND s.create_time <![CDATA[<]]>  #{to}
+        GROUP BY s.user_id, u.nickname, u.username, cs.remark
+        ORDER BY submitCount DESC
+    </select>
+
+</mapper>
