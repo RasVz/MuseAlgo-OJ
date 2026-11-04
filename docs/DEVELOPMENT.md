@@ -84,6 +84,25 @@ docker compose -f compose.dev.yml up -d
 安装阶段使用 `-am`；启动阶段不加 `-am`，以免对不可执行的父工程执行 `spring-boot:run`。
 如需在线生成课件，还应执行 `(cd OJ-Slidev && npm ci --omit=dev)`。
 
+#### 本机课堂配置（local-classroom）
+
+课堂演示可用显式 profile `local-classroom` 启动，非课堂环境无需启用：
+
+```bash
+SPRING_PROFILES_ACTIVE=local-classroom ./scripts/run-local.sh
+# 或给 jar 追加：--spring.profiles.active=local-classroom
+```
+
+该 profile 在 `application.yml` 基础上只覆盖以下值，均可用环境变量改回：
+
+- 登录限流：`ip-max-attempts=120`、`ip-window-seconds=60`、`account-max-failures=5`、`account-window-seconds=60`、`account-cooldown-seconds=60`，分别由 `OJ_SECURITY_LOGIN_IP_MAX_ATTEMPTS`、`OJ_SECURITY_LOGIN_IP_WINDOW_SECONDS`、`OJ_SECURITY_LOGIN_ACCOUNT_MAX_FAILURES`、`OJ_SECURITY_LOGIN_ACCOUNT_WINDOW_SECONDS`、`OJ_SECURITY_LOGIN_ACCOUNT_COOLDOWN_SECONDS` 覆盖。
+- 数据库等待：Hikari `connection-timeout=2000ms`（`OJ_DB_CONNECTION_TIMEOUT_MS`）、JDBC `connectTimeout=2000ms`（`OJ_DB_CONNECT_TIMEOUT_MS`）、`socketTimeout=5000ms`（`OJ_DB_SOCKET_TIMEOUT_MS`）。
+- `server.forward-headers-strategy=none`。
+
+前置的 MySQL、Redis 与密钥仍按上文既有说明配置；profile 只调整应用参数，不会自动启动这些服务。
+
+注意：置于反向代理后时所有用户共享代理对端额度，当前版本忽略客户端自报的 IP 头，未来部署需要可信代理边界。连接池 2000ms 仅限制取连接等待，不是整个 HTTP 请求或 SQL 执行时限，不承诺 20 人长期稳定。
+
 ### 2.1 管理中心 AI 服务（可选）
 
 默认仍使用 `.env` 里的 `DEEPSEEK_*` / `AI_MODEL`（`LEGACY`）。要验证后台服务切换，需要一份独立主密钥和只读挂载：
