@@ -59,7 +59,13 @@ spring:
       minimum-idle: 10
       maximum-pool-size: ${OJ_DB_POOL_SIZE:50}   # B4：判题并发化后写放大，15 → 50（需同步核对 MySQL max_connections ≥ 100）
       max-lifetime: 1800000
-      connection-timeout: 30000
+      # 从池里拿连接的等待上限。默认 30000 保持现状；数据库不可达时该值决定请求悬挂多久，
+      # 需要「有界失败」的部署可调小（如 5000），配合下面的 JDBC 建连/读超时一起收敛。
+      connection-timeout: ${OJ_DB_CONNECTION_TIMEOUT_MS:30000}
+      data-source-properties:
+        # 0 = 驱动默认（不限），仅在显式配置时收紧，避免改变既有行为
+        connectTimeout: ${OJ_DB_CONNECT_TIMEOUT_MS:0}
+        socketTimeout: ${OJ_DB_SOCKET_TIMEOUT_MS:0}
 
   # ----------------------------------------
   # 2. 缓存配置 (Redis)
@@ -161,6 +167,17 @@ oj:
   security:
     api-docs-public: ${OJ_API_DOCS_PUBLIC:true}
     normalized-rbac: ${OJ_NORMALIZED_RBAC:false}
+    login:
+      # 登录限流有两个独立口径，不能互相替代：
+      # - ip-*：同一出口 IP 在窗口内的登录请求总数（防单机爆破）。默认保持历史值 10 次/60 秒；
+      #   机房共用出口时按班级规模放大（如 120/60），否则整班会一起被拒。
+      # - account-*：同一用户名的失败次数（防换 IP 猜同一账号）。默认 0=关闭，需显式开启；
+      #   命中后该账号冷却 cooldown 秒，正常学生集中登录不会触发。
+      ip-max-attempts: ${OJ_SECURITY_LOGIN_IP_MAX_ATTEMPTS:10}
+      ip-window-seconds: ${OJ_SECURITY_LOGIN_IP_WINDOW_SECONDS:60}
+      account-max-failures: ${OJ_SECURITY_LOGIN_ACCOUNT_MAX_FAILURES:0}
+      account-window-seconds: ${OJ_SECURITY_LOGIN_ACCOUNT_WINDOW_SECONDS:60}
+      account-cooldown-seconds: ${OJ_SECURITY_LOGIN_ACCOUNT_COOLDOWN_SECONDS:60}
   search:
     # Meilisearch 全文搜索（任务⑧，2026-08-14 方案第 8 节）：
     # 读侧 /problem/search，写侧题目增删改同步索引；故障自动回退 LIKE 查询。

@@ -23,4 +23,17 @@ public class RateLimitException extends RuntimeException {
         super("提交过于频繁，请 " + remainingSeconds + " 秒后再试");
         this.remainingSeconds = remainingSeconds;
     }
+
+    /**
+     * 带动作名的超限异常，用于登录/注册等非提交场景的文案。
+     *
+     * @param remainingSeconds 还需等待的秒数
+     * @param action           动作名（如「登录」）；空白时沿用默认文案
+     */
+    public RateLimitException(long remainingSeconds, String action) {
+        super(action == null || action.isBlank()
+                ? "提交过于频繁，请 " + remainingSeconds + " 秒后再试"
+                : action + "过于频繁，请 " + remainingSeconds + " 秒后再试");
+        this.remainingSeconds = remainingSeconds;
+    }
 }

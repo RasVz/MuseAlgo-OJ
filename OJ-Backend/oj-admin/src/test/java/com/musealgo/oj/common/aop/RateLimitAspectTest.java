@@ -81,20 +81,21 @@ class RateLimitAspectTest {
     }
 
     @Test
-    void anonymousByIpPrefersForwardedHeaderFirstValue() throws Throwable {
+    void anonymousByIpIgnoresUntrustedForwardedHeaders() throws Throwable {
         when(annotation.byIp()).thenReturn(true);
         when(redis.execute(any(DefaultRedisScript.class), anyList(), any(Object[].class))).thenReturn(0L);
 
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setRemoteAddr("10.0.0.8");
         request.addHeader("X-Forwarded-For", "203.0.113.7, 10.0.0.1");
+        request.addHeader("X-Real-IP", "203.0.113.9");
         RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
 
         aspect.around(joinPoint, annotation);
 
         ArgumentCaptor<List<String>> keysCaptor = ArgumentCaptor.forClass(List.class);
         verify(redis).execute(any(DefaultRedisScript.class), keysCaptor.capture(), any(Object[].class));
-        assertEquals(List.of("oj:ratelimit:authLogin:203.0.113.7"), keysCaptor.getValue());
+        assertEquals(List.of("oj:ratelimit:authLogin:10.0.0.8"), keysCaptor.getValue());
     }
 
     @Test
@@ -135,4 +136,40 @@ class RateLimitAspectTest {
         verify(redis).execute(any(DefaultRedisScript.class), keysCaptor.capture(), any(Object[].class));
         assertEquals(List.of("oj:ratelimit:authLogin:42"), keysCaptor.getValue());
     }
+    @Test
+    void realIpHeaderAloneCannotChangeTheLimitKey() throws Throwable {
+        when(annotation.byIp()).thenReturn(true);
+        when(redis.execute(any(DefaultRedisScript.class), anyList(), any(Object[].class))).thenReturn(0L);
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRemoteAddr("10.0.0.8");
+        request.addHeader("X-Real-IP", "203.0.113.9");
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
+        aspect.around(joinPoint, annotation);
+        ArgumentCaptor<List<String>> keys = ArgumentCaptor.forClass(List.class);
+        verify(redis).execute(any(DefaultRedisScript.class), keys.capture(), any(Object[].class));
+        assertEquals(List.of("oj:ratelimit:authLogin:10.0.0.8"), keys.getValue());
+    }
+
+    @Test
+    void loginUsesConfiguredBudgetAndAction() throws Throwable {
+        when(annotation.byIp()).thenReturn(true);
+        when(annotation.action()).thenReturn("登录");
+        when(annotation.countProperty()).thenReturn("oj.security.login.ip-max-attempts");
+        when(annotation.timeProperty()).thenReturn("oj.security.login.ip-window-seconds");
+        var env = new org.springframework.mock.env.MockEnvironment()
+                .withProperty("oj.security.login.ip-max-attempts", "120")
+                .withProperty("oj.security.login.ip-window-seconds", "60");
+        ReflectionTestUtils.setField(aspect, "environment", env);
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRemoteAddr("10.0.0.8");
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
+        when(redis.execute(any(DefaultRedisScript.class), anyList(), any(Object[].class))).thenReturn(30L);
+        var error = assertThrows(RateLimitException.class, () -> aspect.around(joinPoint, annotation));
+        assertTrue(error.getMessage().contains("登录"));
+        verify(redis).execute(any(DefaultRedisScript.class),
+                org.mockito.ArgumentMatchers.eq(List.of("oj:ratelimit:authLogin:10.0.0.8")),
+                org.mockito.ArgumentMatchers.eq("120"), org.mockito.ArgumentMatchers.eq("60"));
+        verify(joinPoint, never()).proceed();
+    }
+
 }

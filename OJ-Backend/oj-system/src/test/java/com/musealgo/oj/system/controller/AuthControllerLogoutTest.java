@@ -9,6 +9,7 @@ import org.springframework.security.authentication.AuthenticationManager;
 import com.musealgo.oj.common.api.Result;
 import com.musealgo.oj.common.utils.JwtUtils;
 import com.musealgo.oj.system.service.JwtBlacklistService;
+import com.musealgo.oj.system.service.LoginFailureGuard;
 import com.musealgo.oj.system.service.UserService;
 
 import java.util.Map;
@@ -30,6 +31,7 @@ class AuthControllerLogoutTest {
     @Mock AuthenticationManager authenticationManager;
     @Mock JwtUtils jwtUtils;
     @Mock JwtBlacklistService jwtBlacklistService;
+    @Mock LoginFailureGuard loginFailureGuard;
     @InjectMocks AuthController authController;
 
     private static final String ACCESS = "access-token";
@@ -95,7 +97,8 @@ class AuthControllerLogoutTest {
     @Test
     void accessTokenCannotBeUsedToRefreshSession() {
         JwtUtils realJwt = new JwtUtils(java.util.UUID.randomUUID().toString().repeat(2));
-        AuthController controller = new AuthController(userService, authenticationManager, realJwt, jwtBlacklistService);
+        AuthController controller = new AuthController(userService, authenticationManager, realJwt,
+                jwtBlacklistService, loginFailureGuard);
         assertEquals(401, controller.refreshToken(Map.of("refreshToken", realJwt.generateAccessToken("stu"))).getCode());
     }
 

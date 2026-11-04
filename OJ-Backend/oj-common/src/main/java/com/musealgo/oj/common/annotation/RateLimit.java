@@ -53,4 +53,27 @@ public @interface RateLimit {
      * </p>
      */
     boolean byIp() default false;
+
+    /**
+     * 覆盖 {@link #count()} 的配置项名称（Spring Environment 属性键）。
+     * <p>
+     * 用于「同一套代码在不同部署/测试配置下取不同额度」：属性存在且为正整数时优先生效，
+     * 否则回退到注解上的 {@link #count()}。默认空串表示不做覆盖，保持注解静态语义。
+     * </p>
+     */
+    String countProperty() default "";
+
+    /**
+     * 覆盖 {@link #time()} 的配置项名称（Spring Environment 属性键），语义同 {@link #countProperty()}。
+     */
+    String timeProperty() default "";
+
+    /**
+     * 超限提示里的动作名，供前端展示「{@code <动作>过于频繁，请 N 秒后再试}」。
+     * <p>
+     * 默认空串沿用历史文案「提交过于频繁」；登录等非提交场景可设为「登录」「注册」，
+     * 避免向用户显示与当前操作无关的提示。
+     * </p>
+     */
+    String action() default "";
 }

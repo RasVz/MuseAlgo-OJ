@@ -14,6 +14,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import com.musealgo.oj.common.exception.GlobalExceptionHandler;
 import com.musealgo.oj.common.utils.JwtUtils;
 import com.musealgo.oj.system.service.JwtBlacklistService;
+import com.musealgo.oj.system.service.LoginFailureGuard;
 import com.musealgo.oj.system.service.UserService;
 
 import java.util.stream.Stream;
@@ -44,7 +45,7 @@ class AuthControllerLoginTest {
         AuthenticationManager manager = mock(AuthenticationManager.class);
         when(manager.authenticate(any())).thenThrow(failure);
         AuthController controller = new AuthController(mock(UserService.class), manager,
-                mock(JwtUtils.class), mock(JwtBlacklistService.class));
+                mock(JwtUtils.class), mock(JwtBlacklistService.class), mock(LoginFailureGuard.class));
         MockMvc mvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new GlobalExceptionHandler()).build();
 

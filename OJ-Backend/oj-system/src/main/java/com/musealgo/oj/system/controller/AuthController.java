@@ -18,6 +18,7 @@ import com.musealgo.oj.common.api.Result;
 import com.musealgo.oj.common.utils.JwtUtils;
 import com.musealgo.oj.system.entity.User;
 import com.musealgo.oj.system.service.JwtBlacklistService;
+import com.musealgo.oj.system.service.LoginFailureGuard;
 import com.musealgo.oj.system.service.UserService;
 
 import java.util.HashMap;
@@ -68,6 +69,8 @@ public class AuthController {
     private final JwtUtils jwtUtils; // 你的工具类
 
     private final JwtBlacklistService jwtBlacklistService;
+
+    private final LoginFailureGuard loginFailureGuard;
 
     @ExceptionHandler(AuthenticationException.class)
     public Result<String> handleAuthenticationFailure(AuthenticationException exception) {
@@ -152,7 +155,9 @@ public class AuthController {
     }
 
     @Operation(summary = "用户登录")
-    @RateLimit(key = "authLogin", time = 60, count = 10, byIp = true)
+    @RateLimit(key = "authLogin", action = "登录", byIp = true, time = 60, count = 10,
+            countProperty = "oj.security.login.ip-max-attempts",
+            timeProperty = "oj.security.login.ip-window-seconds")
     @PostMapping("/login")
     public Result<Map<String, Object>> login(@RequestBody Map<String, Object> loginData) {
         String username = (String) loginData.get("username");
@@ -163,10 +168,24 @@ public class AuthController {
 
         log.debug("rememberMe: {}", rememberMe);
 
+        // 0. 账号维度冷却（默认关闭，由 oj.security.login.account-max-failures 开启）
+        //    与按 IP 的 @RateLimit 是两个口径：IP 额度防单机爆破，账号冷却防「换 IP 猜同一账号」。
+        long cooling = loginFailureGuard.lockedSeconds(username);
+        if (cooling > 0) {
+            return Result.error(429, "账号或密码错误次数过多，请 " + cooling + " 秒后再试");
+        }
+
         // 1. 认证
-        Authentication authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(username, password)
-        );
+        Authentication authentication;
+        try {
+            authentication = authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(username, password)
+            );
+        } catch (AuthenticationException e) {
+            loginFailureGuard.recordFailure(username);
+            throw e;
+        }
+        loginFailureGuard.clearFailures(username);
 
         User authenticatedUser = (User) authentication.getPrincipal();
 

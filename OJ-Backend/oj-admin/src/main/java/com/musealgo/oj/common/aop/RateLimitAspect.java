@@ -81,6 +81,10 @@ public class RateLimitAspect {
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
 
+    /** 用于解析注解上通过属性名声明的额度覆盖；未配置时退回注解字面量。 */
+    @Autowired
+    private org.springframework.core.env.Environment environment;
+
     // ==================== Lua 脚本（核心） ====================
     //
     // KEYS[1]  — 限流 Key，例如 "oj:ratelimit:submit:123"
@@ -151,6 +155,8 @@ public class RateLimitAspect {
         String redisKey = String.format("oj:ratelimit:%s:%s", rateLimit.key(), subject);
 
         // --- 第二步：执行 Lua 脚本（原子限流判断） ---
+        int limitCount = resolvePositiveInt(rateLimit.countProperty(), rateLimit.count());
+        int limitWindow = resolvePositiveInt(rateLimit.timeProperty(), rateLimit.time());
         long result;
         try {
             // execute(脚本对象, KEYS列表, ARGV参数...)
@@ -158,8 +164,8 @@ public class RateLimitAspect {
             Long execResult = stringRedisTemplate.execute(
                     REDIS_SCRIPT,
                     Collections.singletonList(redisKey),         // KEYS[1]
-                    String.valueOf(rateLimit.count()),           // ARGV[1]
-                    String.valueOf(rateLimit.time())             // ARGV[2]
+                    String.valueOf(limitCount),                   // ARGV[1]
+                    String.valueOf(limitWindow)                   // ARGV[2]
             );
             // execResult 可能为 null（极端情况，如 Redis 脚本执行异常），安全兜底为 0
             result = execResult != null ? execResult : 0;
@@ -184,16 +190,46 @@ public class RateLimitAspect {
             // result 就是还需要等待的秒数
             log.info("【限流】用户 {} 对接口 {} 请求过于频繁，需等待 {} 秒",
                     subject, rateLimit.key(), result);
-            throw new RateLimitException(result);
+            throw new RateLimitException(result, rateLimit.action());
         }
     }
 
     /**
-     * 解析客户端真实 IP。
+     * 解析注解上的额度覆盖配置。
      * <p>
-     * 依次尝试 {@code X-Forwarded-For}（取第一个，防伪造场景由反代覆盖）、
-     * {@code X-Real-IP}、{@code getRemoteAddr()}。取不到请求上下文时兜底 "unknown"
-     * （极端场景下所有此类请求共享同一把锁，宁可误伤不放开）。
+     * 只有属性存在、可解析且为正整数时才覆盖注解字面量；配置缺失或非法（0、负数、非数字）
+     * 一律回退，避免因为一处配置写错把限流关掉。
+     * </p>
+     *
+     * @param property 属性名，空串表示不覆盖
+     * @param fallback 注解字面量
+     * @return 最终生效的额度/窗口值
+     */
+    private int resolvePositiveInt(String property, int fallback) {
+        if (property == null || property.isBlank()) {
+            return fallback;
+        }
+        try {
+            Integer value = environment.getProperty(property, Integer.class);
+            return value != null && value > 0 ? value : fallback;
+        } catch (RuntimeException e) {
+            log.warn("【限流】属性 {} 解析失败，回退注解值 {}：{}", property, fallback, e.getMessage());
+            return fallback;
+        }
+    }
+
+    /**
+     * 解析客户端 IP，仅使用 TCP 连接对端地址 {@code request.getRemoteAddr()}。
+     * <p>
+     * 不读取 {@code X-Forwarded-For} / {@code X-Real-IP}：这些请求头可由客户端任意伪造，
+     * 当前部署未建立可信代理边界，信任它们会让攻击者通过切换头部值绕过按 IP 限流。
+     * 取不到请求上下文时兜底 "unknown"（极端场景下所有此类请求共享同一把锁，宁可误伤不放开）。
+     * </p>
+     * <p>
+     * 注意：若日后在应用前部署反向代理，{@code getRemoteAddr()} 得到的是代理的连接对端地址，
+     * 此时按 IP 限流会退化为按代理计数（所有客户端共享同一个额度）。届时需要另外建立
+     * 可信代理解析机制（例如只信任已知代理网段下发的转发头，并正确校验链路），
+     * 而不是在当前实现中直接信任客户端头部。
      * </p>
      *
      * @return 客户端 IP 字符串
@@ -204,15 +240,6 @@ public class RateLimitAspect {
         if (attrs == null) {
             return "unknown";
         }
-        HttpServletRequest request = attrs.getRequest();
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",")[0].trim();
-        }
-        String realIp = request.getHeader("X-Real-IP");
-        if (realIp != null && !realIp.isBlank()) {
-            return realIp.trim();
-        }
-        return request.getRemoteAddr();
+        return attrs.getRequest().getRemoteAddr();
     }
 }
