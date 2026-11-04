@@ -68,6 +68,19 @@ class SubmissionApplicationServiceTest {
         org.mockito.Mockito.verifyNoInteractions(submissionService);
     }
 
+    @Test
+    void unsupportedLanguageIsRejectedBeforeJudging() {
+        // 不受支持的语言若被受理，判题网关会回退成 Python 执行，产生与所选语言无关的成绩
+        login(10L);
+        var command = new SubmitSolutionCommand();
+        command.setProblemId(100L);
+        command.setLanguage("go");
+        command.setCode("package main");
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> new SubmissionApplicationService(problemAccess, submissionService, contextResolver).submit(command));
+        org.mockito.Mockito.verifyNoInteractions(submissionService);
+    }
+
     private void login(Long userId) {
         User user = new User();
         user.setId(userId);

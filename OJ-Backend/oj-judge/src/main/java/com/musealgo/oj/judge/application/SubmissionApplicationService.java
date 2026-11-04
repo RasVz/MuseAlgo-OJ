@@ -41,7 +41,12 @@ public class SubmissionApplicationService {
             submission.setVpAttemptId(context.vpAttemptId());
         }
         if (command.getContestId() == null) problemAccess.requirePracticeSubmission(command.getProblemId());
-        submission.setLanguage(command.getLanguage().trim());
+        String language = command.getLanguage() == null ? "" : command.getLanguage().trim();
+        if (!com.musealgo.oj.judge.JudgeService.isSupportedLanguage(language)) {
+            // 不受支持的语言若被受理，会被判题网关回退成 Python 执行，成绩语义不成立。
+            throw new IllegalArgumentException("当前仅支持 C++ / Java / Python 提交");
+        }
+        submission.setLanguage(language);
         submission.setCode(command.getCode());
 
         return SubmissionResultResponse.from(submissionService.submitCode(submission));

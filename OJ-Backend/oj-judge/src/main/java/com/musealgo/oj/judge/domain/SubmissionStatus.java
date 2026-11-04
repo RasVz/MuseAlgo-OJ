@@ -45,6 +45,15 @@ public enum SubmissionStatus {
         };
     }
 
+    /**
+     * Judge0 的「Internal Error(13)」「Exec Format Error(14)」属于判题机自身故障，
+     * 不是选手程序的结果。这类返回必须走基础设施失败（重试/FAILED）路径，
+     * 不能落成 RUNTIME_ERROR——否则比赛里会按用户错误计罚时，学情统计也会失真。
+     */
+    public static boolean isInfrastructureFailure(int judge0Status) {
+        return judge0Status == 13 || judge0Status == 14;
+    }
+
     // --- semantic helpers: use these instead of comparing raw codes ---
 
     /** AC; the problem is considered passed for profiling/ranking. */

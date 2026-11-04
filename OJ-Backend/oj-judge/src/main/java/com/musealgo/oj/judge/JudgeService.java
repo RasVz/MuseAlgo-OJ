@@ -191,6 +191,28 @@ public class JudgeService implements JudgeGateway {
         return languageIds.getOrDefault(normalized, languageIds.getOrDefault("python", 71));
     }
 
+    /**
+     * 语言别名到 Judge0 语言键的唯一映射。受理侧与网关侧共用同一份，避免两处各自维护白名单。
+     */
+    private static final Map<String, String> LANGUAGE_ALIASES = Map.ofEntries(
+            Map.entry("java", "java"), Map.entry("java8", "java"), Map.entry("java 8", "java"),
+            Map.entry("c", "c"),
+            Map.entry("cpp", "cpp"), Map.entry("c++", "cpp"),
+            Map.entry("c++14", "cpp"), Map.entry("c++17", "cpp"),
+            Map.entry("python", "python"), Map.entry("python3", "python"), Map.entry("py", "python"));
+
+    /**
+     * 提交受理侧的语言白名单校验。
+     * <p>
+     * 判题网关对未知语言会回退到 Python（保证内部调用总能跑出结果），因此受理侧必须先拒绝
+     * 不支持的语言：否则一份标着 {@code go} 的代码会被 Python 解释执行，产生与所选语言无关的
+     * CE/RE/AC，成绩语义不成立。前端只提供 cpp/java/python 三项。
+     * </p>
+     */
+    public static boolean isSupportedLanguage(String lang) {
+        return lang != null && LANGUAGE_ALIASES.containsKey(lang.trim().toLowerCase());
+    }
+
     private String decodeB64(String value) {
         if (value == null || value.isBlank()) {
             return value;
@@ -205,26 +227,6 @@ public class JudgeService implements JudgeGateway {
 
     private String normalizeLanguage(String lang) {
         if (lang == null) return "python";
-
-        String normalized = lang.trim().toLowerCase();
-        switch (normalized) {
-            case "java":
-            case "java8":
-            case "java 8":
-                return "java";
-            case "c":
-                return "c";
-            case "cpp":
-            case "c++":
-            case "c++14":
-            case "c++17":
-                return "cpp";
-            case "python":
-            case "python3":
-            case "py":
-                return "python";
-            default:
-                return "python";
-        }
+        return LANGUAGE_ALIASES.getOrDefault(lang.trim().toLowerCase(), "python");
     }
 }

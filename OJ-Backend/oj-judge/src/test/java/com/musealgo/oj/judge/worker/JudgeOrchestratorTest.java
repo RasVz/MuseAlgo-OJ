@@ -274,6 +274,21 @@ class JudgeOrchestratorTest {
     }
 
     @Test
+    void judgeMachineInternalErrorFailsTaskInsteadOfScoringRuntimeError() {
+        // Judge0 13=Internal Error 是判题机故障：必须让任务进入重试/FAILED 通道，
+        // 不能写成 status=4（选手运行时错误）进入成绩与统计。
+        Submission s = submission(10L);
+        stubBasics(s, List.of(caseOf(1, 100)));
+        when(judgeGateway.judge(any(), any(), any(), any(), anyDouble(), anyInt()))
+                .thenReturn(Map.of("status", 13, "time", 0, "memory", 0));
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> orchestrator.executeJudge(lease(10L)));
+        assertTrue(error.getMessage().contains("13"));
+        verifyNoCompletion();
+    }
+
+    @Test
     void positiveProblemLimitsAreNotSilentlyRaised() {
         stubBasics(submission(9L), List.of(caseOf(1, 100)));
         when(problemQuery.findProblemLimits(100L)).thenReturn(new int[]{500, 65536});

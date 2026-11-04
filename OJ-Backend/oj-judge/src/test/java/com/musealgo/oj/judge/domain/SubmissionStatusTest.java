@@ -25,6 +25,17 @@ class SubmissionStatusTest {
     }
 
     @Test
+    void judgeMachineFailuresAreNotUserResults() {
+        // 13=Internal Error、14=Exec Format Error 属于判题机故障，不能记成选手运行时错误
+        assertTrue(SubmissionStatus.isInfrastructureFailure(13));
+        assertTrue(SubmissionStatus.isInfrastructureFailure(14));
+        for (int userStatus : new int[]{3, 4, 5, 6, 7, 8, 9, 10, 11, 12}) {
+            assertFalse(SubmissionStatus.isInfrastructureFailure(userStatus),
+                    "status " + userStatus + " 不应被当作基础设施失败");
+        }
+    }
+
+    @Test
     void reverseLookupByPersistedCode() {
         assertEquals(SubmissionStatus.PENDING, SubmissionStatus.of((byte) 0));
         assertEquals(SubmissionStatus.ACCEPTED, SubmissionStatus.of((byte) 1));

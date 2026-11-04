@@ -140,6 +140,11 @@ public class JudgeOrchestrator {
                 }
 
                 int judge0Status = numberValue(result.get("status"));
+                if (SubmissionStatus.isInfrastructureFailure(judge0Status)) {
+                    // 判题机内部错误：本次执行结果不可信，抛出让任务走重试/FAILED，而不是记成选手运行时错误。
+                    throw new IllegalStateException(
+                            "判题机内部错误 status=" + judge0Status + "，本次结果不计入用户成绩");
+                }
                 int timeMs = (int) (decimalValue(result.get("time")) * 1000);
                 int memoryKb = numberValue(result.get("memory"));
 
@@ -167,7 +172,15 @@ public class JudgeOrchestrator {
 
         // 等待全部用例完成（单个用例超时由 JudgeGateway 侧 HTTP 超时兜底，
         // 极端超时由 JudgeTaskWatchdog 按任务级别回收）
-        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+        try {
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+        } catch (java.util.concurrent.CompletionException e) {
+            // 用例线程内的判题机故障要原样抛出，避免 judge_task.last_error 只剩 CompletionException 包装
+            if (e.getCause() instanceof RuntimeException cause) {
+                throw cause;
+            }
+            throw e;
+        }
 
         // 4) 聚合与回写
         SubmissionStatus finalStatus = firstFailureStatus.get() != null
