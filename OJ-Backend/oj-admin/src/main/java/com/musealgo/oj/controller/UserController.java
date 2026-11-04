@@ -102,16 +102,12 @@ public class UserController {
         return null;
     }
 
-    /** 主页是否对未登录用户公开（preferences.profilePublic 默认 true） */
+    /** 主页是否对未登录用户公开（preferences.profilePublic 默认 true）；数据库异常直接传播，避免权限未知时放行 */
     private boolean isProfilePublic(Long targetUserId) {
-        try {
-            Integer hidden = jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM user WHERE id = ? AND JSON_UNQUOTE(JSON_EXTRACT(preferences, '$.profilePublic')) = 'false'",
-                    Integer.class, targetUserId);
-            return hidden == null || hidden == 0;
-        } catch (Exception e) {
-            return true;
-        }
+        Integer hidden = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM user WHERE id = ? AND JSON_UNQUOTE(JSON_EXTRACT(preferences, '$.profilePublic')) = 'false'",
+                Integer.class, targetUserId);
+        return hidden == null || hidden == 0;
     }
 
     /** 未登录访问他人主页时，校验对方是否公开主页 */
