@@ -66,9 +66,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 class AiServiceAdminIT {
 
-    private static final String DB_URL =
-            "jdbc:mysql://127.0.0.1:3307/oj_ai_service_test?useUnicode=true&characterEncoding=UTF-8"
-                    + "&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true";
     private static final Path KEY_FILE;
     private static final HttpServer UPSTREAM;
     private static final String UPSTREAM_URL;
@@ -96,17 +93,33 @@ class AiServiceAdminIT {
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", () -> DB_URL);
-        registry.add("spring.datasource.username", () -> "root");
-        registry.add("spring.datasource.password", () -> "123456");
-        registry.add("spring.data.redis.host", () -> "127.0.0.1");
-        registry.add("spring.data.redis.port", () -> "6381");
+        requireInjectedStack();
         registry.add("oj.ai.crypto.key-file", KEY_FILE::toString);
         registry.add("oj.ai.network.private-targets", () -> UPSTREAM_URL);
         // 宿主环境可能带真实 DEEPSEEK_* 变量；集成测试必须强制隔离，LEGACY 分支也不得外呼。
         registry.add("ai.api-key", () -> "");
         registry.add("ai.api-url", () -> "http://127.0.0.1:9/v1/chat/completions");
         registry.add("ai.model", () -> "test-legacy-model");
+    }
+
+    /**
+     * 本用例会清理 {@code ai_service_config} 并改写 {@code ai_runtime_config}，因此必须跑在
+     * 一次性测试栈上：由外部注入 {@code SPRING_DATASOURCE_URL}（连同 {@code OJ_DB_PASS}、
+     * {@code SPRING_DATA_REDIS_PORT}），不再在代码里硬编码端口和口令。
+     * <p>
+     * 缺少注入时直接失败，而不是退回 {@code application.yml} 的本机默认库——否则在开发机上
+     * 会静默删掉真实环境里已有的 AI 服务配置。
+     * </p>
+     */
+    private static void requireInjectedStack() {
+        String url = System.getenv("SPRING_DATASOURCE_URL");
+        boolean injected = url != null && !url.isBlank();
+        boolean explicitLocal = "true".equalsIgnoreCase(System.getenv("OJ_IT_ALLOW_LOCAL_DB"));
+        if (!injected && !explicitLocal) {
+            throw new IllegalStateException(
+                    "AiServiceAdminIT 需要独立测试栈注入 SPRING_DATASOURCE_URL/OJ_DB_PASS"
+                            + "（或显式设置 OJ_IT_ALLOW_LOCAL_DB=true 使用本机库）");
+        }
     }
 
     @Autowired
