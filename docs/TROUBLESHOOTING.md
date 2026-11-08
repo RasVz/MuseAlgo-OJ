@@ -1,6 +1,6 @@
 # 常见问题与排错
 
-按「症状 → 原因 → 处理」组织。若这里没写到你遇到的问题，欢迎开 Issue。
+按「症状 → 原因 → 处理」组织。
 
 ---
 
@@ -25,8 +25,10 @@ openssl rand -base64 48          # 生成一个
 
 **处理**：正常情况下 MySQL 容器首次启动会自动执行 `docker/mysql-init/00-schema.sql`。若你没看到它执行，通常是：
 
-- 数据卷**早已存在**（初始化脚本只在数据卷为空时执行一次）→ 执行 `docker compose -f compose.dev.yml down -v` 清空后重建；
+- 数据卷**早已存在**（初始化脚本只在数据卷为空时执行一次）→ 确认当前项目和卷的数据归属。只有确认可丢弃的本地合成开发数据，才按[开发指南](DEVELOPMENT.md#六构建与测试)中的重置命令操作；不要在生产或含有用数据的项目上执行 `down -v`；
 - `00-schema.sql` 被误删或未被拷贝进工作目录 → 检查该文件是否存在。
+
+新建卷还会导入 `01-reference-roles.sql` 建立基础角色，不会创建账号或业务数据；已有卷不会自动补跑 MySQL 初始化脚本。生产环境先用 [运维入口](OPERATIONS.md) 检查数据库状态，不要通过删除卷来补数据。
 
 ### 日志出现 Flyway `checksum mismatch`
 
@@ -38,6 +40,32 @@ openssl rand -base64 48          # 生成一个
 - 如果是生产库，**不要**用 `flyway repair` 掩盖问题，也不要手改 `flyway_schema_history`。正确做法是把改动还原（迁移文件必须保持字节级不变），把需要的修正写成**新的** `V{n+1}__说明.sql`。
 
 > 已执行或已分发的迁移一律冻结，与仓库是否公开无关；只新增迁移，不改历史文件。详见 [DEVELOPMENT.md](DEVELOPMENT.md) 第 3.2 节。
+
+在仓库根目录运行 `python3 scripts/check_migrations.py` 可发现本地迁移文件与 SHA-256 登记不一致；随后对照可信 Git 历史定位具体改动。不要同时改写迁移和登记清单来绕过检查，也不要用 `flyway repair` 掩盖历史校验错误。
+
+### `ops.py status` 显示迁移入口不可用
+
+**原因**：当前Compose选用的后端镜像不包含独立数据库维护入口，常见于旧版本镜像。
+
+**处理**：核对 `BACKEND_IMAGE` 指向包含当前维护入口的发行镜像，再重新查询。状态检查失败时不会自动回退到业务启动入口执行迁移；不要为绕过错误而启动旧业务镜像写入未知结构。
+
+### V63角色初始化失败或留下存储过程
+
+**表现**：角色映射检查报告未知或冲突；Flyway报告V63失败；或重试时提示 `bootstrap_reference_roles` 已存在。
+
+**原因与边界**：生产 `ops.py` 维护入口会在迁移前只读检查内置角色映射；开发应用启动的 Spring Flyway 路径则会直接执行V63。该迁移先创建MySQL存储过程，再在 `CALL` 中检查未知映射。MySQL过程内的 `ROLLBACK` 不会撤销此前的 routine DDL，失败时后面的 `DROP PROCEDURE` 也不会执行；Flyway 历史记录是否标记失败须按数据库中的实际记录判断，不能从应用日志推断。
+
+**处理**：不要盲目重启后端或运行 `flyway repair`，也不要手动删除routine或清空数据卷。先停止自动重试并保存日志；在 `oj_db` 中只读检查角色、过程和V63历史：
+
+```sql
+SELECT id, code FROM sys_role
+WHERE id IN (1, 2, 3) OR UPPER(code) IN ('STUDENT', 'TEACHER', 'ADMIN');
+SELECT routine_name FROM information_schema.routines
+WHERE routine_schema = 'oj_db' AND routine_name = 'bootstrap_reference_roles';
+SELECT installed_rank, version, description, success FROM flyway_schema_history WHERE version = '63';
+```
+
+随后制作受控私有备份。`tests/flyway_failure_smoke.py` 的隔离验证会在注入故障前保存并校验 V53 数据库快照，再在新的 MySQL 项目恢复快照、确认合成记录保留并迁移到目标版本；这不包含 Compose 文件卷恢复。生产恢复仍须使用匹配的数据库与文件备份，在新的 Compose 项目和空卷按[运维指南](OPERATIONS.md#一致备份与恢复)恢复并验证；失败时保留原现场，并按验证证据及运维流程处理，不要盲目重试或覆盖原项目。验证入口与证据范围见[测试指南](TESTING.md#发行镜像演练)。
 
 ### 启动日志里的 WARN 需要处理吗？
 
@@ -122,7 +150,7 @@ Docker 开发栈用了一个命名卷单独存 Linux 版 `node_modules`，与宿
 **处理**：安装要 `-am`，启动不要 `-am`：
 
 ```bash
-cd OJ-backend
+cd OJ-Backend
 ./mvnw -pl oj-admin -am -DskipTests install   # 1) 先装同级模块
 ./mvnw -pl oj-admin spring-boot:run           # 2) 再启动
 ```
@@ -144,12 +172,6 @@ cd OJ-backend
 **原因**：某个**可选中间件**的健康探针开着，而你没有部署它（最常见是 RabbitMQ）。
 
 **处理**：关掉对应探针。Docker 开发栈已内置 `MANAGEMENT_HEALTH_RABBIT_ENABLED=false`；原生部署时请按需设置，并把 `OJ_RABBITMQ_ENABLED` / `OJ_SEARCH_ENABLED` 设为 `false`。
-
-### 桌面或项目里莫名多出一个空目录
-
-**原因**：`docker-compose.yml` 里用了**相对路径**的 bind mount，而源路径不存在——Docker 会自动把它建成一个空目录。常见于挂载判题机配置文件。
-
-**处理**：本项目已改用 compose 的 `configs` 机制（`docker/judge0.conf`），文件缺失时 compose 直接报错而不是静默补目录。若你自己加了挂载，请确认源路径存在，或用 `configs`。
 
 ---
 
@@ -193,13 +215,7 @@ MySQL 服务端为 utf8mb4 并不能保证客户端按相同编码读取 SQL。
 
 **原因**：`seed.sql` 里的用户口令是 bcrypt 哈希，若哈希与文件头标注的明文口令（`123456`）不匹配就会登录失败。
 
-**处理**：确认你用的是仓库当前的 `seed.sql`（历史版本曾用过与口令不匹配的哈希）。若自行改过用户数据，请用后端重新生成哈希，或到 `/register` 注册新账号。
-
-### 执行 `db-seed.sh` 报 `Unknown column 'code'`
-
-**原因**：`seed.sql` 与当前表结构不一致——`V52` 已把 `submission.code` 拆到 `submission_code` 表。这是历史遗留问题，当前版本已修复。
-
-**处理**：确认 `seed.sql` 是仓库最新版本；若是你自己维护的库，请按 `submission` 主表 + `submission_code` 两条 INSERT 的写法拆分。
+**处理**：确认使用仓库当前的 `seed.sql`。若自行改过用户数据，请用后端重新生成哈希，或到 `/register` 注册新账号。
 
 ### 库是空的，没有账号
 
@@ -217,7 +233,7 @@ MySQL 服务端为 utf8mb4 并不能保证客户端按相同编码读取 SQL。
 
 1. 课件产物是否存在：`oj.slidev.output-dir`（默认工作区根下的 `OJ-Coursewares`）里应有以 uuid 命名的目录。
 2. **uuid 目录名不可改**：`courseware` 表里的 `url` 字段是 `/coursewares/<uuid>/index.html`，改目录名会直接断链。
-3. **工作区根识别**：后端会「从启动目录向上找同时含 `OJ-backend` 与 `OJ-Slidev` 的目录」来定位工作区根。Docker 开发栈为此把整个仓库挂载进容器；**找不到时不再报错中断启动**，而是退回「进程工作目录」，单 jar / 生产镜像部署请显式给绝对路径（见下一条）。
+3. **工作区根识别**：后端会「从启动目录向上找同时含 `OJ-Backend` 与 `OJ-Slidev` 的目录」来定位工作区根。Docker 开发栈为此把整个仓库挂载进容器；**找不到时不再报错中断启动**，而是退回「进程工作目录」，单 jar / 生产镜像部署请显式给绝对路径（见下一条）。
 4. 静态路径映射是否生效：`/coursewares/` 应能直接访问到文件（开发期由 Vite 代理，生产由 Nginx 转发）。
 
 ### 生产镜像 / 单 jar 部署后，课件功能不可用
@@ -252,9 +268,15 @@ OJ_SLIDEV_OUTPUT_DIR=/opt/musealgo/OJ-Coursewares  # 课件产物输出目录
 
 ### 家长报告导不出图片
 
-**原因**：报告渲染依赖 headless Chromium（`OJ_CHROMIUM_URL`），默认指向 `http://127.0.0.1:3000`。
+**原因**：报告由后端生成受权 HTML（`report_job.html_content`），导出 PNG 是浏览器在隔离 iframe 内本地截图，
+不需要服务端 Chromium，也没有 `OJ_CHROMIUM_URL` 这类配置。常见失败原因是报告尚未加载完成（图表未就绪）、
+浏览器拦截下载，或报告内容超出前端截图上限。
 
-**处理**：部署一个 `browserless/chrome` 之类的渲染服务，并把 `OJ_CHROMIUM_URL` 指过去。未部署时该接口会返回明确错误，不影响其他功能。
+**处理**：
+
+- 等待详情弹窗里的报告完全渲染（雷达图出现）后再点「导出 PNG」；
+- 被浏览器拦截下载时，允许该站点下载后重试，或改用「另存为 HTML」；
+- 需要 PDF 时用浏览器打印（打印样式已内置），不要为此部署 browserless/Chromium。
 
 ### 上传的图片/头像打不开（404）
 
@@ -263,7 +285,7 @@ OJ_SLIDEV_OUTPUT_DIR=/opt/musealgo/OJ-Coursewares  # 课件产物输出目录
 
 **处理**：
 
-- 开发期：Vite 已配置 `/uploads` 代理（见 `OJ-frontend/vite.config.js`），确认后端在 8080 上即可；
+- 开发期：Vite 已配置 `/uploads` 代理（见 `OJ-Frontend/vite.config.js`），确认后端在 8080 上即可；
 - 生产：前端容器需要把上传卷**只读**挂到 `/var/www/uploads`，且 Nginx 有 `/uploads/` 路由
   （见 `deploy/nginx.conf` 与 `docker-compose.prod.yml`）。自建 Nginx 时请照抄
   [DEPLOYMENT.md](DEPLOYMENT.md) 第四节的 `location /uploads/` 段。

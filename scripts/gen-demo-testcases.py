@@ -10,7 +10,7 @@
        {oj.testcase.base-path}/{problemId}/{caseId}/input.txt
        {oj.testcase.base-path}/{problemId}/{caseId}/output.txt
    （见 oj-problem TestCaseStorageService.caseDir/inputFile/outputFile）
-4. 同时向 stdout 打印可直接粘进 OJ-backend/db/seed.sql 的 problem_case INSERT 语句。
+4. 同时向 stdout 打印可直接粘进 OJ-Backend/db/seed.sql 的 problem_case INSERT 语句。
 
 用法
 ----
@@ -28,7 +28,7 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-OUTPUT_ROOT = REPO_ROOT / "OJ-backend" / "db" / "demo-testcases"
+OUTPUT_ROOT = REPO_ROOT / "OJ-Backend" / "db" / "demo-testcases"
 
 MOD = 1_000_000_007
 
@@ -389,7 +389,7 @@ def write_files(rows, check_only: bool) -> list[str]:
 def render_sql(rows) -> str:
     out = [
         "-- 判题用例。用例内容与期望输出由 scripts/gen-demo-testcases.py 生成，",
-        "-- 对应的 input.txt / output.txt 位于 OJ-backend/db/demo-testcases/。",
+        "-- 对应的 input.txt / output.txt 位于 OJ-Backend/db/demo-testcases/。",
         "-- 安装：./scripts/db-seed.sh 会把该目录复制到 oj.testcase.base-path。",
         "-- case_type: 0 = 计分用例，1 = 公开样例（不计分）。",
         "INSERT INTO problem_case (id, problem_id, case_order, input_file_path, output_file_path, score, case_type, status) VALUES",
@@ -404,8 +404,9 @@ def render_sql(rows) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="生成演示题目测试数据")
-    parser.add_argument("--sql-only", action="store_true", help="只打印 SQL，不写文件")
-    parser.add_argument("--check", action="store_true", help="校验已有文件是否与参考实现一致")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--sql-only", action="store_true", help="只打印 SQL，不写文件")
+    mode.add_argument("--check", action="store_true", help="校验已有文件是否与参考实现一致")
     args = parser.parse_args()
 
     rows = build()

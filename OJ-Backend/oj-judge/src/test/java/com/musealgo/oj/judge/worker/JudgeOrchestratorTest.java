@@ -1,0 +1,300 @@
+package com.musealgo.oj.judge.worker;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
+import com.musealgo.oj.api.judge.JudgeGateway;
+import com.musealgo.oj.api.problem.ProblemQuery;
+import com.musealgo.oj.api.problem.TestCaseView;
+import com.musealgo.oj.judge.domain.SubmissionStatus;
+import com.musealgo.oj.judge.entity.Submission;
+import com.musealgo.oj.judge.entity.SubmissionCode;
+import com.musealgo.oj.judge.entity.SubmissionResult;
+import com.musealgo.oj.judge.mapper.SubmissionCodeMapper;
+import com.musealgo.oj.judge.mapper.SubmissionMapper;
+import com.musealgo.oj.judge.mapper.SubmissionResultMapper;
+
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.atLeast;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+/**
+ * 判题编排器（seam：JudgeOrchestrator.executeJudge）。
+ * JudgeGateway 使用 stub 返回固定结果，验证：
+ * AC 累计分数 / WA 快停 / CE 错误信息 / RE 信息 / 空用例报错 / 标准化结果落库。
+ *
+ * <p>用例并行（A3-1）后，测试注入<b>单线程执行器</b>保证用例按序执行，
+ * 原有"组内跳过"断言语义与改造前一致。</p>
+ */
+@ExtendWith(MockitoExtension.class)
+class JudgeOrchestratorTest {
+
+    @Mock
+    private JudgeGateway judgeGateway;
+    @Mock
+    private SubmissionMapper submissionMapper;
+    @Mock
+    private SubmissionCodeMapper submissionCodeMapper;
+    @Mock
+    private ProblemQuery problemQuery;
+    @Mock
+    private JudgeCompletionService completionService;
+    @InjectMocks
+    private JudgeOrchestrator orchestrator;
+
+    private ExecutorService caseExecutor;
+
+    @BeforeEach
+    void setUpCaseExecutor() {
+        caseExecutor = Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "judge-test-case");
+            t.setDaemon(true);
+            return t;
+        });
+        ReflectionTestUtils.setField(orchestrator, "caseExecutor", caseExecutor);
+        // V52 拆表：判题从 submission_code 补载源码（mock 返回固定代码；lenient：缺 submission 的用例不触发）
+        org.mockito.Mockito.lenient().when(submissionCodeMapper.selectById(any()))
+                .thenAnswer(inv -> {
+                    SubmissionCode sc = new SubmissionCode();
+                    sc.setSubmissionId((Long) inv.getArgument(0));
+                    sc.setCode("int main(){}");
+                    return sc;
+                });
+    }
+
+    @org.junit.jupiter.api.AfterEach
+    void stopCaseExecutor() { caseExecutor.shutdownNow(); }
+
+    private com.musealgo.oj.judge.entity.JudgeTask lease(Long submissionId) {
+        var task = new com.musealgo.oj.judge.entity.JudgeTask(); task.setId(1000L + submissionId);
+        task.setSubmissionId(submissionId); task.setAttemptCount(1); return task;
+    }
+    private void verifyNoCompletion() { org.mockito.Mockito.verifyNoInteractions(completionService); }
+
+    private Submission submission(Long id) {
+        Submission s = new Submission();
+        s.setId(id);
+        s.setProblemId(100L);
+        s.setCode("int main(){}");
+        s.setLanguage("cpp");
+        return s;
+    }
+
+    private TestCaseView caseOf(int order, Integer score) {
+        return caseOf(order, score, null);
+    }
+
+    private TestCaseView caseOf(int order, Integer score, Integer subtaskNo) {
+        return new TestCaseView((long) order, 100L, "input" + order, "output" + order,
+                score, subtaskNo, order, (byte) 1);
+    }
+
+    private void stubBasics(Submission s, List<TestCaseView> cases) {
+        when(submissionMapper.selectById(s.getId())).thenReturn(s);
+        when(problemQuery.findProblemLimits(100L)).thenReturn(new int[]{1000, 65536});
+        when(problemQuery.findTestCases(100L)).thenReturn(cases);
+        when(submissionMapper.updateOwnedPhase(any(), any(), any(), anyString())).thenReturn(1);
+    }
+
+    @Test
+    void acceptedSubmissionSumsScoresAndWritesResult() {
+        Submission s = submission(1L);
+        stubBasics(s, List.of(caseOf(1, 30), caseOf(2, 70)));
+        when(judgeGateway.judge(any(), any(), any(), any(), anyDouble(), anyInt()))
+                .thenReturn(Map.of("status", 3, "time", 0.05, "memory", 1024));
+        ReflectionTestUtils.setField(orchestrator, "persistNormalizedResults", true);
+
+        assertEquals(SubmissionStatus.ACCEPTED, orchestrator.executeJudge(lease(1L)));
+
+        ArgumentCaptor<Submission> captor = ArgumentCaptor.forClass(Submission.class);
+        verify(completionService).completeWithOutbox(any(), captor.capture(), org.mockito.ArgumentMatchers.anyBoolean());
+        Submission last = captor.getAllValues().get(captor.getAllValues().size() - 1);
+        assertEquals(SubmissionStatus.ACCEPTED.code(), last.getStatus());
+        assertEquals("FINISHED", last.getJudgePhase());
+        assertEquals(100, last.getScore());
+        assertEquals(50, last.getRunTime());
+        assertEquals(1024, last.getRunMemory());
+        assertNull(last.getErrorMessage());
+        verify(completionService).completeWithOutbox(any(), any(), org.mockito.ArgumentMatchers.eq(true));
+    }
+
+    @Test
+    void wrongAnswerFastFailsWithoutCallingRemainingCases() {
+        Submission s = submission(2L);
+        // 单组（subtask_no=1）：组内失败后跳过剩余同组用例
+        stubBasics(s, List.of(caseOf(1, 10, 1), caseOf(2, 10, 1), caseOf(3, 10, 1)));
+        when(judgeGateway.judge(any(), any(), any(), any(), anyDouble(), anyInt()))
+                .thenReturn(Map.of("status", 3, "time", 0.01, "memory", 256))
+                .thenReturn(Map.of("status", 4, "time", 0.02, "memory", 512));
+
+        assertEquals(SubmissionStatus.WRONG_ANSWER, orchestrator.executeJudge(lease(2L)));
+
+        verify(judgeGateway, org.mockito.Mockito.times(2))
+                .judge(any(), any(), any(), any(), anyDouble(), anyInt());
+        ArgumentCaptor<Submission> captor = ArgumentCaptor.forClass(Submission.class);
+        verify(completionService).completeWithOutbox(any(), captor.capture(), org.mockito.ArgumentMatchers.anyBoolean());
+        Submission last = captor.getAllValues().get(captor.getAllValues().size() - 1);
+        assertEquals(SubmissionStatus.WRONG_ANSWER.code(), last.getStatus());
+        assertEquals(0, last.getScore());
+        assertNull(last.getErrorMessage());
+    }
+
+    @Test
+    void partialScoreAcrossSubtasksWhenOneGroupFails() {
+        Submission s = submission(6L);
+        // 组1：2 用例 ×30（全 AC → 60）；组2：2 用例 ×20（第 4 用例 WA → 整组 0 分）
+        stubBasics(s, List.of(
+                caseOf(1, 30, 1), caseOf(2, 30, 1),
+                caseOf(3, 20, 2), caseOf(4, 20, 2)));
+        when(judgeGateway.judge(any(), any(), any(), any(), anyDouble(), anyInt()))
+                .thenReturn(Map.of("status", 3, "time", 0.01, "memory", 128))
+                .thenReturn(Map.of("status", 3, "time", 0.01, "memory", 128))
+                .thenReturn(Map.of("status", 3, "time", 0.01, "memory", 128))
+                .thenReturn(Map.of("status", 4, "time", 0.02, "memory", 256));
+
+        assertEquals(SubmissionStatus.WRONG_ANSWER, orchestrator.executeJudge(lease(6L)));
+
+        ArgumentCaptor<Submission> captor = ArgumentCaptor.forClass(Submission.class);
+        verify(completionService).completeWithOutbox(any(), captor.capture(), org.mockito.ArgumentMatchers.anyBoolean());
+        Submission last = captor.getAllValues().get(captor.getAllValues().size() - 1);
+        assertEquals(60, last.getScore());
+    }
+
+    @Test
+    void failedSubtaskSkipsRemainingCasesInSameGroup() {
+        Submission s = submission(7L);
+        // 组2 第 1 个用例失败 → 组2 第 2 个用例不再调 Judge0
+        stubBasics(s, List.of(
+                caseOf(1, 25, 1), caseOf(2, 25, 1),
+                caseOf(3, 25, 2), caseOf(4, 25, 2)));
+        when(judgeGateway.judge(any(), any(), any(), any(), anyDouble(), anyInt()))
+                .thenReturn(Map.of("status", 3, "time", 0.01, "memory", 128))
+                .thenReturn(Map.of("status", 3, "time", 0.01, "memory", 128))
+                .thenReturn(Map.of("status", 4, "time", 0.02, "memory", 256));
+
+        assertEquals(SubmissionStatus.WRONG_ANSWER, orchestrator.executeJudge(lease(7L)));
+
+        verify(judgeGateway, org.mockito.Mockito.times(3))
+                .judge(any(), any(), any(), any(), anyDouble(), anyInt());
+        ArgumentCaptor<Submission> captor = ArgumentCaptor.forClass(Submission.class);
+        verify(completionService).completeWithOutbox(any(), captor.capture(), org.mockito.ArgumentMatchers.anyBoolean());
+        Submission last = captor.getAllValues().get(captor.getAllValues().size() - 1);
+        assertEquals(50, last.getScore()); // 组1 全 AC 得 50，组2 0 分
+    }
+
+    @Test
+    void compileErrorCapturesCompilerOutput() {
+        Submission s = submission(3L);
+        stubBasics(s, List.of(caseOf(1, 100)));
+        when(judgeGateway.judge(any(), any(), any(), any(), anyDouble(), anyInt()))
+                .thenReturn(Map.of("status", 6, "time", 0, "memory", 0,
+                        "compile_output", "error: expected ';'"));
+
+        assertEquals(SubmissionStatus.COMPILATION_ERROR, orchestrator.executeJudge(lease(3L)));
+
+        ArgumentCaptor<Submission> captor = ArgumentCaptor.forClass(Submission.class);
+        verify(completionService).completeWithOutbox(any(), captor.capture(), org.mockito.ArgumentMatchers.anyBoolean());
+        Submission last = captor.getAllValues().get(captor.getAllValues().size() - 1);
+        assertEquals("error: expected ';'", last.getErrorMessage());
+    }
+
+    @Test
+    void runtimeErrorFallsBackToStderr() {
+        Submission s = submission(4L);
+        stubBasics(s, List.of(caseOf(1, 100)));
+        when(judgeGateway.judge(any(), any(), any(), any(), anyDouble(), anyInt()))
+                .thenReturn(Map.of("status", 7, "time", 0, "memory", 0, "stderr", "Segmentation fault"));
+
+        assertEquals(SubmissionStatus.RUNTIME_ERROR, orchestrator.executeJudge(lease(4L)));
+
+        ArgumentCaptor<Submission> captor = ArgumentCaptor.forClass(Submission.class);
+        verify(completionService).completeWithOutbox(any(), captor.capture(), org.mockito.ArgumentMatchers.anyBoolean());
+        Submission last = captor.getAllValues().get(captor.getAllValues().size() - 1);
+        assertEquals("Segmentation fault", last.getErrorMessage());
+    }
+
+    @Test
+    void missingSubmissionIsRejected() {
+        when(submissionMapper.selectById(99L)).thenReturn(null);
+        assertThrows(IllegalStateException.class, () -> orchestrator.executeJudge(lease(99L)));
+    }
+
+    @Test
+    void emptyTestCasesAreRejected() {
+        Submission s = submission(5L);
+        when(submissionMapper.selectById(5L)).thenReturn(s);
+        when(problemQuery.findTestCases(100L)).thenReturn(List.of());
+        when(submissionMapper.updateOwnedPhase(any(), any(), any(), anyString())).thenReturn(1);
+        assertThrows(IllegalStateException.class, () -> orchestrator.executeJudge(lease(5L)));
+        verify(judgeGateway, never()).judge(any(), any(), any(), any(), anyDouble(), anyInt());
+    }
+    @Test
+    void failedGroupStaysZeroWhenAcceptedSiblingFinishesLater() throws Exception {
+        caseExecutor.shutdownNow();
+        caseExecutor = java.util.concurrent.Executors.newFixedThreadPool(2);
+        var bothStarted = new java.util.concurrent.CountDownLatch(2);
+        var failedCaseFinished = new java.util.concurrent.CountDownLatch(1);
+        var sequence = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.concurrent.Executor ordered = command -> {
+            int index = sequence.getAndIncrement();
+            caseExecutor.execute(() -> { try { command.run(); } finally { if (index == 0) failedCaseFinished.countDown(); } });
+        };
+        ReflectionTestUtils.setField(orchestrator, "caseExecutor", ordered);
+        stubBasics(submission(8L), List.of(caseOf(1, 50, 1), caseOf(2, 50, 1)));
+        when(judgeGateway.judge(any(), any(), any(), any(), anyDouble(), anyInt())).thenAnswer(inv -> {
+            bothStarted.countDown();
+            assertTrue(bothStarted.await(5, java.util.concurrent.TimeUnit.SECONDS));
+            if ("input1".equals(inv.getArgument(2))) return Map.of("status", 4);
+            assertTrue(failedCaseFinished.await(5, java.util.concurrent.TimeUnit.SECONDS));
+            return Map.of("status", 3);
+        });
+        assertEquals(SubmissionStatus.WRONG_ANSWER, orchestrator.executeJudge(lease(8L)));
+        var captor = ArgumentCaptor.forClass(Submission.class);
+        verify(completionService).completeWithOutbox(any(), captor.capture(), org.mockito.ArgumentMatchers.anyBoolean());
+        assertEquals(0, captor.getValue().getScore());
+    }
+
+    @Test
+    void judgeMachineInternalErrorFailsTaskInsteadOfScoringRuntimeError() {
+        // Judge0 13=Internal Error 是判题机故障：必须让任务进入重试/FAILED 通道，
+        // 不能写成 status=4（选手运行时错误）进入成绩与统计。
+        Submission s = submission(10L);
+        stubBasics(s, List.of(caseOf(1, 100)));
+        when(judgeGateway.judge(any(), any(), any(), any(), anyDouble(), anyInt()))
+                .thenReturn(Map.of("status", 13, "time", 0, "memory", 0));
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> orchestrator.executeJudge(lease(10L)));
+        assertTrue(error.getMessage().contains("13"));
+        verifyNoCompletion();
+    }
+
+    @Test
+    void positiveProblemLimitsAreNotSilentlyRaised() {
+        stubBasics(submission(9L), List.of(caseOf(1, 100)));
+        when(problemQuery.findProblemLimits(100L)).thenReturn(new int[]{500, 65536});
+        when(judgeGateway.judge(any(), any(), any(), any(), anyDouble(), anyInt())).thenReturn(Map.of("status", 3));
+        orchestrator.executeJudge(lease(9L));
+        verify(judgeGateway).judge(any(), any(), any(), any(), org.mockito.ArgumentMatchers.eq(0.5), org.mockito.ArgumentMatchers.eq(65536));
+    }
+
+}

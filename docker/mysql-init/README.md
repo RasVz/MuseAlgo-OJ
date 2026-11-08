@@ -1,63 +1,25 @@
 # 数据库初始化目录
 
-本目录会被挂载到 MySQL 容器的 `/docker-entrypoint-initdb.d`。
+本目录被 MySQL 官方镜像挂载到 `/docker-entrypoint-initdb.d`。脚本只在数据目录首次创建且为空时按文件名顺序执行；已有数据卷不会重跑初始化文件。
 
-**它在首次启动且数据卷为空时执行其中的 `.sql` / `.sql.gz` 文件，之后不再执行。**
+## 新装文件
 
-## `00-schema.sql` —— 结构基线（必须保留）
+`00-schema.sql` 是 V53 时点的结构基线，包含 59 张表和 48 条 Flyway 历史记录，不含账号或业务数据。由于历史迁移不是自足的建库脚本，空数据库必须先建立该基线。
 
-仓库自带的**表结构基线**：全部 59 张表的结构（**不含任何业务数据**）+ Flyway 的 48 条迁移记录。
+`01-reference-roles.sql` 在结构基线之后建立 `STUDENT`、`TEACHER`、`ADMIN` 三个基础角色和四个 V1 基础权限码，将前三项授予 `TEACHER`、四项授予 `ADMIN`；不创建学生权限或任何用户。该顺序确保新装库在后续迁移按权限码增加功能授权前已有角色目录。生产 Compose 显式挂载 `00` 和 `01`；开发 Compose 挂载整个目录。演示账号、题目和班级由 `scripts/db-seed.sh` 单独导入，生产环境不要运行该脚本。
 
-**为什么需要它**：本项目的 Flyway 迁移（`V1` 起）是**增量迁移** —— 第一条迁移里的外键就引用了 `` `user` `` 表，而 `user` 表属于迁移之前的既有基线。所以**空库直接启动后端必然失败**，报错：
-
-```
-java.sql.SQLException: Failed to open the referenced table 'user'
-```
-
-有了本文件，MySQL 首次启动时就会建好全部结构并写入 Flyway 迁移历史；后端启动时 Flyway 校验通过、跳过已应用的迁移，直接进入可用状态。
-
-> ⚠️ **不要删除 `00-schema.sql`**，否则新克隆的库无法启动。
-> 它是**纯结构**，不含账号、题目、提交等任何数据，可以安全公开。
-> 基线中的 `flyway_schema_history` 必须与所附迁移对应，维护方法见[迁移维护规则](#迁移维护规则)。
+`00-schema.sql` 描述的是 V53 时点结构，V1–V6 是当前受支持基线路径中的历史参考文件。仓库 V54–V63 的结构变更静态新增 8 张表；全部应用后的预期结构为 67 张表。这个结构推导不代表任意部署实例已升级到相应版本。发行镜像演练入口及覆盖范围见[测试指南](../../docs/TESTING.md#发行镜像演练)，实例的实际当前版本与待迁移项通过[运维指南](../../docs/OPERATIONS.md)查询。
 
 ## 迁移维护规则
 
-**已执行或已分发给协作者的迁移必须保持原样**，不以仓库是否公开为判断依据。
-新增结构变更写成 `V{n+1}__说明.sql`；后端在现有基线上自动执行新迁移。
-不必为每次新增迁移重导基线，基线历史未包含的新版本会正常执行。
+- 已执行或已分发的迁移必须保持原字节，包括注释；不要用 `flyway repair`、修改历史记录或重导基线来掩盖校验错误。
+- 新增迁移使用下一个连续版本。审查SQL后，以新增文件尚未进入的可信提交登记：`python3 scripts/check_migrations.py --trusted-base HEAD --record-new`。普通本地检查运行 `python3 scripts/check_migrations.py`；CI 另以 PR 目标提交或 push 前提交比较迁移文件和清单。
+- `--record-new` 只追加新迁移的SHA-256，不改写任何既有登记项。清单帮助发现内容变化，不是独立签名；审查时还要将迁移文件及清单与可信Git历史比较。若HEAD已包含新迁移，应改用PR base或push前提交，不能把新增文件当作可信历史。
+- 一般新增迁移不要求重导 `00-schema.sql`。只有明确更新新装快照时，才可从隔离且校验通过的同一数据库导出结构与 `flyway_schema_history`，同时更新二者。生成步骤见[开发指南的数据库迁移说明](../../docs/DEVELOPMENT.md#三数据库迁移必读)。
+- 开发应用启动的 Flyway 配置为 `baseline-on-migrate=true`、`baseline-version=6`；生产独立维护入口以 `baseline-on-migrate=false` 运行迁移，要求已有受支持的结构基线。两种入口的用途与限制见[开发指南](../../docs/DEVELOPMENT.md#三数据库迁移必读)。
 
-只有有意更新新安装使用的结构快照时，才从已成功应用迁移、通过 Flyway 校验的临时数据库
-重新导出结构和 `flyway_schema_history`，两者必须来自同一个数据库状态。
-具体导出示例见 [DEVELOPMENT.md](../../docs/DEVELOPMENT.md#34-新增迁移的正确姿势)。
-不得在历史迁移被误改时通过重导快照或手改 checksum 掩盖问题，应先还原历史文件。
+## 备份恢复
 
-Flyway 会按逐行文本计算 checksum，注释和行内容也参与计算；不要把「只改注释」视为无影响。
-发现 `Migration checksum mismatch` 时按 [排错指南](../../docs/TROUBLESHOOTING.md#日志出现-flyway-checksum-mismatch) 处理。
+不要把包含业务数据的 SQL dump 放进本目录。初始化脚本只在空数据卷运行，不能替代包含目标版本核对、数据库与文件卷一致性和哈希核验的恢复流程。
 
-## 导入演示数据
-
-结构基线不含业务数据。演示数据（管理员账号、示例题目与班级）在后端启动后用脚本导入：
-
-```bash
-./scripts/db-seed.sh
-```
-
-## 用自己已有的数据初始化
-
-把你自己的全量备份放进本目录，它会按文件名顺序排在 `00-schema.sql` 之后执行：
-
-```
-docker/mysql-init/
-├── 00-schema.sql        # 仓库自带的结构基线
-└── 01-your-dump.sql.gz  # 你自己的 mysqldump 全量备份
-```
-
-> ⚠️ **不要把包含真实用户数据的导出文件提交到 Git。**
-> `.gitignore` 已忽略本目录下除 `00-schema.sql` 之外的所有 `*.sql` / `*.sql.gz`。
-
-## 重置数据库
-
-```bash
-docker compose -f compose.dev.yml down -v   # 清空数据卷
-docker compose -f compose.dev.yml up -d     # 触发重新初始化
-```
+Compose 环境使用[运维入口](../../docs/OPERATIONS.md)：备份生成数据库、判题用例、上传和课件的一致副本；恢复先在新的 Compose 项目与空卷校验备份，再启动并核对数据。恢复失败会保留目标现场供诊断；按报告的阶段处理，换用新的项目名重试，不要自动清理或覆盖原项目。`.env`、密钥和备份均保留在受控的私有目录，不要提交进仓库。

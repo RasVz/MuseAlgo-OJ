@@ -1,0 +1,61 @@
+package com.musealgo.oj.contest.infrastructure;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import com.musealgo.oj.contest.entity.Contest;
+import com.musealgo.oj.contest.entity.VpAttempt;
+import com.musealgo.oj.contest.mapper.ContestMapper;
+import com.musealgo.oj.contest.mapper.VpAttemptMapper;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Set;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+class ContestScheduleQueryAdapterTest {
+
+    @BeforeAll
+    static void initializeTableMetadata() {
+        // 使用 mock Mapper 时不会执行 MyBatis 的启动扫描；3.5.17 的 in 查询会立即解析列名。
+        MybatisConfiguration configuration = new MybatisConfiguration();
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(configuration, "test"), Contest.class);
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(configuration, "test"), VpAttempt.class);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void runningOiVpQueryExcludesAttemptsFromOtherContestModes() {
+        ContestMapper contestMapper = mock(ContestMapper.class);
+        VpAttemptMapper vpAttemptMapper = mock(VpAttemptMapper.class);
+        ContestScheduleQueryAdapter query = new ContestScheduleQueryAdapter(contestMapper, vpAttemptMapper);
+        VpAttempt oiAttempt = runningAttempt(9L, 1L);
+        VpAttempt acmAttempt = runningAttempt(10L, 2L);
+        when(vpAttemptMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(oiAttempt, acmAttempt));
+        Contest oiContest = new Contest();
+        oiContest.setId(1L);
+        oiContest.setMode("OI");
+        when(contestMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(oiContest));
+
+        Set<Long> result = query.findRunningOiVpAttemptIds();
+
+        assertEquals(Set.of(9L), result);
+    }
+
+    private static VpAttempt runningAttempt(Long id, Long contestId) {
+        VpAttempt attempt = new VpAttempt();
+        attempt.setId(id);
+        attempt.setContestId(contestId);
+        attempt.setStatus(VpAttempt.STATUS_RUNNING);
+        attempt.setEndTime(LocalDateTime.now().plusMinutes(10));
+        return attempt;
+    }
+}

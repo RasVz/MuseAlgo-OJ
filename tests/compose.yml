@@ -10,6 +10,7 @@ services:
     volumes:
       - mysql-data:/var/lib/mysql
       - ../docker/mysql-init/00-schema.sql:/docker-entrypoint-initdb.d/00-schema.sql:ro
+      - ../docker/mysql-init/01-reference-roles.sql:/docker-entrypoint-initdb.d/01-reference-roles.sql:ro
     healthcheck:
       test: ["CMD-SHELL", 'MYSQL_PWD="$$MYSQL_ROOT_PASSWORD" mysql -h127.0.0.1 -uroot --batch --skip-column-names oj_db -e "SELECT 1 FROM flyway_schema_history LIMIT 1"']
       interval: 3s

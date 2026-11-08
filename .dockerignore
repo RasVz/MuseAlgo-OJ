@@ -4,9 +4,12 @@
 # 构建产物
 **/target/
 **/dist/
+**/out/
+**/coverage/
 
 # 依赖与缓存
 **/node_modules/
+.pytest_cache/
 
 # 版本控制与本地工具
 .git/
@@ -16,16 +19,21 @@
 .reasonix/
 .idea/
 .vscode/
-.DS_Store
+**/.DS_Store
 
 # 密钥与数据（体积大或敏感）
 .env
 .env.*
 **/*.log
-OJ-backend/data/
-OJ-backend/uploads/
-OJ-backend/*/uploads/
+*.pid
+logs/
+OJ-Backend/logs/
+OJ-Backend/*/logs/
+OJ-Backend/data/
+OJ-Backend/uploads/
+OJ-Backend/*/uploads/
 OJ-Coursewares/
+OJ-Slidev/dist/
 docker/mysql-init/*.sql*
 
 # 文档与 CI 配置不参与镜像构建
@@ -37,4 +45,6 @@ docs/
 **/test-results/
 **/playwright-report/
 **/__pycache__/
+**/*.py[cod]
 tests/
+scripts/

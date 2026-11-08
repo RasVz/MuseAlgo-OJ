@@ -39,7 +39,8 @@ def run_suite(output, extended=True):
                    OJ_DB_PASS=env['OJ_CI_DB_PASSWORD'],SPRING_DATA_REDIS_PORT=env['OJ_CI_REDIS_PORT'],
                    DEEPSEEK_API_KEY='',COS_SECRET_ID='',COS_SECRET_KEY='',
                    OJ_SEARCH_ENABLED='false',OJ_RABBITMQ_ENABLED='false',MANAGEMENT_HEALTH_RABBIT_ENABLED='false',
-                   OJ_CONTEST_SETTLEMENT_INITIAL_DELAY_MS='86400000',OJ_TESTCASE_PATH=str(ROOT/'OJ-backend/db/demo-testcases'),
+                   OJ_REPORT_WEEKLY_ENABLED='false',
+                   OJ_CONTEST_SETTLEMENT_INITIAL_DELAY_MS='86400000',OJ_TESTCASE_PATH=str(ROOT/'OJ-Backend/db/demo-testcases'),
                    OJ_UPLOAD_DIR=str(output/'uploads'),OJ_SLIDEV_OUTPUT_DIR=str(output/'coursewares'),
                    OJ_TEST_OUTPUT_DIR=str(output),OJ_TEST_COMPOSE_JSON=json.dumps(compose),
                    JUDGE0_URLS=f"http://127.0.0.1:{env['OJ_CI_JUDGE_PORT']}")
@@ -63,29 +64,43 @@ def run_suite(output, extended=True):
             run('operations-unit',['python3','-m','unittest','discover','-s','tests','-p','test_*.py'])
             run('services',compose+['up','-d'])
             run('services-ready',compose+['up','-d','--wait','mysql','redis','rabbitmq'])
-            with (ROOT/'OJ-backend/db/seed.sql').open('rb') as seed:
+            with (ROOT/'OJ-Backend/db/seed.sql').open('rb') as seed:
                 run('seed',compose+['exec','-T','mysql','sh','-c','MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -uroot oj_db'],stdin=seed)
-            run('backend-integration',['./mvnw','-B','package','-Pintegration'],ROOT/'OJ-backend')
-            run('frontend-install',['npm','ci','--no-audit','--no-fund'],ROOT/'OJ-frontend')
-            run('frontend-lint',['npm','run','lint:ci'],ROOT/'OJ-frontend')
-            run('frontend-build',['npm','run','build'],ROOT/'OJ-frontend')
+            # 集成测试使用同一个真实数据库；若多个 Spring Test 上下文里的 JudgeWorker 都轮询
+            # judge_task，会与重判 IT 的“领取→完成/失败”模拟竞争（重判 IT 需要人工领取）。
+            # 仅在这一步禁用 Worker；后续真实后端进程启动前恢复，避免影响 API smoke 真实判题。
+            env['OJ_JUDGE_WORKER_ENABLED'] = 'false'
+            env['OJ_MESSAGING_OUTBOX_INITIAL_DELAY_MS'] = '86400000'
+            env.update(OJ_RABBIT_HOST='127.0.0.1', OJ_RABBIT_PORT=env['OJ_CI_MQ_PORT'],
+                       OJ_RABBIT_USER='ci', OJ_RABBIT_PASS=env['OJ_CI_MQ_PASSWORD'])
+            try:
+                run('backend-integration',['./mvnw','-B','package','-Pintegration',
+                    '-Dmusealgo.review.synthetic=true',
+                    '-Dmusealgo.review.expected-db-port='+env['OJ_CI_MYSQL_PORT']],ROOT/'OJ-Backend')
+            finally:
+                env.pop('OJ_JUDGE_WORKER_ENABLED', None)
+                env.pop('OJ_MESSAGING_OUTBOX_INITIAL_DELAY_MS', None)
+            run('frontend-install',['npm','ci','--no-audit','--no-fund'],ROOT/'OJ-Frontend')
+            run('frontend-unit',['npm','run','test:unit'],ROOT/'OJ-Frontend')
+            run('frontend-lint',['npm','run','lint:ci'],ROOT/'OJ-Frontend')
+            run('frontend-build',['npm','run','build'],ROOT/'OJ-Frontend')
             api_port,web_port=free_port(),free_port()
             env.update(SERVER_PORT=str(api_port),OJ_TEST_API=f'http://127.0.0.1:{api_port}',
                        OJ_CONTEST_SETTLEMENT_INITIAL_DELAY_MS='1000',OJ_CONTEST_SETTLEMENT_INTERVAL_MS='1000')
-            jar=ROOT/'OJ-backend/oj-admin/target/oj-admin-0.1.0-SNAPSHOT.jar'
+            jar=ROOT/'OJ-Backend/oj-admin/target/oj-admin-0.1.0-SNAPSHOT.jar'
             backend=start('backend-no-mq',['java','-jar',str(jar)])
             run('api-smoke',['python3',str(ROOT/'tests/api_smoke.py')])
             env['OJ_TEST_MQ_MODE']='disabled'
             if extended:
                 run('contest-no-mq',['python3',str(ROOT/'tests/contest_smoke.py')])
             env.update(VITE_PROXY_TARGET=env['OJ_TEST_API'],OJ_TEST_WEB=f'http://127.0.0.1:{web_port}',OJ_TEST_EVIDENCE=str(output/'api-smoke.json'))
-            front=start('frontend-web',['npm','run','preview','--','--strictPort','--host','127.0.0.1','--port',str(web_port)],ROOT/'OJ-frontend')
+            front=start('frontend-web',['npm','run','preview','--','--strictPort','--host','127.0.0.1','--port',str(web_port)],ROOT/'OJ-Frontend')
             http=urllib.request.build_opener(urllib.request.ProxyHandler({}))
             for _ in range(60):
                 try:
                     http.open(env['OJ_TEST_WEB'],timeout=2).close();break
                 except OSError:time.sleep(1)
-            run('browser',['npm','run','test:e2e'],ROOT/'OJ-frontend')
+            run('browser',['npm','run','test:e2e'],ROOT/'OJ-Frontend')
             stop(front);stop(backend)
             if not extended:
                 print('Core integration, API and browser acceptance passed',flush=True)

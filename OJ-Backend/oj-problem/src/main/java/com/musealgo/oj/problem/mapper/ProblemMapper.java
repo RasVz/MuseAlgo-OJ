@@ -1,0 +1,99 @@
+package com.musealgo.oj.problem.mapper;
+
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import org.apache.ibatis.annotations.Param;
+import com.musealgo.oj.problem.entity.Problem;
+import com.musealgo.oj.problem.entity.vo.ProblemVO;
+import com.musealgo.oj.problem.entity.vo.ProblemTagOptionVO;
+
+import java.util.List;
+import java.util.Map;
+
+/**
+ * <p>
+ * 题目表 Mapper 接口
+ * </p>
+ * <p>
+ * <b>本接口的 6 个自定义查询（{@code getProblemVOList}、{@code selectPublicKnowledgeTags}、
+ * {@code selectPublicTagTexts}、{@code selectPublicSources}、
+ * {@code selectRandomUnsolvedPublicProblems}、{@code selectUserStatusByProblemIds}）
+ * 全部由 {@code resources/mapper/ProblemMapper.xml} 实现，接口上刻意不写
+ * {@code @Select} 注解。</b>MyBatis 对同一个 mapper id 同时存在 XML 定义与注解定义时，
+ * 会采用 XML、<b>让注解静默失效并打出 ERROR 日志</b>——不抛异常，所以这种冲突往往到线上
+ * 才发现。新增查询请写进 XML，不要图省事加注解。
+ * </p>
+ * <p>
+ * 另外 XML 里写 {@code <} / {@code >} 是<b>必须</b>转义成 {@code &lt;} / {@code &gt;}
+ * 或用 CDATA 包住的（XML 按文本解析），这条规则与"注解里不带 {@code <script>} 的原始 SQL 不能转义"恰好相反。
+ * </p>
+ * <p>
+ * 两个容易改错的地方（细节见 XML 内注释）：
+ * {@code selectPublicKnowledgeTags} 按 {@code t.name, t.dimension} 分组而非 {@code t.id}，
+ * 是为了让筛选选项的粒度是「同名同域」——历史数据里不同 id 同名的标签要合并成一个选项，
+ * 否则用户会看到重复项；改回按 id 分组会让重复项回来。
+ * {@code getProblemVOList} 里 userStatus 的「输出列」与「筛选条件」是两套写法且<b>不能统一</b>：
+ * 输出用 CASE 派生列，筛选用 NOT EXISTS / EXISTS，因为筛选条件要能下推为半连接走索引，
+ * 先算成列再过滤就走不了索引了。
+ * </p>
+ *
+ * @author RasVz
+ * @since 2025-12-12
+ */
+public interface ProblemMapper extends BaseMapper<Problem> {
+    IPage<ProblemVO> getProblemVOList(Page<ProblemVO> page,
+                                      @Param("keyword") String keyword,
+                                      @Param("difficulty") Integer difficulty,
+                                      @Param("minDifficulty") Integer minDifficulty,
+                                      @Param("maxDifficulty") Integer maxDifficulty,
+                                      @Param("tagNames") List<String> tagNames,
+                                      @Param("source") String source,
+                                      @Param("userStatus") Integer userStatus,
+                                      @Param("userId") Long userId);
+
+    List<ProblemTagOptionVO> selectPublicKnowledgeTags();
+
+    List<String> selectPublicTagTexts();
+
+    List<String> selectPublicSources();
+
+    /** 搜索候选中当前公开、未删除且满足难度条件的ID；分页和计数使用同一集合。 */
+    List<Long> selectVisibleSearchIds(@Param("problemIds") List<Long> problemIds,
+                                    @Param("difficulty") Integer difficulty,
+                                    @Param("minDifficulty") Integer minDifficulty,
+                                    @Param("maxDifficulty") Integer maxDifficulty);
+
+    java.util.List<Problem> selectRandomUnsolvedPublicProblems(@Param("userId") Long userId,
+                                                               @Param("limit") Integer limit);
+
+    /**
+     * 批量查询用户做题状态（全文搜索回查用）：
+     * problemId → 0 未开始 / 1 已通过（存在 AC 提交）/ 2 尝试过未通过。
+     * 与 getProblemVOList 的 userStatus 语义保持一致。
+     */
+    List<Map<String, Object>> selectUserStatusByProblemIds(@Param("userId") Long userId,
+                                                           @Param("problemIds") List<Long> problemIds);
+
+    /**
+     * 只写标准答案三列（XML 实现）。
+     * <p>
+     * 用定向 UPDATE 而不是整实体回写：调用方通常在取行锁前后读过题目实体，
+     * 整实体回写会把并发用例写入刚提交的 {@code test_case_count} 覆盖成旧值。
+     * </p>
+     *
+     * @return 影响行数（0 表示题目不存在）
+     */
+    int updateStd(@Param("id") Long id,
+                  @Param("stdAnswer") String stdAnswer,
+                  @Param("stdExplanation") String stdExplanation,
+                  @Param("stdTested") Integer stdTested);
+
+    /**
+     * 把「标准答案已测试」置 0（XML 实现，无条件写）。
+     * <p>用例变更后调用；必须在用例写入的同一事务内，保证顺序确定。</p>
+     *
+     * @return 影响行数（0 表示本来就是 0 或题目不存在）
+     */
+    int clearStdTested(@Param("id") Long id);
+}

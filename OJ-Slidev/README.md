@@ -2,6 +2,8 @@
 
 一个 Slidev 项目 = 一套主题与配置，渲染**任意位置**的课件 Markdown。所有信息学课件（GESP / CSP-J / CSP-S）共用本工厂预览、构建、导出与网页发布。
 
+MuseAlgo-OJ 后端也使用本工程构建在线课件；项目内的启动和依赖配置见[开发指南](../docs/DEVELOPMENT.md)。
+
 ## 依赖与版本
 
 - Slidev **52.x**（package.json 锁定，勿随意大版本升级；升级前先用一节课件做兼容验证）

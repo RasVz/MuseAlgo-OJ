@@ -1,0 +1,326 @@
+# ==========================================
+# Spring Boot 3.x
+# ==========================================
+server:
+  port: 8080             # 后端启动端口
+  servlet:
+    context-path: /      # 项目访问路径，默认根目录
+
+# 可观测性（O8）：health / info / prometheus 端点
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: never
+      # 编排层探针：开启后暴露 /actuator/health/liveness|readiness。
+      # 非 Kubernetes 平台 Spring Boot 默认不注册这两个分组，而报告的受控退出恢复闭环
+      # 依赖 readiness 摘流判定（见 ReportJobWorker.markUnhealthy），因此必须显式开启。
+      # 安全边界：这两个路径在 SecurityConfig 中 permitAll，但 show-details: never 保证
+      # 响应体只有 status，不泄露组件与业务数据；其余 /actuator/** 仍需 ADMIN。
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: oj
+
+spring:
+  application:
+    name: OJ    # 应用名称
+
+  task:
+    scheduling:
+      # A1（高并发方案）：@Scheduled 任务专用线程池。
+      # 默认 pool.size=1：判题轮询执行期间看门狗/Outbox/排名任务全部停摆；
+      # 扩到 4 后各定时任务互不阻塞（判题实际执行已迁移到独立判题线程池，见 oj.judge.worker）。
+      pool:
+        size: ${OJ_SCHEDULING_POOL_SIZE:4}
+
+  flyway:
+    enabled: ${OJ_FLYWAY_ENABLED:true}
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    baseline-version: 6
+
+  # ----------------------------------------
+  # 1. 数据库配置 (MySQL)
+  # ----------------------------------------
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${OJ_DB_HOST:127.0.0.1}:3306/oj_db?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+
+    username: ${OJ_DB_USER:root}              # 通过环境变量注入数据库用户名
+    password: ${OJ_DB_PASS}                   # 通过环境变量注入数据库密码（缺失时启动即报错，快速失败）
+
+    # 连接池配置 (HikariCP)
+    hikari:
+      minimum-idle: 10
+      maximum-pool-size: ${OJ_DB_POOL_SIZE:50}   # B4：判题并发化后写放大，15 → 50（需同步核对 MySQL max_connections ≥ 100）
+      max-lifetime: 1800000
+      # 从池里拿连接的等待上限。默认 30000 保持现状；数据库不可达时该值决定请求悬挂多久，
+      # 需要「有界失败」的部署可调小（如 5000），配合下面的 JDBC 建连/读超时一起收敛。
+      connection-timeout: ${OJ_DB_CONNECTION_TIMEOUT_MS:30000}
+      data-source-properties:
+        # 0 = 驱动默认（不限），仅在显式配置时收紧，避免改变既有行为
+        connectTimeout: ${OJ_DB_CONNECT_TIMEOUT_MS:0}
+        socketTimeout: ${OJ_DB_SOCKET_TIMEOUT_MS:0}
+
+  # ----------------------------------------
+  # 2. 缓存配置 (Redis)
+  # ----------------------------------------
+  data:
+    redis:
+      host: ${OJ_REDIS_HOST:127.0.0.1}
+      port: 6379
+      password: ${OJ_REDIS_PASS:}                # 本地 Redis 默认无密码；生产通过 OJ_REDIS_PASS 注入
+      database: 0
+      timeout: 10s
+      lettuce:
+        pool:
+          max-active: ${OJ_REDIS_POOL_SIZE:32}   # B4：排名榜/限流/缓存高频访问，8 → 32
+          max-wait: -1ms
+          max-idle: 16
+          min-idle: 4
+
+  rabbitmq:
+    host: ${OJ_RABBIT_HOST:127.0.0.1}
+    port: ${OJ_RABBIT_PORT:5672}
+    username: ${OJ_RABBIT_USER:guest}
+    password: ${OJ_RABBIT_PASS:guest}            # 本地默认 guest/guest；生产通过 OJ_RABBIT_PASS 注入
+
+  # ----------------------------------------
+  # 3. 文件上传限制
+  # ----------------------------------------
+  servlet:
+    multipart:
+      max-file-size: 128MB     # 支持大型 FPS XML/ZIP，解压大小由导入服务另行限制
+      max-request-size: 128MB  # 单次 FPS 导入请求上限
+
+  # ----------------------------------------
+  # 4. JSON处理 (Jackson)
+  # ----------------------------------------
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
+
+# ==========================================
+# 第三方库配置
+# ==========================================
+
+# 5. MyBatis-Plus 配置
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml  # Mapper XML 扫描路径
+  type-aliases-package: com.musealgo.oj.system.entity,com.musealgo.oj.problem.entity,com.musealgo.oj.judge.entity,com.musealgo.oj.contest.entity,com.musealgo.oj.community.entity,com.musealgo.oj.teaching.entity,com.musealgo.oj.analytics.entity
+  configuration:
+    map-underscore-to-camel-case: true           # 开启下划线转驼峰 (user_id -> userId)
+    log-impl: ${OJ_MYBATIS_LOG_IMPL:org.apache.ibatis.logging.slf4j.Slf4jImpl}
+
+# 6. 接口文档 (Knife4j / Swagger)
+knife4j:
+  enable: true
+  setting:
+    language: zh-CN
+
+# 7. 判题机 Docker 配置 (自定义配置)
+judge0:
+  url: http://127.0.0.1:2358 # 单端点兼容配置（judge0.urls 为空时生效）
+  # 多端点列表（逗号分隔），配置后轮询分发 + 失败熔断，去掉判题单点
+  # 例: http://127.0.0.1:2358,http://127.0.0.1:2359,http://127.0.0.1:2360
+  urls: ${JUDGE0_URLS:}
+  breaker:
+    failure-threshold: ${JUDGE0_BREAKER_FAILURE_THRESHOLD:3}   # 连续失败N次熔断该端点
+    cooldown-ms: ${JUDGE0_BREAKER_COOLDOWN_MS:60000}           # 熔断冷却，到期自动半开试探
+  # 在途请求上限（风险 1 预案，验证实测）：必须 ≤ Judge0 worker 槽位数，
+  # 否则并发用例在 Judge0 队列超时 → 重试 → 雪崩。3 worker 建议 4。
+  max-inflight: ${JUDGE0_MAX_INFLIGHT:4}
+  # Rosetta 执行 amd64 判题镜像时可设为 false，改用 Judge0 聚合内存限制。
+  per-process-memory-limit: ${JUDGE0_PER_PROCESS_MEMORY_LIMIT:true}
+oj:
+  contest:
+    settlement-interval-ms: ${OJ_CONTEST_SETTLEMENT_INTERVAL_MS:5000}
+    settlement-initial-delay-ms: ${OJ_CONTEST_SETTLEMENT_INITIAL_DELAY_MS:5000}
+  slidev:
+    build-timeout-seconds: ${OJ_SLIDEV_BUILD_TIMEOUT_SECONDS:120}
+    # 默认输出到「工作区根」下的 OJ-Coursewares；可用 OJ_SLIDEV_OUTPUT_DIR 覆盖。
+    # 注意：相对路径基于 findWorkspaceRoot()（从进程工作目录向上找同时含
+    # OJ-Backend / OJ-Slidev 的目录）解析；发行形态（单 jar / 生产镜像）没有这套
+    # 目录树，必须用绝对路径覆盖，官方镜像已预设。
+    worker-dir: ${OJ_SLIDEV_WORKER_DIR:OJ-Slidev}
+    output-dir: ${OJ_SLIDEV_OUTPUT_DIR:OJ-Coursewares}
+    public-path: /coursewares/
+    # 课件地址默认使用同源相对路径（iframe 从页面所在源加载，本地由 vite 代理、线上由 nginx 转发）。
+    # 只有需要从外部直接访问课件时才设置完整前缀，例如 http://oj.example.com。
+    public-base-url: ${OJ_SLIDEV_PUBLIC_BASE_URL:}
+  messaging:
+    # MQ可加速判题与榜单通知；成绩/Rating按数据库快照与定时固化保证一致。
+    # 本地无 broker 时设 OJ_RABBITMQ_ENABLED=false 回退纯 DB 轮询模式。
+    rabbitmq-enabled: ${OJ_RABBITMQ_ENABLED:true}
+    outbox:
+      # Outbox 归档策略（OutboxArchiveTask，2026-08-14 方案第 3 节）：
+      # PUBLISHED 保留 7 天 / FAILED 保留 30 天 / 卡死 PENDING 超 1 天先标记 FAILED 再按 FAILED 清理。
+      archive-cron: "0 30 3 * * *"        # 归档执行时间（凌晨 3:30 低峰）
+      retention-days: 7                   # PUBLISHED 保留天数
+      failed-retention-days: 30           # FAILED 保留天数
+      archive-batch-size: 200             # 每批处理条数（循环直到取空）
+  security:
+    api-docs-public: ${OJ_API_DOCS_PUBLIC:true}
+    normalized-rbac: ${OJ_NORMALIZED_RBAC:false}
+    login:
+      # 登录限流有两个独立口径，不能互相替代：
+      # - ip-*：同一出口 IP 在窗口内的登录请求总数（防单机爆破）。默认保持历史值 10 次/60 秒；
+      #   机房共用出口时按班级规模放大（如 120/60），否则整班会一起被拒。
+      # - account-*：同一用户名的失败次数（防换 IP 猜同一账号）。默认 0=关闭，需显式开启；
+      #   命中后该账号冷却 cooldown 秒，正常学生集中登录不会触发。
+      ip-max-attempts: ${OJ_SECURITY_LOGIN_IP_MAX_ATTEMPTS:10}
+      ip-window-seconds: ${OJ_SECURITY_LOGIN_IP_WINDOW_SECONDS:60}
+      account-max-failures: ${OJ_SECURITY_LOGIN_ACCOUNT_MAX_FAILURES:0}
+      account-window-seconds: ${OJ_SECURITY_LOGIN_ACCOUNT_WINDOW_SECONDS:60}
+      account-cooldown-seconds: ${OJ_SECURITY_LOGIN_ACCOUNT_COOLDOWN_SECONDS:60}
+  search:
+    # Meilisearch 全文搜索（任务⑧，2026-08-14 方案第 8 节）：
+    # 读侧 /problem/search，写侧题目增删改同步索引；故障自动回退 LIKE 查询。
+    enabled: ${OJ_SEARCH_ENABLED:true}
+    meilisearch:
+      # 本地 docker-compose 映射端口 7700；api-key 与 compose 中 MEILI_MASTER_KEY 保持一致
+      url: ${OJ_SEARCH_MEILISEARCH_URL:http://localhost:7700}
+      api-key: ${OJ_SEARCH_MEILISEARCH_API_KEY:oj-meili-dev-key}
+    breaker:
+      # 简单断路器：连续失败 N 次后短路 cooldown-ms，期间直接走 LIKE 降级
+      failure-threshold: ${OJ_SEARCH_BREAKER_FAILURE_THRESHOLD:3}
+      cooldown-ms: ${OJ_SEARCH_BREAKER_COOLDOWN_MS:30000}
+    reindex-cron: ${OJ_SEARCH_REINDEX_CRON:0 10 4 * * *}   # 每日全量重建兜底（凌晨 4:10）
+  judge:
+    persist-normalized-results: ${OJ_PERSIST_NORMALIZED_RESULTS:false}
+    worker:
+      # A1/A2（高并发方案）：判题专用线程池（独立于 @Scheduled 调度线程池）与批量领取。
+      # 容量公式见方案文档：应用并发只要 ≥ Judge0 槽位数就不构成瓶颈。
+      core-threads: ${OJ_JUDGE_WORKER_CORE_THREADS:8}
+      max-threads: ${OJ_JUDGE_WORKER_MAX_THREADS:16}
+      queue-capacity: ${OJ_JUDGE_WORKER_QUEUE_CAPACITY:200}
+      batch-size: ${OJ_JUDGE_WORKER_BATCH_SIZE:8}          # 每轮批量领取上限（对齐 core-threads）
+      trigger-concurrency: ${OJ_JUDGE_TRIGGER_CONCURRENCY:4} # RabbitMQ 唤醒消费者并发（默认 1）
+      case-parallelism: ${OJ_JUDGE_CASE_PARALLELISM:4}     # A3-1：单个提交内用例并行上限
+      case-timeout-ms: ${OJ_JUDGE_CASE_TIMEOUT_MS:30000}   # 单个用例判题超时（含重试的兜底上限）
+    watchdog:
+      # 判题任务看门狗：回收卡在 PROCESSING 的任务（Worker 崩溃/判题机挂起）
+      enabled: ${OJ_JUDGE_WATCHDOG_ENABLED:true}
+      interval-ms: ${OJ_JUDGE_WATCHDOG_INTERVAL_MS:60000}        # 扫描间隔
+      stuck-timeout-ms: ${OJ_JUDGE_WATCHDOG_STUCK_MS:600000}     # 卡住判定阈值（10分钟）
+      batch-size: ${OJ_JUDGE_WATCHDOG_BATCH_SIZE:50}
+  testcase:
+    # 本地开发默认写入应用工作目录；生产环境请通过 OJ_TESTCASE_PATH 指向持久卷。
+    base-path: ${OJ_TESTCASE_PATH:./data/testcases}
+  ai:
+    crypto:
+      # 独立 AES-256-GCM 主密钥（Base64 32 字节），生产以只读 secret 文件挂载；留空时仅 MANAGED 保存/调用安全失败。
+      key-file: ${OJ_AI_MASTER_KEY_FILE:}
+    network:
+      # 仅测试环境使用的精确完整 URL 白名单，逗号分隔；生产保持为空，管理页无绕过开关。
+      private-targets: ${OJ_AI_PRIVATE_TARGETS:}
+    quota:
+      # 每用户每日 token 配额：超限后当日拒绝调用，次日自动重置
+      enabled: ${OJ_AI_QUOTA_ENABLED:true}
+      daily-tokens: ${OJ_AI_QUOTA_DAILY_TOKENS:30000}
+      exempt-teacher-admin: ${OJ_AI_QUOTA_EXEMPT_PRIVILEGED:true}   # 教师/管理员豁免
+    contest-guard:
+      # 比赛防护：题目处于进行中比赛时拦截 AI 答疑，防止实时作弊
+      enabled: ${OJ_AI_CONTEST_GUARD_ENABLED:true}
+      cache-seconds: ${OJ_AI_CONTEST_GUARD_CACHE_SECONDS:60}       # 判定结果短时缓存
+      exempt-teacher-admin: ${OJ_AI_CONTEST_GUARD_EXEMPT_PRIVILEGED:true}
+  monitoring:
+    # OPS-02 监控收口：周期性只读聚合 → Micrometer gauge，经 /actuator/prometheus 暴露（仅 ADMIN，见 SecurityConfig）。
+    # 关键语义：未配置 backup.root 时 oj.backup.configured=0、oj.backup.healthy 恒 0、oj.ops.health.status 恒 0，
+    # 即「没有配置备份监控就不显示整体健康」；外部告警渠道未授权，本配置不发任何邮件/Webhook。
+    enabled: ${OJ_MONITORING_ENABLED:true}
+    refresh-interval-ms: ${OJ_MONITORING_REFRESH_INTERVAL_MS:30000}   # 快照刷新周期；age>2× 周期视为刷新停摆（oj.monitoring.stale）
+    # 判题：分级阈值。看门狗 stuck-timeout-ms 默认 600000（10 分钟）才回收，慢判题+退避重试会让用户看到长 COMPILING，
+    # 因此额外用 120s 预警 / 300s 分页，二者都小于看门狗阈值，只观察不抢动作。
+    judge-processing-slow-seconds: ${OJ_MONITORING_JUDGE_PROCESSING_SLOW_SECONDS:120}
+    judge-processing-page-seconds: ${OJ_MONITORING_JUDGE_PROCESSING_PAGE_SECONDS:300}
+    judge-submission-inflight-slow-seconds: ${OJ_MONITORING_JUDGE_SUBMISSION_INFLIGHT_SLOW_SECONDS:180}
+    judge-failure-window-minutes: ${OJ_MONITORING_JUDGE_FAILURE_WINDOW_MINUTES:60}   # 对齐 scripts/ops.py check: FAILED updated_at > NOW()-1 HOUR
+    contest-settlement-grace-minutes: ${OJ_MONITORING_CONTEST_SETTLEMENT_GRACE_MINUTES:15}  # 对齐 ops.py check: end_time < NOW()-15 MINUTE
+    outbox-failed-window-minutes: ${OJ_MONITORING_OUTBOX_FAILED_WINDOW_MINUTES:60}   # 对齐 ops.py check: FAILED created_at > NOW()-1 HOUR
+    outbox-pending-warning: ${OJ_MONITORING_OUTBOX_PENDING_WARNING:100}              # 积压警告线（只出 oj.outbox.backlog.warning，不折叠健康位）
+    outbox-oldest-pending-warning-seconds: ${OJ_MONITORING_OUTBOX_OLDEST_PENDING_WARNING_SECONDS:300}  # 5 个投递周期
+    report-wait-warning-seconds: ${OJ_MONITORING_REPORT_WAIT_WARNING_SECONDS:1800}   # 报告等待 30 分钟
+    notification-missing-warning-seconds: ${OJ_MONITORING_NOTIFICATION_MISSING_WARNING_SECONDS:600}   # 应发未发 10 分钟
+    backup:
+      # 备份根目录（其下每个子目录含 manifest.json，四件产物与 scripts/ops.py 一致）；留空=未配置备份监控。
+      root: ${OJ_MONITORING_BACKUP_ROOT:}
+      max-age-hours: ${OJ_MONITORING_BACKUP_MAX_AGE_HOURS:26}   # 对齐 ops.py check --max-backup-age-hours 默认 26
+      verify-checksums: ${OJ_MONITORING_BACKUP_VERIFY_CHECKSUMS:true}
+
+# 8. 腾讯云 COS 配置
+tencent:
+  cos:
+    secret-id: ${COS_SECRET_ID:}
+    secret-key: ${COS_SECRET_KEY:}
+    region: ${COS_REGION:ap-guangzhou}
+    bucket-name: ${COS_BUCKET_NAME:}
+    base-url: ${COS_BASE_URL:}
+
+# 本地文件存储（COS 未配置时的降级方案）
+file:
+  upload-dir: ${OJ_UPLOAD_DIR:uploads}
+  public-base-url: ${OJ_PUBLIC_BASE_URL:http://localhost:8080}
+
+# 9. AI 教学助手配置 (DeepSeek)
+ai:
+  # 密钥禁止默认值：缺失时 DeepSeekClient 走降级（返回 null），见 DeepSeekClient 空值检查
+  api-key: ${DEEPSEEK_API_KEY:}
+  api-url: ${DEEPSEEK_API_URL:https://api.deepseek.com/v1/chat/completions}
+  # 模型名（2026-08-15 实测 opencode go /models 接口：模型 ID 不带前缀；管理台 system_config ai.model 可动态覆盖）
+  model: ${AI_MODEL:deepseek-v4-flash}
+
+# 10. JWT 签名密钥（环境变量注入，禁止默认值；缺失/过短启动即失败，见 JwtUtils 校验）
+jwt:
+  secret: ${JWT_SECRET:}
+
+# 报告均为受权 HTML；外部交付实现保持 dry-run，不可通过配置开启真实外发。
+# 周报采用「按需受理 + 运维显式开启的凌晨预生成」：weekly 任务只 enqueue，不等待 HTML。
+# 2026-10-29 用户决定：自动周报默认关闭（OJ_REPORT_WEEKLY_ENABLED 未设置时不调度），
+# 需要时由运维显式开启；教师/管理员在报告中心按需请求报告的入口不受影响。
+# 显式开启后执行时间为周一 03:00 Asia/Shanghai（report.weekly-cron）。
+report:
+  weekly-enabled: ${OJ_REPORT_WEEKLY_ENABLED:false}
+  weekly-cron: ${OJ_REPORT_WEEKLY_CRON:0 0 3 * * MON}
+  ai-advice-enabled: ${OJ_REPORT_AI_ADVICE_ENABLED:false}
+  retention-cleanup-enabled: ${OJ_REPORT_RETENTION_CLEANUP_ENABLED:true}
+  retention-months: ${OJ_REPORT_RETENTION_MONTHS:12}
+  retention-cron: ${OJ_REPORT_RETENTION_CRON:0 30 3 * * *}
+  worker:
+    enabled: ${OJ_REPORT_WORKER_ENABLED:true}
+    threads: ${OJ_REPORT_WORKER_THREADS:2}
+    poll-interval-ms: ${OJ_REPORT_WORKER_POLL_INTERVAL_MS:2000}
+    lease-ttl-seconds: ${OJ_REPORT_WORKER_LEASE_TTL_SECONDS:60}
+    heartbeat-interval-ms: ${OJ_REPORT_WORKER_HEARTBEAT_INTERVAL_MS:10000}
+    max-runtime-seconds: ${OJ_REPORT_WORKER_MAX_RUNTIME_SECONDS:90}
+    cancel-grace-seconds: ${OJ_REPORT_WORKER_CANCEL_GRACE_SECONDS:5}
+    watchdog-interval-ms: ${OJ_REPORT_WORKER_WATCHDOG_INTERVAL_MS:1000}
+    # V64 升级门禁：默认关闭，必须由运维显式 opt-in。
+    # 只有「旧同步入口已下线 + 旧 worker 已停止 + 旧队列已排空」之后才允许开启；
+    # 开启后启动时会把无租约的 GENERATING（pre-lease 旧任务）回收为 PENDING。
+    # 启动日志固定输出 OJ_RELEASE_GATE report_worker legacy_generating=<n> recover_legacy=<bool>，
+    # 旧任务存在但未开启时会额外输出 OJ_ALERT report_worker_legacy_rows_present。
+    recover-legacy-generating: ${OJ_REPORT_WORKER_RECOVER_LEGACY:false}
+    # 受控退出（B-1 恢复闭环）：unhealthy 后写完日志与告警标记再退出进程，
+    # 让编排层的 restart 策略接管恢复。**只允许在 worker 专用实例上开启**：
+    # 同进程同时承接 web 流量时，退出会连带中断在线用户请求与在途判题。
+    # 默认 false，因此单机合并部署的行为与修复前一致（只摘流 + 告警，不自杀）。
+    # 反复退出的上限由部署层的 deploy.restart_policy.max_attempts 兜住，不在进程内计数。
+    exit-on-unhealthy: ${OJ_REPORT_WORKER_EXIT_ON_UNHEALTHY:false}
+    # 退出前给在途 FINALIZING 的提交窗口；未提交的行由 DB lease 过期回收，不依赖本进程存活。
+    exit-grace-seconds: ${OJ_REPORT_WORKER_EXIT_GRACE_SECONDS:5}
+    # 卡死的渲染线程无法被 interrupt，优雅停机可能永不返回；超过该时限直接 halt。
+    exit-hard-timeout-seconds: ${OJ_REPORT_WORKER_EXIT_HARD_TIMEOUT_SECONDS:20}
+  notification:
+    worker-enabled: ${OJ_REPORT_NOTIFICATION_WORKER_ENABLED:true}
+  external:
+    dry-run-only: true
+contest:
+  replay:
+    # 仅备份、副本演练与审批就绪的维护窗口临时开启；结束后关闭。
+    enabled: ${OJ_SETTLEMENT_REPLAY_ENABLED:false}

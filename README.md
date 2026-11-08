@@ -36,13 +36,13 @@ MuseAlgo-OJ 是一套面向**信息学奥赛教学**的自托管在线判题系�
 
 | 模块 | 能力 |
 |---|---|
-| **题库与判题** | 支持多种语言的题目管理、测试用例、样例、题解；单题/批量导入（XML / FPS / ZIP） |
-| **比赛** | 支持 ACM 与 **OI 赛制 + subtask 部分分**；赛中实时榜单、赛后自动查重 |
+| **题库与判题** | 支持多种语言的题目管理、测试用例、样例、题解；单题/批量导入（XML / FPS / ZIP）；管理员单提交受控重判（原因/审计/旧结果恢复，默认冻结已固化历史） |
+| **比赛** | 支持 ACM 与 OI 赛制 + subtask 部分分；正式赛/娱乐赛分类、等级 Rating 限制、报名审核与报名时资格快照、正式/全局双榜；赛中实时榜单、赛后自动查重 |
 | **班级教学** | 建班、拉学生、按班下发题单与课件、作业与进度跟踪 |
 | **课件系统** | 基于 [Slidev](https://sli.dev/) 生成课件，在线 iframe 预览与下发 |
 | **AI 助教** | 接入大模型（默认 DeepSeek）提供题目讲解、代码诊断、提示；支持流式输出与 RAG 检索增强 |
 | **社区** | 帖子、评论、点赞、关注，题目与帖子互相关联 |
-| **学情分析** | 提交统计、能力雷达、学生画像快照、家长报告导出 |
+| **学情分析** | 练习分析（本人提交总览、能力分布、标签/难度分布、通过题单）、提交统计、能力雷达、学生画像快照、家长报告导出 |
 | **管理后台** | 用户/角色/权限（RBAC）、题目与比赛管理、内容治理、系统配置与提示词模板 |
 | **代码查重** | 提交代码相似度检测与查重报告 |
 
@@ -58,7 +58,7 @@ MuseAlgo-OJ 是一套面向**信息学奥赛教学**的自托管在线判题系�
 
 ```
 MuseAlgo-OJ/
-├── OJ-backend/         # Spring Boot 多模块后端（12 个 Maven 模块）
+├── OJ-Backend/         # Spring Boot 多模块后端（12 个 Maven 模块）
 │   ├── oj-admin/       #   启动模块（Spring Boot 入口 + Flyway 迁移）
 │   ├── oj-api/         #   跨模块接口与 DTO 契约
 │   ├── oj-system/      #   用户 / 角色 / 权限
@@ -72,12 +72,13 @@ MuseAlgo-OJ/
 │   ├── oj-framework/   #   基础配置 / 安全 / JWT
 │   ├── oj-common/      #   通用工具与常量
 │   └── db/             #   演示种子数据与判题用例
-├── OJ-frontend/        # 学生 / 教师主站（Vue 3 + Vite）
+├── OJ-Frontend/        # 学生 / 教师主站（Vue 3 + Vite）
 ├── OJ-Slidev/          # Slidev 课件工程
 ├── docker/             # 容器辅助配置（Maven 镜像、Judge0 配置、数据库初始化目录）
 ├── deploy/             # 生产部署产物（后端 / 前端 Dockerfile、Nginx 配置）
 ├── docs/               # 项目文档（架构 / 开发 / 部署 / 排错）
 ├── scripts/            # 开发脚本
+├── tests/              # 集成测试与运维演练
 ├── compose.dev.yml     # 一键启动开发栈（源码挂载，热更新）
 ├── docker-compose.prod.yml  # 生产编排（发行镜像 + Nginx，见 docs/DEPLOYMENT.md）
 └── .env.example        # 环境变量模板
@@ -98,7 +99,7 @@ cp .env.example .env
 docker compose -f compose.dev.yml up -d
 ```
 
-首次启动时 MySQL 会自动执行 `docker/mysql-init/00-schema.sql` 建立全部表结构与 Flyway 迁移历史（约十几秒），随后后端启动并通过 Flyway 校验。整个过程通常一两分钟。
+首次启动时 MySQL 会依次导入 `docker/mysql-init/00-schema.sql` 的 V53 结构基线和 `01-reference-roles.sql` 的基础角色与权限目录（不含账号或业务数据）；开发应用随后校验并应用尚未记录的迁移。生产 Compose 使用独立迁移服务。基线与迁移规则见[开发指南](docs/DEVELOPMENT.md#三数据库迁移必读)，状态检查、升级、备份和恢复见[运维指南](docs/OPERATIONS.md)，发行镜像的隔离数据库演练入口见[测试指南](docs/TESTING.md#发行镜像演练)。
 
 **访问入口**
 
@@ -125,8 +126,8 @@ docker compose -f compose.dev.yml up -d
 > 不执行这一步时库中没有任何账号：可自行到 `/register` 注册，或手动创建一个管理员后再从后台添加用户。
 
 演示题目共 15 道，题面与判题用例都是**本项目原创编写**的（不对应也不取自任何第三方题库），
-因此开箱即可提交代码、真实判题。用例文件在 `OJ-backend/db/demo-testcases/`，
-由上面的脚本一并安装到 `OJ-backend/data/testcases/`——**不要只执行 `seed.sql`**，
+因此开箱即可提交代码、真实判题。用例文件在 `OJ-Backend/db/demo-testcases/`，
+由上面的脚本一并安装到 `OJ-Backend/data/testcases/`——**不要只执行 `seed.sql`**，
 否则库里只有路径、盘上没有文件，判题会失败。
 
 **启动判题机**（默认不启动，镜像较大约 14 GB）
@@ -187,7 +188,7 @@ docker compose -f compose.dev.yml down -v            # 停止并清空数据卷
 
 > ⚠️ 可选配置请**整行注释掉**，不要写成 `AI_MODEL=` 这样的空赋值——
 > 空字符串会覆盖 `application.yml` 里的默认值。`OJ_PUBLIC_BASE_URL=` 是同源部署所需的显式空值，属于例外。完整变量清单与默认值见
-> `OJ-backend/oj-admin/src/main/resources/application.yml`。
+> `OJ-Backend/oj-admin/src/main/resources/application.yml`。
 
 ## 生产部署
 
@@ -225,7 +226,7 @@ curl -fsS localhost:8080/actuator/health     # 期望 {"status":"UP"}
 
 ```bash
 # 终端二：前端（/api 与 /uploads 默认代理到 http://localhost:8080）
-(cd OJ-frontend && npm ci && npm run dev)
+(cd OJ-Frontend && npm ci && npm run dev)
 ```
 
 手动启动后端时，安装阶段使用 `-am`，启动阶段不加 `-am`；完整命令见开发指南。
@@ -234,7 +235,7 @@ curl -fsS localhost:8080/actuator/health     # 期望 {"status":"UP"}
 
 | 文档 | 内容 |
 |---|---|
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 系统架构：模块划分、依赖约束、判题链路、降级设计 |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 系统架构：模块划分、依赖约束、判题链路、报告生命周期、降级设计 |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | 开发指南：环境搭建、**数据库迁移机制**、如何加接口 / 迁移 / 页面 |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | 生产部署：Compose / systemd、Nginx、密钥管理、上线检查清单 |
 | [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | 常见问题与排错（启动失败、端口冲突、判题不返回、登录失败…） |
@@ -249,13 +250,9 @@ curl -fsS localhost:8080/actuator/health     # 期望 {"status":"UP"}
 
 需要特别说明的是：[Judge0](https://github.com/judge0/judge0) 采用 **GPL-3.0** 许可。本项目通过 HTTP 调用独立部署的判题服务，不链接其代码；若你打算把 Judge0 的镜像或源码一并纳入自己的发行物，请自行评估并履行对应的 GPL 义务。
 
-## 贡献
+## 开发与反馈
 
-欢迎提交 Issue 与 Pull Request，请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。
-
-## 安全
-
-请勿在 Issue 中公开安全漏洞。报告方式见 [SECURITY.md](SECURITY.md)。
+开发环境、启动方式、提交前检查和代码约定见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。安全漏洞请勿公开，报告方式见 [SECURITY.md](SECURITY.md)。
 
 ## 许可证
 

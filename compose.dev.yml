@@ -84,8 +84,8 @@ services:
       target: dev
     image: musealgo-oj/backend-dev:latest
     container_name: musealgo-backend
-    # 工作目录设在 OJ-backend 之下：Maven 多模块构建以此为基准
-    working_dir: /workspace/OJ-backend
+    # 工作目录设在 OJ-Backend 之下：Maven 多模块构建以此为基准
+    working_dir: /workspace/OJ-Backend
     depends_on:
       mysql:
         condition: service_healthy
@@ -108,16 +108,20 @@ services:
       MANAGEMENT_HEALTH_RABBIT_ENABLED: "false"
       # 判题机同属本 compose 网络，直接用服务名；未起 --profile judge 时由熔断兜底
       JUDGE0_URLS: "http://judge0-server:2358"
-      # 浏览器渲染服务若跑在宿主 Docker 上，经 host.docker.internal 访问
-      OJ_CHROMIUM_URL: "http://host.docker.internal:3000"
       # 显式给出绝对路径，不依赖「工作区根推断」：
       #   课件工程 / 课件产物 / 判题用例都在整仓挂载目录内，宿主与容器共享同一份。
       #   判题用例目录与 scripts/db-seed.sh 的默认安装位置一致。
       OJ_SLIDEV_WORKER_DIR: /workspace/OJ-Slidev
       OJ_SLIDEV_OUTPUT_DIR: /workspace/OJ-Coursewares
-      OJ_TESTCASE_PATH: /workspace/OJ-backend/data/testcases
-      OJ_UPLOAD_DIR: /workspace/OJ-backend/uploads
+      OJ_TESTCASE_PATH: /workspace/OJ-Backend/data/testcases
+      OJ_UPLOAD_DIR: /workspace/OJ-Backend/uploads
       OJ_PUBLIC_BASE_URL: ""
+      OJ_REPORT_WEEKLY_ENABLED: ${OJ_REPORT_WEEKLY_ENABLED:-false}
+      OJ_REPORT_AI_ADVICE_ENABLED: ${OJ_REPORT_AI_ADVICE_ENABLED:-false}
+      OJ_REPORT_RETENTION_CLEANUP_ENABLED: ${OJ_REPORT_RETENTION_CLEANUP_ENABLED:-true}
+      OJ_REPORT_RETENTION_MONTHS: ${OJ_REPORT_RETENTION_MONTHS:-12}
+      OJ_REPORT_RETENTION_CRON: ${OJ_REPORT_RETENTION_CRON:-0 30 3 * * *}
+      OJ_SETTLEMENT_REPLAY_ENABLED: ${OJ_SETTLEMENT_REPLAY_ENABLED:-false}
       # 容器内无宿主 .npmrc，显式指定国内源，避免直连 npmjs 超时
       NPM_CONFIG_REGISTRY: "https://registry.npmmirror.com"
     extra_hosts:
@@ -134,7 +138,7 @@ services:
     command: >
       sh -c "if [ ! -d /workspace/OJ-Slidev/node_modules/@slidev ]; then
       cd /workspace/OJ-Slidev && npm ci --no-audit --no-fund --omit=dev; fi;
-      cd /workspace/OJ-backend
+      cd /workspace/OJ-Backend
       && mvn -s /maven-settings.xml -pl oj-admin -am -DskipTests install
       && exec mvn -s /maven-settings.xml -pl oj-admin spring-boot:run"
 
@@ -151,7 +155,7 @@ services:
       # 容器内无宿主 .npmrc，显式指定国内源，避免直连 npmjs 超时
       NPM_CONFIG_REGISTRY: "https://registry.npmmirror.com"
     volumes:
-      - ./OJ-frontend:/app
+      - ./OJ-Frontend:/app
       - frontend-node-modules:/app/node_modules   # 容器内 Linux 版依赖，不污染宿主
       - npm-cache:/root/.npm
     ports:

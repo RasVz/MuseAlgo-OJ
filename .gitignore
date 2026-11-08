@@ -3,15 +3,18 @@
 **/dist/
 **/out/
 **/coverage/
-OJ-frontend/dist-baseline/
+OJ-Frontend/dist-baseline/
 # Slidev 课件运行时产物（oj.slidev.output-dir，按 uuid 生成，勿入库）
 OJ-Coursewares/
+# Slidev 临时输入文件（保留作者维护的 slides.md）
+/OJ-Slidev/????????????????????????????????.md
 
 # JavaScript dependencies and caches
 **/node_modules/
 **/.vite/
 **/.cache/
 **/.eslintcache
+**/.pytest_cache/
 **/__pycache__/
 *.py[cod]
 *.tsbuildinfo
@@ -29,14 +32,15 @@ OJ-Coursewares/
 Thumbs.db
 
 # Local runtime data
-OJ-backend/data/
-OJ-backend/uploads/
-OJ-backend/*/uploads/
-OJ-backend/logs/
-# 日志实际按模块落在 OJ-backend/<模块>/logs/ 下（如 oj-admin/logs/），
-# 只写 OJ-backend/logs/ 挡不住；*.log 虽能兜住文件本身，
+OJ-Backend/data/
+OJ-Backend/uploads/
+OJ-Backend/*/uploads/
+OJ-Backend/logs/
+# 日志实际按模块落在 OJ-Backend/<模块>/logs/ 下（如 oj-admin/logs/），
+# 只写 OJ-Backend/logs/ 挡不住；*.log 虽能兜住文件本身，
 # 但滚动归档等非 .log 文件仍可能漏进来，这里按目录一并排除
-OJ-backend/*/logs/
+OJ-Backend/*/logs/
+/logs/
 **/temp_codes/
 *.log
 *.pid
@@ -47,11 +51,16 @@ OJ-backend/*/logs/
 !.env.example
 !.env.*.example
 
+# 本地 AI 服务主密钥与任意 secret 挂载文件
+deploy/dev-secrets/
+deploy/secrets/
+
 # Docker 开发栈的数据库快照（本机数据，含账号密码哈希，禁止入库）
 # 例外：00-schema.sql 是纯表结构基线 + Flyway 迁移记录（不含任何业务数据），必须入库
 docker/mysql-init/*.sql
 docker/mysql-init/*.sql.gz
 !docker/mysql-init/00-schema.sql
+!docker/mysql-init/01-reference-roles.sql
 
 # Maven local/release files
 dependency-reduced-pom.xml
@@ -64,5 +73,38 @@ release.properties
 .workbuddy-ai/
 
 # Browser acceptance evidence (kept outside the public source tree)
-OJ-frontend/test-results/
-OJ-frontend/playwright-report/
+OJ-Frontend/test-results/
+OJ-Frontend/playwright-report/
+
+# Repository-root runtime paths (when the backend is launched from the repo root)
+/data/
+/uploads/
+/outputs/
+/backups/
+
+# Verification configuration and reports can contain credentials or auth tokens
+/deploy/verify/env.verify
+/rel02-evidence/
+/musealgo-rel02-evidence/
+**/accounts.private.json
+**/qa02-auth-cache.json
+**/sessions.json
+
+# Private key / keystore material; publish placeholder configuration instead
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+
+# Local backups and editor recovery files
+*.bak
+*.orig
+*.rej
+*~
+.*.swp
