@@ -126,17 +126,21 @@ class ContestRankingSseHttpIT {
         user.setId(userId);
         user.setUsername(username);
         user.setRole((byte) ("ROLE_ADMIN".equals(role) ? 3 : 1));
+        user.setCredentialVersion(3L);
         LoginUser principal = new LoginUser(user, List.of(new SimpleGrantedAuthority(role)));
 
         when(jwtUtils.extractUsername(token)).thenReturn(username);
         when(userDetailsService.loadUserByUsername(username)).thenReturn(principal);
         when(jwtUtils.validateAccessToken(token, username)).thenReturn(true);
+        when(jwtUtils.hasCurrentCredentialVersion(token, 3L)).thenReturn(true);
         when(jwtUtils.extractJti(token)).thenReturn(jti);
         when(jwtBlacklistService.isRevoked(jti)).thenReturn(false);
     }
 
     private void stubContest(long contestId, String mode, boolean inProgress) {
         Contest contest = new Contest();
+        contest.setId(contestId);
+        contest.setVisible(1);
         contest.setMode(mode);
         if (inProgress) {
             contest.setStartTime(LocalDateTime.now().minusMinutes(5));

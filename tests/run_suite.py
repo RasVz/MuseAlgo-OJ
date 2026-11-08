@@ -36,6 +36,9 @@ def run_suite(output, extended=True):
         credentials.chmod(0o600)
         compose=['docker','compose','--env-file',str(credentials),'-p',project,'-f',str(ROOT/'tests/compose.yml'),'--profile','judge','--profile','mq']
         env.update(SPRING_DATASOURCE_URL=f"jdbc:mysql://127.0.0.1:{env['OJ_CI_MYSQL_PORT']}/oj_db?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true",
+                   # Multiple cached Spring test contexts share this disposable MySQL.
+                   SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE='8',
+                   SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE='0',
                    OJ_DB_PASS=env['OJ_CI_DB_PASSWORD'],SPRING_DATA_REDIS_PORT=env['OJ_CI_REDIS_PORT'],
                    DEEPSEEK_API_KEY='',COS_SECRET_ID='',COS_SECRET_KEY='',
                    OJ_SEARCH_ENABLED='false',OJ_RABBITMQ_ENABLED='false',MANAGEMENT_HEALTH_RABBIT_ENABLED='false',
@@ -75,6 +78,7 @@ def run_suite(output, extended=True):
                        OJ_RABBIT_USER='ci', OJ_RABBIT_PASS=env['OJ_CI_MQ_PASSWORD'])
             try:
                 run('backend-integration',['./mvnw','-B','package','-Pintegration',
+                    '-Dspring.test.context.cache.maxSize=4',
                     '-Dmusealgo.review.synthetic=true',
                     '-Dmusealgo.review.expected-db-port='+env['OJ_CI_MYSQL_PORT']],ROOT/'OJ-Backend')
             finally:
