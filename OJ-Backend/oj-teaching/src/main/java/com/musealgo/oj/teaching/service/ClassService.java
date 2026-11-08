@@ -1,0 +1,25 @@
+package com.musealgo.oj.teaching.service;
+
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.spring.service.IService;
+import com.musealgo.oj.teaching.entity.Class;
+
+
+/**
+ * 班级表 服务类
+ */
+public interface ClassService extends IService<Class> {
+    Class getByIdForUpdate(Long id);
+    void refreshStudentCount(Long id);
+    java.util.Map<Long,Long> studentCounts(java.util.List<Long> ids);
+
+    boolean createClass(Class classGroup);
+
+    String createInviteCode(Long classId);
+
+    Integer joinByInviteCode(Long userId, String code);
+
+    IPage<Class> getJoinedClasses(Integer page, Integer size, Long userId);
+
+    /** 获取学生所有班级的作业列表（含班级名称） */
+}

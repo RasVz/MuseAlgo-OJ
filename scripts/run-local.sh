@@ -28,6 +28,6 @@ if [ -z "${JWT_SECRET:-}" ] || [ -z "${OJ_DB_PASS:-}" ]; then
 fi
 printf '%s\n' '  JWT_SECRET       = 已设置' '  OJ_DB_PASS       = 已设置' '=================='
 
-cd "$ROOT/OJ-backend"
+cd "$ROOT/OJ-Backend"
 ./mvnw -pl oj-admin -am -DskipTests install
 exec ./mvnw -pl oj-admin spring-boot:run

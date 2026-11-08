@@ -1,0 +1,25 @@
+# 本机课堂 profile：在 application.yml 基础上放宽登录限流、收敛数据库等待时间。
+# 仅覆盖下列键，其余配置仍由 application.yml 提供；不启动 MySQL/Redis 等外部服务。
+server:
+  # 本机直连场景不解析 X-Forwarded-*；置于代理后时所有用户共享代理对端额度。
+  forward-headers-strategy: none
+
+spring:
+  datasource:
+    hikari:
+      # 从连接池取连接的等待上限，不是整个 HTTP 请求或 SQL 执行时限。
+      connection-timeout: ${OJ_DB_CONNECTION_TIMEOUT_MS:2000}
+      data-source-properties:
+        # JDBC 建连/读超时（毫秒）
+        connectTimeout: ${OJ_DB_CONNECT_TIMEOUT_MS:2000}
+        socketTimeout: ${OJ_DB_SOCKET_TIMEOUT_MS:5000}
+
+oj:
+  security:
+    login:
+      # 共用出口的课堂场景按班级规模放宽 IP 额度，同时保留账号失败冷却。
+      ip-max-attempts: ${OJ_SECURITY_LOGIN_IP_MAX_ATTEMPTS:120}
+      ip-window-seconds: ${OJ_SECURITY_LOGIN_IP_WINDOW_SECONDS:60}
+      account-max-failures: ${OJ_SECURITY_LOGIN_ACCOUNT_MAX_FAILURES:5}
+      account-window-seconds: ${OJ_SECURITY_LOGIN_ACCOUNT_WINDOW_SECONDS:60}
+      account-cooldown-seconds: ${OJ_SECURITY_LOGIN_ACCOUNT_COOLDOWN_SECONDS:60}

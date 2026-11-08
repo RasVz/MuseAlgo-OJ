@@ -24,9 +24,9 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: OJ-frontend/package-lock.json
+          cache-dependency-path: OJ-Frontend/package-lock.json
       - name: 安装浏览器依赖
-        working-directory: OJ-frontend
+        working-directory: OJ-Frontend
         run: |
           npm ci --no-audit --no-fund
           npx playwright install --with-deps chromium
@@ -42,7 +42,7 @@ jobs:
             ${{ runner.temp }}/oj-integration/*.json
             ${{ runner.temp }}/oj-integration/browser-report/
             ${{ runner.temp }}/oj-integration/browser-results/
-            OJ-frontend/playwright-report/
-            OJ-frontend/test-results/
-            OJ-backend/**/surefire-reports/
+            OJ-Frontend/playwright-report/
+            OJ-Frontend/test-results/
+            OJ-Backend/**/surefire-reports/
           retention-days: 7

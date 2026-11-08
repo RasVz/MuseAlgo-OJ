@@ -55,6 +55,6 @@ MuseAlgo-OJ 自身以 [Apache License 2.0](LICENSE) 发布。项目在构建或�
 1. **Judge0 独立部署与分发**：本项目通过 HTTP 调用独立运行的 Judge0，不将其代码链接进后端。
    [GNU GPL FAQ](https://www.gnu.org/licenses/gpl-faq.html#MereAggregation) 说明，是否构成组合程序还取决于通信机制与语义；
    不能仅凭使用 HTTP 对所有部署或分发方式作统一结论。另行分发 Judge0 镜像、源码或修改版本时，应单独核对并履行其许可义务。
-2. **演示题目与测试数据**：`OJ-backend/db/seed.sql` 中的演示题面及 `OJ-backend/db/demo-testcases/` 的用例由本项目原创编写，
+2. **演示题目与测试数据**：`OJ-Backend/db/seed.sql` 中的演示题面及 `OJ-Backend/db/demo-testcases/` 的用例由本项目原创编写，
    随本项目以 Apache-2.0 发布。另行导入的第三方题目与数据须取得相应授权。
 3. 若你新增了依赖，请在提交 PR 时同步更新本文件。

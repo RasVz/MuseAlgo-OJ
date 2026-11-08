@@ -1,16 +1,17 @@
 # 文档索引
 
-本目录收录面向**使用者与贡献者**的公开文档。项目功能概览与快速上手请看根目录 [README](../README.md)。
+本目录收录项目公开文档。项目功能概览与快速上手请看根目录 [README](../README.md)。
 
-| 文档 | 内容 | 适合谁 |
-|---|---|---|
-| [ARCHITECTURE.md](ARCHITECTURE.md) | 系统架构：模块划分、依赖约束、判题链路、关键机制 | 想读懂代码、准备二次开发的人 |
-| [DEVELOPMENT.md](DEVELOPMENT.md) | 开发指南：环境搭建、工程结构、如何加一个接口 / 迁移 / 前端页面 | 贡献者 |
-| [DEPLOYMENT.md](DEPLOYMENT.md) | 生产部署：Docker Compose / systemd 两种方式、反向代理、密钥管理、安全清单 | 自建站点的运维与老师 |
-| [TESTING.md](TESTING.md) | 独立数据库/Judge0、真实API、浏览器与MQ故障验收 | 贡献者与测试人员 |
-| [OPERATIONS.md](OPERATIONS.md) | 最小账号、入口隔离、一致备份、恢复及告警 | 部署维护者 |
-| [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | 常见问题与排错：启动失败、迁移冲突、端口占用、判题机、前端 | 所有人 |
-| [COMMENT-GUIDELINES.md](COMMENT-GUIDELINES.md) | 代码注释规范：分层要求、决策型注释写法、已知坑清单 | 提交 PR 的贡献者 |
+| 文档 | 内容 |
+|---|---|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | 系统架构：模块划分、依赖约束、判题链路、报告生命周期、关键机制 |
+| [DEVELOPMENT.md](DEVELOPMENT.md) | 开发指南：环境搭建、工程结构、数据库迁移、构建测试、代码与注释约定 |
+| [DEPLOYMENT.md](DEPLOYMENT.md) | 生产部署：Docker Compose / systemd 两种方式、反向代理、密钥管理、安全清单 |
+| [AI-SERVICES.md](AI-SERVICES.md) | 管理中心维护 AI 接口/模型/密钥、运行模式、主密钥挂载与轮换 |
+| [CONTEST-AND-REPORTS.md](CONTEST-AND-REPORTS.md) | 资格快照、正式/全局榜、教师报告操作与边界 |
+| [TESTING.md](TESTING.md) | 独立数据库/Judge0、真实 API、浏览器与 MQ 故障验收 |
+| [OPERATIONS.md](OPERATIONS.md) | 最小账号、入口隔离、一致备份、恢复及告警 |
+| [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | 常见问题与排错：启动失败、迁移冲突、端口占用、判题机、前端 |
 
 ## 本地开发入口速查
 

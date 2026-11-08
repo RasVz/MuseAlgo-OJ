@@ -18,8 +18,8 @@
 
 ## 自检清单
 
-- [ ] 后端 `cd OJ-backend && ./mvnw -q compile` 通过
-- [ ] 前端 `cd OJ-frontend && npm run lint` 通过
+- [ ] 后端 `cd OJ-Backend && ./mvnw -q compile` 通过
+- [ ] 前端 `cd OJ-Frontend && npm run lint` 通过
 - [ ] 涉及数据库结构变更时，新增了 Flyway 迁移文件（未修改历史迁移）
 - [ ] 新增/变更的环境变量已同步到 `.env.example` 与 README
 - [ ] **未提交任何密钥、口令、数据库导出、`node_modules`、`target`、`dist`**

@@ -8,7 +8,7 @@
 #   OJ_DB_NAME        数据库名，默认 oj_db
 #   OJ_DB_PASS        MySQL root 口令，默认 123456（开发默认值）
 #   COMPOSE_FILE      Compose 文件路径，默认 compose.dev.yml
-#   OJ_TESTCASE_PATH  判题用例安装目录（宿主路径），默认 <仓库根>/OJ-backend/data/testcases
+#   OJ_TESTCASE_PATH  判题用例安装目录（宿主路径），默认 <仓库根>/OJ-Backend/data/testcases
 #                     需与后端 oj.testcase.base-path 指向同一份目录（开发栈默认即如此）
 #   SEED_FORCE        设为 1 时覆盖已存在的用例文件（默认跳过，避免覆盖你自己的数据）
 #
@@ -23,9 +23,9 @@ COMPOSE_FILE="${COMPOSE_FILE:-compose.dev.yml}"
 DB_NAME="${OJ_DB_NAME:-oj_db}"
 DB_PASS="${OJ_DB_PASS:-123456}"
 
-SEED_FILE="$ROOT/OJ-backend/db/seed.sql"
-TESTCASE_SRC="$ROOT/OJ-backend/db/demo-testcases"
-TESTCASE_DST="${OJ_TESTCASE_PATH:-$ROOT/OJ-backend/data/testcases}"
+SEED_FILE="$ROOT/OJ-Backend/db/seed.sql"
+TESTCASE_SRC="$ROOT/OJ-Backend/db/demo-testcases"
+TESTCASE_DST="${OJ_TESTCASE_PATH:-$ROOT/OJ-Backend/data/testcases}"
 
 if [ ! -f "$SEED_FILE" ]; then
   echo "找不到种子文件：$SEED_FILE" >&2

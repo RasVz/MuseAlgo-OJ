@@ -7,8 +7,10 @@
 | `run-local.sh` | 本地原生开发启动 | [开发指南](../docs/DEVELOPMENT.md) |
 | `db-seed.sh` | 仅开发环境导入原创演示数据与用例 | [README](../README.md#快速开始docker推荐) |
 | `gen-demo-testcases.py` | 生成原创演示题用例 | 脚本内说明 |
-| `secret-check-pre-commit.sh` | 暂存内容敏感信息检查 | [贡献指南](../CONTRIBUTING.md) |
+| `secret-check-pre-commit.sh` | 暂存内容敏感信息检查 | [开发指南](../docs/DEVELOPMENT.md) |
 | `ops.py` | 一致备份、校验、空目标恢复、告警探针 | [运维指南](../docs/OPERATIONS.md) |
+| `build-release.sh` | 从干净提交完整构建后端/前端发行镜像并生成发行清单（本地保存，不 push） | [部署指南](../docs/DEPLOYMENT.md) |
+| `check_migrations.py` | 校验 V*.sql 连续性与 migration-checksums.json 锁文件 | 脚本内 `--help` |
 | `../tests/run_suite.py` | 独立数据库、真实判题和浏览器验收 | [测试指南](../docs/TESTING.md) |
 | `../tests/operations_drill.py` | 独立发行镜像的新装/升级/回滚/恢复演练 | `--help` 与测试指南 |
 

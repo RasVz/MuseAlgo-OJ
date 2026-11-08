@@ -1,0 +1,118 @@
+name: database-maintenance
+
+# 独立验证生产 Compose 数据库维护入口、历史迁移与隔离恢复。
+# 运行时镜像和两个旧状态 fixture 都由当前 checkout 构建，不依赖本机标签。
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  database-maintenance:
+    name: 数据库迁移、维护与恢复矩阵
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    env:
+      TZ: Asia/Shanghai
+      BACKEND_IMAGE: musealgo-oj/backend:db-ci-candidate
+      FRONTEND_IMAGE: musealgo-oj/frontend:db-ci-candidate
+      V62_IMAGE: musealgo-oj/backend:db-ci-v62-fixture
+      LEGACY_MAINTENANCE_IMAGE: musealgo-oj/backend:db-ci-legacy-fixture
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Python 运维与迁移检查器单测
+        run: python3 -m unittest tests.test_ops tests.test_migrations tests.test_database_fixtures tests.test_monitoring
+
+      - name: 后端单测并打包
+        working-directory: OJ-Backend
+        run: ./mvnw -B package
+
+      - name: 构建当前后端与前端候选镜像
+        run: |
+          docker build -f deploy/Dockerfile.backend -t "$BACKEND_IMAGE" .
+          docker build -f deploy/Dockerfile.frontend -t "$FRONTEND_IMAGE" .
+
+      - name: 从当前候选镜像提取可执行 Spring Boot JAR
+        run: |
+          mkdir -p "$RUNNER_TEMP/database-maintenance"
+          chmod 700 "$RUNNER_TEMP/database-maintenance"
+          container_id="$(docker create "$BACKEND_IMAGE")"
+          trap 'docker rm -f "$container_id" >/dev/null 2>&1 || true' EXIT
+          docker cp "$container_id:/app/app.jar" "$RUNNER_TEMP/database-maintenance/app.jar"
+          docker rm "$container_id"
+          trap - EXIT
+
+      - name: 生成只用于本次测试的 V62 与旧入口镜像
+        run: |
+          python3 tests/build_database_fixtures.py \
+            --source-jar "$RUNNER_TEMP/database-maintenance/app.jar" \
+            --output-dir "$RUNNER_TEMP/database-maintenance/fixtures" \
+            --base-image "$BACKEND_IMAGE" \
+            > "$RUNNER_TEMP/database-maintenance/fixture-manifest.json"
+          docker build \
+            -f "$RUNNER_TEMP/database-maintenance/fixtures/v62/Dockerfile" \
+            -t "$V62_IMAGE" \
+            "$RUNNER_TEMP/database-maintenance/fixtures/v62"
+          docker build \
+            -f "$RUNNER_TEMP/database-maintenance/fixtures/legacy-maintenance/Dockerfile" \
+            -t "$LEGACY_MAINTENANCE_IMAGE" \
+            "$RUNNER_TEMP/database-maintenance/fixtures/legacy-maintenance"
+
+      - name: Flyway 真实失败、历史校验与恢复矩阵
+        run: |
+          mkdir -p "$RUNNER_TEMP/database-maintenance/flyway"
+          chmod 700 "$RUNNER_TEMP/database-maintenance/flyway"
+          python3 tests/flyway_failure_smoke.py \
+            --backend-image "$BACKEND_IMAGE" \
+            --output "$RUNNER_TEMP/database-maintenance/flyway"
+
+      - name: 新装、只读状态、固定镜像、备份恢复和 V62→V63 运维演练
+        run: |
+          python3 tests/operations_drill.py \
+            --backend-image "$BACKEND_IMAGE" \
+            --frontend-image "$FRONTEND_IMAGE" \
+            --v62-backend-image "$V62_IMAGE" \
+            --legacy-maintenance-image "$LEGACY_MAINTENANCE_IMAGE" \
+            --output "$RUNNER_TEMP/database-maintenance/operations"
+
+      - name: 收集运维失败诊断日志
+        if: always()
+        shell: bash
+        run: |
+          source_dir="$GITHUB_WORKSPACE/../outputs/operations"
+          destination="$RUNNER_TEMP/database-maintenance/diagnostics"
+          mkdir -p "$destination"
+          chmod 700 "$destination"
+          if [[ -d "$source_dir" ]]; then
+            find "$source_dir" -maxdepth 1 -type f -name 'failure-*.log' -exec cp -f {} "$destination/" \;
+            chmod 600 "$destination"/*.log 2>/dev/null || true
+          fi
+
+      - name: 保存隔离测试证据
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: database-maintenance-evidence
+          path: |
+            ${{ runner.temp }}/database-maintenance/fixture-manifest.json
+            ${{ runner.temp }}/database-maintenance/flyway/*.json
+            ${{ runner.temp }}/database-maintenance/flyway/*.log
+            ${{ runner.temp }}/database-maintenance/operations/operations-drill.json
+            ${{ runner.temp }}/database-maintenance/operations/*.log
+            ${{ runner.temp }}/database-maintenance/diagnostics/*.log
+          if-no-files-found: ignore
+          retention-days: 3
