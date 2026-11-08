@@ -29,9 +29,9 @@ class ContestPublicationAccessTest {
 
     @BeforeEach void prepare() {
         SecurityContextHolder.clearContext();
-        if (TableInfoHelper.getTableInfo(Contest.class) == null) {
-            TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), "contest-publication"), Contest.class);
-        }
+        // Other unit tests initialize this shared cache with plain MyBatis settings.
+        // Restore the application's column mapping for every test, regardless of order.
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), "contest-publication"), Contest.class);
     }
 
     @AfterEach void clear() { SecurityContextHolder.clearContext(); }
