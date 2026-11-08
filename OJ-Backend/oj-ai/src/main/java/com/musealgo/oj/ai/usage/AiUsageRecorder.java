@@ -31,7 +31,7 @@ public class AiUsageRecorder {
     private final Counter tokenCounter;
     private final Timer latencyTimer;
 
-    @Value("${ai.model:deepseek-chat}")
+    @Value("${ai.model:deepseek-flash}")
     private String model;
 
     public AiUsageRecorder(AiUsageMapper aiUsageMapper,

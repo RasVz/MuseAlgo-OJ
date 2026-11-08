@@ -113,7 +113,7 @@ services:
       OJ_API_DOCS_PUBLIC: "false"
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DEEPSEEK_API_URL: ${DEEPSEEK_API_URL:-https://api.deepseek.com/v1/chat/completions}
-      AI_MODEL: ${AI_MODEL:-deepseek-v4-flash}
+      AI_MODEL: ${AI_MODEL:-deepseek-flash}
       COS_REGION: ${COS_REGION:-ap-guangzhou}
       COS_BUCKET_NAME: ${COS_BUCKET_NAME:-}
       COS_BASE_URL: ${COS_BASE_URL:-}
@@ -207,7 +207,7 @@ services:
       OJ_API_DOCS_PUBLIC: "false"
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DEEPSEEK_API_URL: ${DEEPSEEK_API_URL:-https://api.deepseek.com/v1/chat/completions}
-      AI_MODEL: ${AI_MODEL:-deepseek-v4-flash}
+      AI_MODEL: ${AI_MODEL:-deepseek-flash}
       COS_REGION: ${COS_REGION:-ap-guangzhou}
       COS_BUCKET_NAME: ${COS_BUCKET_NAME:-}
       COS_BASE_URL: ${COS_BASE_URL:-}

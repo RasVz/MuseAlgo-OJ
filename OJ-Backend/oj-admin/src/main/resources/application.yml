@@ -272,8 +272,8 @@ ai:
   # 密钥禁止默认值：缺失时 DeepSeekClient 走降级（返回 null），见 DeepSeekClient 空值检查
   api-key: ${DEEPSEEK_API_KEY:}
   api-url: ${DEEPSEEK_API_URL:https://api.deepseek.com/v1/chat/completions}
-  # 模型名（2026-08-15 实测 opencode go /models 接口：模型 ID 不带前缀；管理台 system_config ai.model 可动态覆盖）
-  model: ${AI_MODEL:deepseek-v4-flash}
+  # 模型名（2026-11-09 实测 api.deepseek.com /models：仅 deepseek-flash、deepseek-v4-pro；管理台 system_config ai.model 可动态覆盖）
+  model: ${AI_MODEL:deepseek-flash}
 
 # 10. JWT 签名密钥（环境变量注入，禁止默认值；缺失/过短启动即失败，见 JwtUtils 校验）
 jwt:
