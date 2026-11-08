@@ -42,12 +42,13 @@
 
     <div class="contest-content">
       <div class="width-limiter content-wrapper">
-        <router-view v-if="!contestStore.loading" v-slot="{ Component }">
+        <router-view v-if="!contestStore.loading && !loadError" v-slot="{ Component }">
           <transition name="el-fade-in-linear" mode="out-in">
             <component :is="Component" />
           </transition>
         </router-view>
 
+        <el-alert v-else-if="loadError" :title="loadError" type="error" :closable="false" show-icon />
         <div v-else class="loading-box">
           <el-skeleton :rows="5" animated />
         </div>
@@ -71,7 +72,7 @@
  * 考试期间必须让倒计时随本地时间实时走，若改用后端返回的状态字段，
  * 每次刷新页面都会看到状态跳变，也无法在跨过开考/交卷时刻时自动切换权限。
  */
-import { computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useContestStore } from '@/stores/contestContext'
 import NavbarContext from '@/components/NavbarContext.vue'
@@ -95,28 +96,27 @@ const updateTimer = () => {
   contestStore.updateNow()
 }
 
-onMounted(async () => {
+const loadError = ref('')
+let loadGeneration = 0
+const loadContest = async () => {
+  const generation = ++loadGeneration
   contestStore.loading = true
+  loadError.value = ''
+  contestStore.setContest({})
   try {
     const res = await getContestDetail(contestId.value)
-    if (res.code === 200) {
-      contestStore.setContest(res.data)
-    }
-  } catch (err) {
-    // 请求失败只记日志不弹提示：布局层无法给出有意义的错误上下文，
-    // 子页面会各自渲染自己的空态/错误态，此处弹窗只会重复打扰用户。
-    console.error(err)
+    if (generation === loadGeneration && res.code === 200) contestStore.setContest(res.data)
+  } catch (error) {
+    if (generation === loadGeneration) loadError.value = error.message || '比赛详情加载失败，请重试'
   } finally {
-    contestStore.loading = false
+    if (generation === loadGeneration) contestStore.loading = false
   }
-  // 定时器在 finally 之后无条件启动：即使详情请求失败，状态也要继续按时间推进，
-  // 否则页面会永远停在 Loading 状态（status 拿不到起止时间时无法自愈）。
-  timer = setInterval(updateTimer, 1000)
-})
-
+}
+// 在首次渲染前进入加载态；详情完成后子页面只挂载一次。
+watch(contestId, loadContest, { immediate: true })
+onMounted(() => { timer = setInterval(updateTimer, 1000) })
 onUnmounted(() => {
-  // 必须清理：在比赛页之间来回切换会反复挂载本布局，
-  // 泄漏的 interval 会让已离开的页面继续每秒触发一次计算属性重算。
+  loadGeneration++
   if (timer) clearInterval(timer)
 })
 

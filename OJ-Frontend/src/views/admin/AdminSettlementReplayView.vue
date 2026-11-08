@@ -105,6 +105,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -150,7 +152,7 @@ async function loadPreview() {
     reason.value = ''
     history.value = assertOk(await getSettlementReplayHistory())
   } catch (e) {
-    ElMessage.error(e.message || '获取重放预览失败')
+    showApiError(e, e.message || '获取重放预览失败')
   } finally {
     loading.value = false
   }
@@ -165,7 +167,7 @@ async function downloadBackup(id) {
     anchor.download = `settlement-replay-${id}.json`
     anchor.click()
     setTimeout(() => URL.revokeObjectURL(url), 1000)
-  } catch (e) { ElMessage.error(e.message || '读取备份失败') }
+  } catch (e) { showApiError(e, e.message || '读取备份失败') }
 }
 
 async function handleRestore(id) {
@@ -181,7 +183,7 @@ async function handleRestore(id) {
     ElMessage.success('恢复完成')
     await loadPreview()
   } catch (e) {
-    if (e !== 'cancel' && e !== 'close') ElMessage.error(e.message || '恢复失败')
+    if (e !== 'cancel' && e !== 'close') showApiError(e, e.message || '恢复失败')
   }
 }
 
@@ -202,7 +204,7 @@ async function handleExecute() {
     ElMessage.success('链式重放完成')
     await loadPreview()
   } catch (e) {
-    ElMessage.error(e.message || '执行链式重放失败')
+    showApiError(e, e.message || '执行链式重放失败')
   } finally {
     executing.value = false
   }

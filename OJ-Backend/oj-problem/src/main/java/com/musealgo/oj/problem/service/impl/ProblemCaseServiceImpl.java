@@ -1,5 +1,8 @@
 package com.musealgo.oj.problem.service.impl;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.problem.error.ProblemErrorCode;
+
 import com.musealgo.oj.problem.application.ProblemCaseApplicationService;
 import com.musealgo.oj.problem.entity.ProblemCase;
 import com.musealgo.oj.problem.mapper.ProblemCaseMapper;
@@ -9,14 +12,12 @@ import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import cn.hutool.core.io.FileUtil;
-import cn.hutool.core.util.ZipUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.*;
 import java.util.Comparator;
 
@@ -35,6 +36,7 @@ public class ProblemCaseServiceImpl extends ServiceImpl<ProblemCaseMapper, Probl
     private final TestCaseStorageService testCaseStorageService;
 
     private static final long MAX_UNZIPPED_BYTES = 100 * 1024 * 1024; // 100 MB
+    private static final int MAX_ZIP_ENTRIES = 10_000;
 
     /**
      * 用例文件名排序：纯数字前缀按数值比较（1.in < 2.in < 10.in），
@@ -107,7 +109,7 @@ public class ProblemCaseServiceImpl extends ServiceImpl<ProblemCaseMapper, Probl
     public int importCasesFromZip(MultipartFile file, Long problemId) {
         // 1. 检查文件是否为空
         if (file.isEmpty()) {
-            throw new RuntimeException("上传的文件为空");
+            throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "上传的文件为空");
         }
 
         // 2. 创建临时目录存放解压文件
@@ -121,22 +123,9 @@ public class ProblemCaseServiceImpl extends ServiceImpl<ProblemCaseMapper, Probl
             // 创建解压目录（原子操作，避免 TOCTOU 竞态）
             unzipDir = Files.createTempDirectory("oj_unzip_").toFile();
 
-            // 3. 使用 Hutool 解压
-            ZipUtil.unzip(tempZip, unzipDir);
-
-            // 3a. Zip Slip + ZIP 炸弹防护
-            Path unzipPath = unzipDir.toPath().toRealPath();
-            long totalBytes = 0;
-            for (File f : FileUtil.loopFiles(unzipDir)) {
-                // Zip Slip: Path.startsWith 防 "/tmp/unzip" 匹配 "/tmp/unzip_evil" 绕过
-                if (!f.toPath().toRealPath().startsWith(unzipPath)) {
-                    throw new SecurityException("ZIP 包含非法路径: " + f.getName());
-                }
-                totalBytes += f.length();
-                if (totalBytes > MAX_UNZIPPED_BYTES) {
-                    throw new RuntimeException("ZIP 解压后超过 " + (MAX_UNZIPPED_BYTES / 1024 / 1024) + " MB 限制");
-                }
-            }
+            // 路径、条目数和累计字节数在落盘前检查；不先完整解压再检查。
+            BoundedCaseZipExtractor.extract(tempZip.toPath(), unzipDir.toPath(),
+                    MAX_UNZIPPED_BYTES, MAX_ZIP_ENTRIES);
 
             // 4. 读取解压后的所有文件
             List<File> files = FileUtil.loopFiles(unzipDir);
@@ -182,11 +171,10 @@ public class ProblemCaseServiceImpl extends ServiceImpl<ProblemCaseMapper, Probl
                 }
             }
             if (matchedKeys.isEmpty()) {
-                throw new IllegalArgumentException(
-                        "ZIP 中未找到成对的 .in/.out（或 .ans）用例文件，已保留原有测试用例");
+                throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "ZIP 中未找到成对的 .in/.out（或 .ans）用例文件，已保留原有测试用例");
             }
             if (matchedKeys.size() > ProblemCaseApplicationService.MAX_CASES_PER_PROBLEM) {
-                throw new IllegalArgumentException("单题测试用例上限 "
+                throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "单题测试用例上限 "
                         + ProblemCaseApplicationService.MAX_CASES_PER_PROBLEM + " 组，本次上传 "
                         + matchedKeys.size() + " 组，已保留原有测试用例，请拆分后重试");
             }
@@ -231,11 +219,17 @@ public class ProblemCaseServiceImpl extends ServiceImpl<ProblemCaseMapper, Probl
 
             return matchedKeys.size();
 
-        } catch (IllegalArgumentException e) {
-            // 校验类失败（无成对用例 / 超过单题上限）发生在清理旧数据之前，
-            // 原样抛出可让全局异常处理器返回可读提示；包成 RuntimeException 会变成「系统错误」。
+        } catch (BusinessException e) {
             throw e;
+        } catch (IllegalArgumentException invalidArchive) {
+            // The bounded archive parser emits controlled validation messages before old cases are cleared.
+            throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, invalidArchive.getMessage());
         } catch (Exception e) {
+            for (Throwable cause = e; cause != null; cause = cause.getCause()) {
+                if (cause instanceof java.util.zip.ZipException) {
+                    throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "压缩包格式无效或内容损坏");
+                }
+            }
             throw new RuntimeException("解析 Zip 文件失败: " + e.getMessage(), e);
         } finally {
             // 7. 清理临时文件

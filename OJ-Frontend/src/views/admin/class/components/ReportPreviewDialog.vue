@@ -118,6 +118,7 @@
 </template>
 
 <script setup>
+import { getErrorCode } from '@/utils/apiError'
 // 学习周报预览弹窗：教师查看或受理单个学生的学习周报，并可导出 PNG。
 //
 // 后端为 enqueue-only：提交只受理/复用任务，弹窗轮询该 job（2 秒、单个在途 GET），
@@ -206,7 +207,7 @@ function isForbidden(error) {
 
 // 旧 preview/受理端点以 409 REPORT_NOT_READY 表示任务尚未完成，不是失败。
 function isNotReady(error) {
-  const code = error?.response?.data?.message
+  const code = getErrorCode(error)
   return code === 'REPORT_NOT_READY'
 }
 
@@ -435,7 +436,7 @@ async function retryCurrent() {
       handleLoadError(student, e)
       return
     }
-    const code = e?.response?.data?.message
+    const code = getErrorCode(e)
     if (code === 'ATTEMPTS_EXHAUSTED' || code === 'RETRY_NOT_ALLOWED') {
       student.canRetry = false
     } else if (isNotReady(e)) {

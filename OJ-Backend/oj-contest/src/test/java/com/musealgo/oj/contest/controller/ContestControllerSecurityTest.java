@@ -117,6 +117,7 @@ class ContestControllerSecurityTest {
 
     private Contest runningOiContest() {
         Contest contest = new Contest();
+        contest.setVisible(1);
         contest.setId(1L);
         contest.setMode("OI");
         contest.setStartTime(LocalDateTime.now().minusMinutes(10));

@@ -1,5 +1,8 @@
 package com.musealgo.oj;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.system.error.SystemErrorCode;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.MigrationVersion;
@@ -15,11 +18,11 @@ public final class DatabaseMaintenance {
     public static void main(String[] args) throws Exception {
         String operation = args.length == 0 ? "migrate" : args[0];
         if (!operation.equals("status") && !operation.equals("migrate"))
-            throw new IllegalArgumentException("Only status/migrate are supported");
+            throw new BusinessException(SystemErrorCode.SYSTEM_INPUT_INVALID, "Only status/migrate are supported");
         String host = System.getenv().getOrDefault("OJ_DB_HOST", "mysql");
         String port = System.getenv().getOrDefault("OJ_DB_PORT", "3306");
         String password = System.getenv("OJ_DB_MIGRATION_PASS");
-        if (password == null || password.isBlank()) throw new IllegalArgumentException("Missing OJ_DB_MIGRATION_PASS");
+        if (password == null || password.isBlank()) throw new BusinessException(SystemErrorCode.SYSTEM_INPUT_INVALID, "Missing OJ_DB_MIGRATION_PASS");
         Flyway flyway = Flyway.configure().dataSource("jdbc:mysql://"+host+":"+port
                         +"/oj_db?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true",
                         "musealgo_migrator", password)

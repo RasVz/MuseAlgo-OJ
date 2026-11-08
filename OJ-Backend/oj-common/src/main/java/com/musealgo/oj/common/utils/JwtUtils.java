@@ -65,8 +65,13 @@ public class JwtUtils {
      * 生成 Access Token
      */
     public String generateAccessToken(String username) {
+        return generateAccessToken(username, 0L);
+    }
+
+    public String generateAccessToken(String username, long credentialVersion) {
         Map<String, Object> claims = new HashMap<>();
         claims.put("type", "access");
+        claims.put("credentialVersion", credentialVersion);
         return createToken(claims, username, ACCESS_TOKEN_EXPIRATION);
     }
 
@@ -74,8 +79,13 @@ public class JwtUtils {
      * 生成 Refresh Token (核心修改：增加 rememberMe 参数)
      */
     public String generateRefreshToken(String username, boolean rememberMe) {
+        return generateRefreshToken(username, rememberMe, 0L);
+    }
+
+    public String generateRefreshToken(String username, boolean rememberMe, long credentialVersion) {
         Map<String, Object> claims = new HashMap<>();
         claims.put("type", "refresh");
+        claims.put("credentialVersion", credentialVersion);
 
         // 根据是否记住我，决定过期时间
         long expiration = rememberMe ? REFRESH_TOKEN_REMEMBER : REFRESH_TOKEN_NORMAL;
@@ -106,6 +116,22 @@ public class JwtUtils {
     public String extractJti(String token) {
         Object jti = extractClaims(token).get("jti");
         return jti == null ? null : String.valueOf(jti);
+    }
+
+    /** Legacy tokens without the claim map to version zero until the account changes its password. */
+    public long extractCredentialVersion(String token) {
+        Object value = extractClaims(token).get("credentialVersion");
+        if (value == null) {
+            return 0L;
+        }
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        return -1L;
+    }
+
+    public boolean hasCurrentCredentialVersion(String token, Long currentVersion) {
+        return extractCredentialVersion(token) == (currentVersion == null ? 0L : currentVersion);
     }
 
     /**

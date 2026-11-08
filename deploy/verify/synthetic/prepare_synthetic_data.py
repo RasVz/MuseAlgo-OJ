@@ -83,7 +83,7 @@ class Recorder:
 
     def step(self, name, ok, detail=""):
         self.steps.append({
-            "step": name, "ok": bool(ok), "detail": detail,
+            "step": name, "ok": bool(ok), "detail": str(detail),
             "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         })
         print(("  [PASS] " if ok else "  [FAIL] ") + name + ((" :: " + str(detail)[:300]) if detail else ""))
@@ -128,7 +128,9 @@ def main():
 
     def finish(code):
         rec.save(out)
-        with open(rec.private, "w", encoding="utf-8") as f:
+        descriptor = os.open(rec.private, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as f:
             json.dump(private, f, ensure_ascii=False, indent=2)
         try:
             os.chmod(rec.private, 0o600)
@@ -156,6 +158,8 @@ def main():
     student2_pass = gen_password()
 
     created = {}
+    private["accounts"] = created
+    out["accounts"] = {"admin": {"username": args.admin_user, "role": 3}}
     for username, password, role, nickname in [
         (teacher_user, teacher_pass, 2, "合成教师 " + suffix),
         (student1, student1_pass, 1, "合成学生A " + suffix),
@@ -167,6 +171,8 @@ def main():
                 "nickname": nickname, "role": role,
             }, token=admin_token)
             created[username] = {"role": role, "password": password}
+            label = "teacher" if username == teacher_user else "student1" if username == student1 else "student2"
+            out["accounts"][label] = {"username": username, "role": role}
             rec.step("创建账号 role=%d %s" % (role, username), True)
         except Exception as e:
             rec.step("创建账号 role=%d %s" % (role, username), False, e)

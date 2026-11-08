@@ -3,7 +3,6 @@ package com.musealgo.oj.community.interaction;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import lombok.RequiredArgsConstructor;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.musealgo.oj.community.entity.Post;
@@ -44,6 +43,7 @@ import java.util.Map;
  * </p>
  */
 @Service
+@lombok.extern.slf4j.Slf4j
 @RequiredArgsConstructor
 class PostInteractionHandler implements CommunityInteractionHandler {
 
@@ -63,6 +63,9 @@ class PostInteractionHandler implements CommunityInteractionHandler {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public InteractionResult activate(InteractionCommand command) {
+        if (command.action() == InteractionAction.FAVORITE && postService.getOne(
+                new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<Post>().eq("id", command.targetId()).last("FOR UPDATE")) == null)
+            throw new com.musealgo.oj.common.exception.BusinessException(com.musealgo.oj.community.error.CommunityErrorCode.POST_NOT_FOUND);
         Post post = requirePost(command.targetId());
         initializeStats(post);
         boolean changed = switch (command.action()) {
@@ -70,12 +73,15 @@ class PostInteractionHandler implements CommunityInteractionHandler {
             case DISLIKE -> postHotService.dislike(command.targetId(), command.actorId(), hotCategory(post), isTop(post), isEssence(post), post.getCreateTime());
             case FAVORITE -> activateFavorite(command, post);
         };
-        return result(command.targetId(), changed, true);
+        return result(command.targetId(), changed, true, post);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public InteractionResult deactivate(InteractionCommand command) {
+        if (command.action() == InteractionAction.FAVORITE && postService.getOne(
+                new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<Post>().eq("id", command.targetId()).last("FOR UPDATE")) == null)
+            throw new com.musealgo.oj.common.exception.BusinessException(com.musealgo.oj.community.error.CommunityErrorCode.POST_NOT_FOUND);
         Post post = requirePost(command.targetId());
         initializeStats(post);
         boolean changed = switch (command.action()) {
@@ -83,7 +89,7 @@ class PostInteractionHandler implements CommunityInteractionHandler {
             case DISLIKE -> postHotService.undislike(command.targetId(), command.actorId(), hotCategory(post), isTop(post), isEssence(post), post.getCreateTime());
             case FAVORITE -> deactivateFavorite(command, post);
         };
-        return result(command.targetId(), changed, false);
+        return result(command.targetId(), changed, false, post);
     }
 
     @Override
@@ -108,10 +114,10 @@ class PostInteractionHandler implements CommunityInteractionHandler {
     private boolean activateFavorite(InteractionCommand command, Post post) {
         boolean changed = activateFavoriteState(command.actorId(), command.targetId());
         if (changed) {
-            incrementFavoriteCount(post.getId(), 1);
-            postHotService.favorite(command.targetId(), command.actorId(), hotCategory(post), isTop(post), isEssence(post), post.getCreateTime());
+            incrementFavoriteCount(post, 1);
             notificationService.notify(new NotificationCommand(post.getAuthorId(), command.actorId(), NotificationType.FAVORITE,
                     NotificationTargetType.POST, post.getId(), "有人收藏了你的内容", post.getTitle()));
+            updateFavoriteCacheAfterCommit(command, post, true);
         }
         return changed;
     }
@@ -119,54 +125,61 @@ class PostInteractionHandler implements CommunityInteractionHandler {
     private boolean deactivateFavorite(InteractionCommand command, Post post) {
         boolean changed = deactivateFavoriteState(command.actorId(), command.targetId());
         if (changed) {
-            incrementFavoriteCount(post.getId(), -1);
-            postHotService.unfavorite(command.targetId(), command.actorId(), hotCategory(post), isTop(post), isEssence(post), post.getCreateTime());
+            incrementFavoriteCount(post, -1);
+            updateFavoriteCacheAfterCommit(command, post, false);
         }
         return changed;
     }
 
-    private InteractionResult result(Long postId, boolean changed, boolean active) {
+    private InteractionResult result(Long postId, boolean changed, boolean active, Post post) {
         Map<String, Integer> raw = postHotService.getPostStats(postId);
         Map<String, Integer> statistics = new LinkedHashMap<>();
         statistics.put("likes", raw.getOrDefault("likes", 0));
         statistics.put("dislikes", raw.getOrDefault("dislikes", 0));
-        statistics.put("favorites", raw.getOrDefault("favorites", 0));
+        statistics.put("favorites", value(post.getFavorites()));
         statistics.put("comments", raw.getOrDefault("comments", 0));
         statistics.put("views", raw.getOrDefault("views", 0));
         return new InteractionResult(changed, active, statistics);
     }
 
-    private boolean activateFavoriteState(Long userId, Long postId) {
-        LocalDateTime now = LocalDateTime.now();
-        boolean restored = userFavoriteService.update(null, new LambdaUpdateWrapper<UserFavorite>()
-                .set(UserFavorite::getStatus, 1).set(UserFavorite::getCancelTime, null).set(UserFavorite::getUpdateTime, now)
-                .eq(UserFavorite::getUserId, userId).eq(UserFavorite::getTargetId, postId)
-                .eq(UserFavorite::getTargetType, POST_FAVORITE_TARGET_TYPE).eq(UserFavorite::getStatus, 0));
-        if (restored || isFavorited(userId, postId)) return restored;
-
-        UserFavorite favorite = new UserFavorite();
-        favorite.setUserId(userId);
-        favorite.setTargetId(postId);
-        favorite.setTargetType(POST_FAVORITE_TARGET_TYPE);
-        favorite.setStatus(1);
-        favorite.setCreateTime(now);
-        favorite.setUpdateTime(now);
-        try {
-            return userFavoriteService.save(favorite);
-        } catch (DuplicateKeyException ignored) {
-            return userFavoriteService.update(null, new LambdaUpdateWrapper<UserFavorite>()
-                    .set(UserFavorite::getStatus, 1).set(UserFavorite::getCancelTime, null).set(UserFavorite::getUpdateTime, now)
-                    .eq(UserFavorite::getUserId, userId).eq(UserFavorite::getTargetId, postId)
-                    .eq(UserFavorite::getTargetType, POST_FAVORITE_TARGET_TYPE).eq(UserFavorite::getStatus, 0));
-        }
+    private void updateFavoriteCacheAfterCommit(InteractionCommand command, Post post, boolean active) {
+        Runnable update = () -> {
+            try {
+                if (active) postHotService.favorite(command.targetId(), command.actorId(), hotCategory(post), isTop(post), isEssence(post), post.getCreateTime());
+                else postHotService.unfavorite(command.targetId(), command.actorId(), hotCategory(post), isTop(post), isEssence(post), post.getCreateTime());
+            } catch (RuntimeException failure) {
+                log.error("帖子收藏已持久化，缓存更新失败 postId={}", post.getId(), failure);
+            }
+        };
+        if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+            org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                    new org.springframework.transaction.support.TransactionSynchronization() {
+                        @Override public void afterCommit() { update.run(); }
+                    });
+        } else update.run();
     }
 
-    private boolean deactivateFavoriteState(Long userId, Long postId) {
-        LocalDateTime now = LocalDateTime.now();
-        return userFavoriteService.update(null, new LambdaUpdateWrapper<UserFavorite>()
-                .set(UserFavorite::getStatus, 0).set(UserFavorite::getCancelTime, now).set(UserFavorite::getUpdateTime, now)
+    private boolean activateFavoriteState(Long userId, Long postId) { return changeFavoriteState(userId, postId, true); }
+    private boolean deactivateFavoriteState(Long userId, Long postId) { return changeFavoriteState(userId, postId, false); }
+    private boolean changeFavoriteState(Long userId, Long postId, boolean active) {
+        UserFavorite favorite = userFavoriteService.getOne(new LambdaQueryWrapper<UserFavorite>()
                 .eq(UserFavorite::getUserId, userId).eq(UserFavorite::getTargetId, postId)
-                .eq(UserFavorite::getTargetType, POST_FAVORITE_TARGET_TYPE).eq(UserFavorite::getStatus, 1));
+                .eq(UserFavorite::getTargetType, POST_FAVORITE_TARGET_TYPE).last("FOR UPDATE"));
+        LocalDateTime now = LocalDateTime.now();
+        if (favorite == null) {
+            if (!active) return false;
+            favorite = new UserFavorite();favorite.setUserId(userId);favorite.setTargetId(postId);
+            favorite.setTargetType(POST_FAVORITE_TARGET_TYPE);favorite.setStatus(1);
+            favorite.setCreateTime(now);favorite.setUpdateTime(now);
+            if (!userFavoriteService.save(favorite)) throw new IllegalStateException("帖子收藏保存失败");
+            return true;
+        }
+        if (Integer.valueOf(1).equals(favorite.getStatus()) == active) return false;
+        if (!userFavoriteService.update(new LambdaUpdateWrapper<UserFavorite>()
+                .set(UserFavorite::getStatus, active ? 1 : 0).set(UserFavorite::getCancelTime, active ? null : now)
+                .set(UserFavorite::getUpdateTime, now).eq(UserFavorite::getId, favorite.getId())))
+            throw new IllegalStateException("帖子收藏状态更新失败");
+        return true;
     }
 
     private boolean isFavorited(Long userId, Long postId) {
@@ -186,10 +199,12 @@ class PostInteractionHandler implements CommunityInteractionHandler {
      *
      * @param delta 仅取 {@code +1} 或 {@code -1}
      */
-    private void incrementFavoriteCount(Long postId, int delta) {
+    private void incrementFavoriteCount(Post post, int delta) {
         String expression = delta > 0 ? "favorites = favorites + 1"
                 : "favorites = CASE WHEN favorites > 0 THEN favorites - 1 ELSE 0 END";
-        postService.update(new LambdaUpdateWrapper<Post>().setSql(expression).eq(Post::getId, postId));
+        if (!postService.update(new LambdaUpdateWrapper<Post>().setSql(expression).eq(Post::getId, post.getId())))
+            throw new IllegalStateException("帖子收藏计数更新失败");
+        post.setFavorites(Math.max(0, value(post.getFavorites()) + delta));
     }
 
     /**
@@ -207,7 +222,7 @@ class PostInteractionHandler implements CommunityInteractionHandler {
     }
 
     private Post requirePost(Long postId) {
-        return postTargets.requireExisting(postId);
+        return postTargets.requireReadable(postId, com.musealgo.oj.common.utils.SecurityUtils.getUserId());
     }
 
     private int value(Integer value) { return value == null ? 0 : value; }

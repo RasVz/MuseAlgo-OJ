@@ -1,81 +1,141 @@
 package com.musealgo.oj.common.exception;
 
+import com.musealgo.oj.common.api.Result;
 import jakarta.validation.ConstraintViolationException;
+import java.util.List;
+import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.validation.FieldError;
-import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.beans.TypeMismatchException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.validation.BindException;
+import org.springframework.web.HttpMediaTypeNotAcceptableException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import com.musealgo.oj.common.api.Result;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
+import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
-/**
- * 全局异常兜底：把各类异常翻译成统一的 {@link Result}，避免异常栈直接暴露到前端。
- * <p>
- * 所有分支的 HTTP 状态码都保持 200，业务语义放在 body 的 {@code code} 里（400 参数非法、
- * 403 无权限、429 触发限流、500 未处理异常）。这与 {@code Result} 的「只有 code=200 才算成功」
- * 约定配套：前端拦截器一次读 body 即可，不存在「HTTP 成功但业务失败」这种需要双份判断的状态。
- * </p>
- * <p>
- * 之所以要在这里兜底而不是让异常抛到 Servlet 容器：容器默认的 500 页面是 HTML，前端拿到的不是
- * JSON，会导致错误处理逻辑本身抛解析异常；同时框架默认错误体也不会带上业务 code，
- * 前端拿不到可分支判断的信息。
- * </p>
- * <p>
- * {@link Exception} 兜底分支必须放在最后，且只打印到日志、不回传异常细节给客户端——
- * {@code e.getMessage()} 可能含 SQL 片段或文件路径。它返回 code=500，其余已知异常交给各自的精确分支处理。
- * </p>
- */
+/** Ordinary MVC failures retain HTTP 200; the JSON body carries the classified reason. */
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+    @ExceptionHandler(BusinessException.class)
+    public Result<String> handleBusinessException(BusinessException e) {
+        log.debug("业务拒绝 errorCode={}", e.getErrorCode().key());
+        return ErrorResponses.failure(e.getErrorCode(), e.getMessage(), e.getDetails());
+    }
 
-    /**
-     * 限流异常处理 —— 返回 HTTP 429 (Too Many Requests)。
-     * <p>
-     * 前端可根据 code=429 做特殊 UI 处理（如弹窗倒计时），
-     * 也可从 message 中解析剩余秒数做更友好的提示。
-     * </p>
-     */
     @ExceptionHandler(RateLimitException.class)
     public Result<String> handleRateLimitException(RateLimitException e) {
-        // 429 是 HTTP 标准中"请求过多"的状态码，语义明确
-        return Result.fail(429, e.getMessage());
+        return ErrorResponses.failure(CommonErrorCode.RATE_LIMITED, e.getMessage(),
+                Map.of("retryAfterSeconds", Math.max(0, e.getRemainingSeconds())));
     }
 
-    /**
-     * 请求体校验失败（@Valid + @RequestBody）—— 取第一个字段的提示信息返回。
-     */
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    public Result<String> handleValidationException(MethodArgumentNotValidException e) {
-        FieldError fieldError = e.getBindingResult().getFieldError();
-        String message = fieldError != null ? fieldError.getDefaultMessage() : "请求参数校验失败";
-        return Result.fail(400, message);
+    @ExceptionHandler(BindException.class)
+    public Result<String> handleValidationException(BindException e) {
+        List<Map<String, String>> errors = e.getBindingResult().getFieldErrors().stream().limit(20)
+                .map(error -> fieldError(error.getField(), error.getCode(), error.getDefaultMessage())).toList();
+        return validationFailure(errors);
     }
 
-    /**
-     * 表单/路径参数校验失败（@Validated + @RequestParam/@PathVariable）。
-     */
     @ExceptionHandler(ConstraintViolationException.class)
     public Result<String> handleConstraintViolationException(ConstraintViolationException e) {
-        return Result.fail(400, e.getConstraintViolations().iterator().next().getMessage());
+        List<Map<String, String>> errors = e.getConstraintViolations().stream().limit(20)
+                .map(error -> fieldError(error.getPropertyPath().toString(),
+                        error.getConstraintDescriptor().getAnnotation().annotationType().getSimpleName(),
+                        error.getMessage())).toList();
+        return validationFailure(errors);
     }
 
-    /**
-     * 业务参数非法（如文件类型/大小校验失败）—— 统一返回 400。
-     */
+    @ExceptionHandler(HandlerMethodValidationException.class)
+    public Result<String> handleMethodValidation(HandlerMethodValidationException e) {
+        if (e.isForReturnValue()) return handleException(e);
+        List<Map<String, String>> errors = e.getAllValidationResults().stream()
+                .flatMap(result -> result.getResolvableErrors().stream().map(error -> fieldError(
+                        result.getMethodParameter().getParameterName(), "Invalid", error.getDefaultMessage())))
+                .limit(20).toList();
+        return validationFailure(errors);
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public Result<String> handleUnreadableBody(HttpMessageNotReadableException e) {
+        return ErrorResponses.failure(CommonErrorCode.REQUEST_BODY_INVALID);
+    }
+
+    @ExceptionHandler({MissingServletRequestParameterException.class, MissingServletRequestPartException.class})
+    public Result<String> handleMissingParameter(Exception e) {
+        return ErrorResponses.failure(CommonErrorCode.REQUIRED_PARAMETER_MISSING);
+    }
+
+    @ExceptionHandler(TypeMismatchException.class)
+    public Result<String> handleTypeMismatch(TypeMismatchException e) {
+        return ErrorResponses.failure(CommonErrorCode.PARAMETER_TYPE_MISMATCH);
+    }
+
+    @ExceptionHandler(NoHandlerFoundException.class)
+    public Result<String> handleNoHandler(NoHandlerFoundException e) {
+        return ErrorResponses.failure(CommonErrorCode.ROUTE_NOT_FOUND);
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    public Result<String> handleNoResource(NoResourceFoundException e) {
+        return ErrorResponses.failure(CommonErrorCode.RESOURCE_NOT_FOUND);
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public Result<String> handleMethodNotAllowed(HttpRequestMethodNotSupportedException e) {
+        return ErrorResponses.failure(CommonErrorCode.METHOD_NOT_ALLOWED);
+    }
+
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public Result<String> handleUnsupportedMedia(HttpMediaTypeNotSupportedException e) {
+        return ErrorResponses.failure(CommonErrorCode.MEDIA_TYPE_UNSUPPORTED);
+    }
+
+    @ExceptionHandler(HttpMediaTypeNotAcceptableException.class)
+    public org.springframework.http.ResponseEntity<Void> handleUnacceptableMedia(HttpMediaTypeNotAcceptableException e) {
+        // No representation is acceptable; another JSON conversion would fail again.
+        return org.springframework.http.ResponseEntity.status(406).build();
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public Result<String> handleUploadTooLarge(MaxUploadSizeExceededException e) {
+        return ErrorResponses.failure(CommonErrorCode.UPLOAD_TOO_LARGE);
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public Result<String> handleIllegalArgumentException(IllegalArgumentException e) {
-        return Result.fail(400, e.getMessage());
-    }
-
-    @ExceptionHandler(Exception.class)
-    public Result<String> handleException(Exception e) {
-        log.error("未处理的异常", e);
-        return Result.error("系统暂时不可用，请稍后重试");
+        // Input rejections must be explicit at their boundary; a Java programming exception is a server fault.
+        return handleException(e);
     }
 
     @ExceptionHandler(ForbiddenException.class)
     public Result<String> handleForbiddenException(ForbiddenException e) {
-        return Result.fail(403, e.getMessage());
+        return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, e.getMessage());
+    }
+
+    @ExceptionHandler(Exception.class)
+    public Result<String> handleException(Exception e) {
+        log.error("未处理的异常 errorCode=INTERNAL_ERROR", e);
+        return ErrorResponses.failure(CommonErrorCode.INTERNAL_ERROR);
+    }
+
+    private Result<String> validationFailure(List<Map<String, String>> errors) {
+        String message = errors.isEmpty() ? CommonErrorCode.VALIDATION_FAILED.message() : errors.get(0).get("message");
+        return ErrorResponses.failure(CommonErrorCode.VALIDATION_FAILED, message, Map.of("fieldErrors", errors));
+    }
+
+    private Map<String, String> fieldError(String field, String code, String message) {
+        return Map.of("field", bounded(field, "parameter"), "code", bounded(code, "Invalid"),
+                "message", bounded(message, CommonErrorCode.VALIDATION_FAILED.message()));
+    }
+
+    private String bounded(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value.substring(0, Math.min(256, value.length()));
     }
 }

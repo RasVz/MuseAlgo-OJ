@@ -73,6 +73,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // 判题用例管理：上传 / 下载 / 删除用例，以及一次性清空。
 // 用例是判题的唯一依据，删错一道题的用例会直接改变评测结果，
 // 因此删除与清空都带二次确认；AI 生成用例走 ProblemAiDialog。
@@ -118,7 +120,7 @@ const loadCases = async () => {
   } catch (e) {
     console.error(e)
     caseList.value = []
-    ElMessage.error('加载测试用例失败')
+    showApiError(e, '加载测试用例失败')
   }
 }
 
@@ -159,8 +161,8 @@ const handleUpload = async (options) => {
     } else {
       ElMessage.error(res.message || '上传失败')
     }
-  } catch {
-    ElMessage.error('上传出错')
+  } catch (caughtError) {
+    showApiError(caughtError, '上传出错')
   }
 }
 
@@ -184,8 +186,8 @@ const handleDelete = async (row) => {
     } else {
       ElMessage.error(res.message || '删除失败')
     }
-  } catch {
-    ElMessage.error('删除失败')
+  } catch (caughtError) {
+    showApiError(caughtError, '删除失败')
   }
 }
 
@@ -209,8 +211,8 @@ const handleClearAll = async () => {
     } else {
       ElMessage.error(res.message || '清空失败')
     }
-  } catch {
-    ElMessage.error('清空失败')
+  } catch (caughtError) {
+    showApiError(caughtError, '清空失败')
   }
 }
 

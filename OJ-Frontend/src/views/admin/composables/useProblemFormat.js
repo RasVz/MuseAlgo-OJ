@@ -1,3 +1,5 @@
+
+import { showApiError } from '@/utils/errorFeedback'
 import { ref, h } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { formatProblems, previewFormatProblem, applyFormatProblem } from '@/api/problem'
@@ -63,7 +65,7 @@ export function useProblemFormat({ selectedProblems, onChanged }) {
       selectedProblems.value = []
       await onChanged()
     } catch (error) {
-      ElMessage.error(error?.response?.data?.message || error?.message || '题目格式化失败')
+      showApiError(error, error?.response?.data?.message || error?.message || '题目格式化失败')
     } finally {
       formatting.value = false
     }
@@ -123,7 +125,7 @@ export function useProblemFormat({ selectedProblems, onChanged }) {
       formatPreviewVisible.value = false
       await onChanged()
     } catch (error) {
-      ElMessage.error(error?.response?.data?.message || error?.message || '保存失败')
+      showApiError(error, error?.response?.data?.message || error?.message || '保存失败')
     } finally {
       applyingFormat.value = false
     }

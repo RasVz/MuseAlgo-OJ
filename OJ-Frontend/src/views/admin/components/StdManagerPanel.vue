@@ -58,6 +58,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // 标准答案（std）面板：生成、编辑、试跑验证与保存。
 // std 是"这道题的标准输出"的唯一来源，一旦保存错会导致全体用户的提交被误判，
 // 因此面板把「已通过用例验证」作为显式状态展示，未验证的 std 保存时会额外确认。
@@ -120,7 +122,7 @@ const load = async () => {
     if (isResultSuccess(pRes)) problem.value = pRes.data || {}
   } catch (e) {
     console.error(e)
-    ElMessage.error('加载标准答案失败')
+    showApiError(e, '加载标准答案失败')
   } finally {
     loading.value = false
   }
@@ -195,7 +197,7 @@ const forceSave = async () => {
     emit('saved')
   } catch (e) {
     console.error(e)
-    ElMessage.error('保存失败，请稍后重试')
+    showApiError(e, '保存失败，请稍后重试')
   } finally {
     savingForce.value = false
   }
@@ -226,7 +228,7 @@ const aiGenerate = async () => {
     else ElMessage.success('已生成，可修改后保存')
   } catch (e) {
     console.error(e)
-    ElMessage.error('生成失败，请稍后重试')
+    showApiError(e, '生成失败，请稍后重试')
   } finally {
     generating.value = false
   }
@@ -270,7 +272,7 @@ const testAndSave = async () => {
     }
   } catch (e) {
     console.error(e)
-    ElMessage.error('测试并保存失败，请稍后重试')
+    showApiError(e, '测试并保存失败，请稍后重试')
   } finally {
     testing.value = false
   }
@@ -313,7 +315,7 @@ const saveAndClearCases = async () => {
     emit('saved')
   } catch (e) {
     console.error(e)
-    ElMessage.error('保存失败，请稍后重试')
+    showApiError(e, '保存失败，请稍后重试')
   } finally {
     clearing.value = false
   }

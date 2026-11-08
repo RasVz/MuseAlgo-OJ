@@ -143,7 +143,7 @@ class PracticeAnalyticsServiceTest {
 
     @Test
     void illegalRangeIsRejected() {
-        assertThrows(IllegalArgumentException.class,
+        assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
                 () -> PracticeAnalyticsService.resolveWindow("7d", TODAY));
     }
 
@@ -188,7 +188,9 @@ class PracticeAnalyticsServiceTest {
     void anonymousCallerIsForbidden() {
         SecurityContextHolder.clearContext();
 
-        assertThrows(ForbiddenException.class, () -> newService().analyzeCurrentUser("all"));
+        var error = assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
+                () -> newService().analyzeCurrentUser("all"));
+        assertEquals("AUTH_REQUIRED", error.getErrorCode().key());
     }
 
     // ------------------------------------------------------------------

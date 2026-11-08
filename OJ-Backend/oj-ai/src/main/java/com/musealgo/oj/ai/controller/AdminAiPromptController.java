@@ -1,5 +1,8 @@
 package com.musealgo.oj.ai.controller;
 
+import com.musealgo.oj.common.exception.ErrorResponses;
+import com.musealgo.oj.ai.error.AiErrorCode;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -43,7 +46,7 @@ public class AdminAiPromptController {
         String key = body.get("key");
         String content = body.get("content");
         if (key == null || key.isBlank() || content == null || content.isBlank()) {
-            return Result.error("key 与 content 不能为空");
+            return ErrorResponses.failure(AiErrorCode.AI_INPUT_INVALID, "key 与 content 不能为空");
         }
         return Result.success("新版本已创建并激活", promptRegistry.createVersion(key.trim(), content));
     }

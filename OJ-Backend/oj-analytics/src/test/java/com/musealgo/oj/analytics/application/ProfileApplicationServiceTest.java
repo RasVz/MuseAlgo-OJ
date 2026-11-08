@@ -181,4 +181,11 @@ class ProfileApplicationServiceTest {
         tag.setDimension(code);
         return tag;
     }
+    @Test void reversedProfileWindowIsRejectedBeforeStatisticsAreRead() {
+        var failure = org.junit.jupiter.api.Assertions.assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
+                () -> service.buildStudentProfile(STUDENT_ID, CLASS_ID, TO, FROM));
+        assertEquals(400, failure.getErrorCode().status());
+        org.mockito.Mockito.verifyNoInteractions(profileQuery);
+    }
+
 }

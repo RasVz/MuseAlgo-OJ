@@ -66,5 +66,8 @@
   "V65__report_job_lifecycle_indexes.sql": "f02ddea300fad0a0525fe1bbde1a2390d3594cb02f833b940ee108cad874c7ec",
   "V66__report_job_lifecycle_backfill.sql": "98e93ae1d08f586e56f21b969d1399ea2df01319a0251e4bbcc5a85b5a8cd580",
   "V67__admin_ai_services.sql": "bd406ec431ff1cb7a8e57c679d054e4781d9ab634245cd122b14bf52d6859609",
-  "V68__report_retention_index.sql": "8168ae5bca1d9b740a38ea1329f2f40ba91c73e38af2949ab82a9badb68ed65b"
+  "V68__report_retention_index.sql": "8168ae5bca1d9b740a38ea1329f2f40ba91c73e38af2949ab82a9badb68ed65b",
+  "V69__user_credential_version.sql": "e25fb16d9da9b0a6df34f6ba03447f85676570e2b63da5b478428b53358d823c",
+  "V70__tag_rating_projection_lock.sql": "acfdc061923c22295911eeae3805fac219a09b86e2f70748ad5567bfe5a86f92",
+  "V71__report_pending_uniqueness.sql": "3c4b9577531857b17a4c2befcda15e0551e6c4c76169dcfec2dbbed5a557ae48"
 }

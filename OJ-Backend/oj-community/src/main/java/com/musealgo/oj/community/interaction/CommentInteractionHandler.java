@@ -1,5 +1,8 @@
 package com.musealgo.oj.community.interaction;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.community.error.CommunityErrorCode;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,6 +35,7 @@ class CommentInteractionHandler implements CommunityInteractionHandler {
     private final CommentService commentService;
     private final LikeService likeService;
     private final NotificationService notificationService;
+    private final com.musealgo.oj.community.post.PostTargetService postTargets;
 
     @Override
     public InteractionTargetType targetType() {
@@ -73,14 +77,17 @@ class CommentInteractionHandler implements CommunityInteractionHandler {
     private Comment requireComment(Long commentId) {
         Comment comment = commentService.getById(commentId);
         if (comment == null || Integer.valueOf(1).equals(comment.getIsDeleted())) {
-            throw new IllegalArgumentException("评论不存在");
+            throw new BusinessException(CommunityErrorCode.COMMENT_NOT_FOUND, "评论不存在");
+        }
+        if (Integer.valueOf(1).equals(comment.getEntityType()) || Integer.valueOf(3).equals(comment.getEntityType())) {
+            postTargets.requireCommentTarget(comment.getEntityId(), comment.getEntityType());
         }
         return comment;
     }
 
     private void requireLike(InteractionCommand command) {
         if (command.action() != InteractionAction.LIKE) {
-            throw new IllegalArgumentException("该内容不支持此互动");
+            throw new BusinessException(CommunityErrorCode.INTERACTION_UNSUPPORTED, "该内容不支持此互动");
         }
     }
 

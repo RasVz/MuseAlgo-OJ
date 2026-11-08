@@ -1,5 +1,11 @@
 package com.musealgo.oj.teaching.controller;
 
+import com.musealgo.oj.common.utils.RequestValues;
+
+import com.musealgo.oj.common.exception.ErrorResponses;
+import com.musealgo.oj.common.exception.CommonErrorCode;
+import com.musealgo.oj.teaching.error.TeachingErrorCode;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -55,6 +61,14 @@ public class ClassController {
     @Operation(summary = "获取邀请码")
     @GetMapping("/inviteCode")
     public Result<String> getInviteCode(@RequestParam Long classId) {
+        SecurityUtils.requireTeacherOrAdmin();
+        Class classInfo = ClassService.getById(classId);
+        if (classInfo == null) {
+            return ErrorResponses.failure(TeachingErrorCode.CLASS_NOT_FOUND, "班级不存在");
+        }
+        if (!SecurityUtils.isAdmin()) {
+            SecurityUtils.requireOwnerOrAdmin(classInfo.getTeacherId());
+        }
         String code = ClassService.createInviteCode(classId);
         return Result.success("生成成功", code);
     }
@@ -66,14 +80,14 @@ public class ClassController {
         // 获取当前登录用户ID
         Long userId = SecurityUtils.getUserId();
         if (userId == null) {
-            return Result.error(401, "请先登录");
+            return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "请先登录");
         }
 
         Integer message = ClassService.joinByInviteCode(userId, code);
         if(message == 0) {
-            return Result.error("邀请码无效或已过期");
+            return ErrorResponses.failure(TeachingErrorCode.CLASS_INVITE_INVALID, "邀请码无效或已过期");
         } else if(message == 1) {
-            return Result.error("您已在班级中，无需重复加入");
+            return ErrorResponses.failure(TeachingErrorCode.CLASS_ALREADY_JOINED, "您已在班级中，无需重复加入");
         } else {
             return Result.success("加入班级成功");
         }
@@ -83,17 +97,35 @@ public class ClassController {
     @Operation(summary = "创建班级")
     @AuditLog(module = "class", action = "create_class")
     @PostMapping("/create")
-    public Result<String> create(@RequestBody Class Class) {
+    public Result<String> create(@RequestBody Class classRequest) {
+        SecurityUtils.requireTeacherOrAdmin();
         // 简单的后端校验
-        if (Class.getName() == null || Class.getTeacherId() == null) {
-            return Result.error("参数不完整");
+        if (classRequest.getName() == null || classRequest.getTeacherId() == null) {
+            return ErrorResponses.failure(TeachingErrorCode.TEACHING_INPUT_INVALID, "参数不完整");
         }
 
-        boolean success = ClassService.createClass(Class);
+        Long teacherId = classRequest.getTeacherId();
+        if (!SecurityUtils.isAdmin()) {
+            Long currentUserId = SecurityUtils.getUserId();
+            if (!java.util.Objects.equals(teacherId, currentUserId)) {
+                throw new com.musealgo.oj.common.exception.ForbiddenException("教师只能为自己创建班级");
+            }
+            teacherId = currentUserId;
+        }
+
+        // Persist only fields accepted for class creation; ownership and generated
+        // state must not be controlled by the request entity.
+        Class classToCreate = new Class();
+        classToCreate.setName(classRequest.getName());
+        classToCreate.setDescription(classRequest.getDescription());
+        classToCreate.setSchool(classRequest.getSchool());
+        classToCreate.setTeacherId(teacherId);
+
+        boolean success = ClassService.createClass(classToCreate);
         if (success) {
             return Result.success("创建成功");
         } else {
-            return Result.error("创建失败");
+            return ErrorResponses.failure(CommonErrorCode.INTERNAL_ERROR, "创建失败");
         }
     }
 
@@ -119,7 +151,7 @@ public class ClassController {
 
         // 2. 如果没拿到 ID，说明没登录或者 Token 过期，返回401
         if (userId == null) {
-            return Result.error(401, "请先登录");
+            return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "请先登录");
         }
 
         IPage<Class> result = ClassService.getJoinedClasses(page, size, userId);
@@ -133,6 +165,8 @@ public class ClassController {
     @Operation(summary = "我的作业列表")
     @GetMapping("/homework/my")
     public Result<List<Map<String, Object>>> getMyHomeworks(@RequestParam Long userId) {
+        if (!java.util.Objects.equals(userId, SecurityUtils.getUserId()) && !SecurityUtils.isAdmin())
+            throw new com.musealgo.oj.common.exception.ForbiddenException("无权查看他人的班级作业");
         // 1. 先查学生加入了哪些班级
         LambdaQueryWrapper<ClassStudent> csWrapper = new LambdaQueryWrapper<>();
         csWrapper.eq(ClassStudent::getStudentId, userId);
@@ -180,20 +214,20 @@ public class ClassController {
     ) {
         Long currentUserId = SecurityUtils.getUserId();
         if (currentUserId == null) {
-            return Result.error(401, "请先登录");
+            return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "请先登录");
         }
 
         Class classInfo = ClassService.getById(classId);
         if (classInfo == null) {
-            return Result.error("班级不存在");
+            return ErrorResponses.failure(TeachingErrorCode.CLASS_NOT_FOUND, "班级不存在");
         }
         if (!currentUserId.equals(classInfo.getTeacherId()) && !SecurityUtils.isAdmin()) {
-            return Result.error(403, "无权限查看该班级作业完成情况");
+            return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "无权限查看该班级作业完成情况");
         }
 
         ProblemListView homework = problemListQuery.findById(homeworkId).orElse(null);
         if (homework == null || !classId.equals(homework.classId())) {
-            return Result.error("作业不存在或不属于当前班级");
+            return ErrorResponses.failure(TeachingErrorCode.TEACHING_INPUT_INVALID, "作业不存在或不属于当前班级");
         }
 
         return Result.success(problemListQuery.getHomeworkStatusOverview(classId, homeworkId));
@@ -211,20 +245,20 @@ public class ClassController {
     ) {
         Long currentUserId = SecurityUtils.getUserId();
         if (currentUserId == null) {
-            return Result.error(401, "请先登录");
+            return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "请先登录");
         }
 
         Class classInfo = ClassService.getById(classId);
         if (classInfo == null) {
-            return Result.error("班级不存在");
+            return ErrorResponses.failure(TeachingErrorCode.CLASS_NOT_FOUND, "班级不存在");
         }
         if (!currentUserId.equals(classInfo.getTeacherId()) && !SecurityUtils.isAdmin()) {
-            return Result.error(403, "无权限查看该班级作业提交记录");
+            return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "无权限查看该班级作业提交记录");
         }
 
         ProblemListView homework = problemListQuery.findById(homeworkId).orElse(null);
         if (homework == null || !classId.equals(homework.classId())) {
-            return Result.error("作业不存在或不属于当前班级");
+            return ErrorResponses.failure(TeachingErrorCode.TEACHING_INPUT_INVALID, "作业不存在或不属于当前班级");
         }
 
         PageResult<HomeworkSubmissionSummary> resultPage = homeworkSubmissionQuery.findPage(new HomeworkSubmissionPageRequest(
@@ -253,8 +287,8 @@ public class ClassController {
     @PutMapping("/member/remark")
     @PreAuthorize("hasAuthority('class:member:manage')")
     public Result<String> updateMemberRemark(@RequestBody Map<String, Object> params) {
-        Long classId = Long.parseLong(params.get("classId").toString());
-        Long userId = Long.parseLong(params.get("userId").toString());
+        Long classId = RequestValues.longValue(params.get("classId"), "classId");
+        Long userId = RequestValues.longValue(params.get("userId"), "userId");
         String remark = (String) params.get("remark");
 
         classMembershipApplicationService.updateRemark(classId, userId, remark);
@@ -267,8 +301,8 @@ public class ClassController {
     @DeleteMapping("/member/remove")
     @PreAuthorize("hasAuthority('class:member:manage')")
     public Result<String> removeMember(@RequestBody Map<String, Object> params) {
-        Long classId = Long.parseLong(params.get("classId").toString());
-        Long userId = Long.parseLong(params.get("userId").toString());
+        Long classId = RequestValues.longValue(params.get("classId"), "classId");
+        Long userId = RequestValues.longValue(params.get("userId"), "userId");
 
         classMembershipApplicationService.removeMember(classId, userId);
         return Result.success("已移出该成员");
@@ -279,7 +313,7 @@ public class ClassController {
     public Result<Class> getDetail(@PathVariable Long id) {
         Class Class = ClassService.getById(id);
         if (Class == null) {
-            return Result.error("班级不存在");
+            return ErrorResponses.failure(TeachingErrorCode.CLASS_NOT_FOUND, "班级不存在");
         }
         return Result.success(Class);
     }
@@ -300,6 +334,7 @@ public class ClassController {
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String sortField,
             @RequestParam(required = false) String sortOrder) {
+        classMembershipApplicationService.requireClassReader(classId);
         PageResult<ClassContestSummary> resultPage = classContestQuery.findPage(new ClassContestPageRequest(
                 classId, currentPage, pageSize, keyword, sortField, sortOrder));
         Page<ClassContestSummary> pageData = new Page<>(resultPage.page(), resultPage.size(), resultPage.total());

@@ -71,6 +71,7 @@ public class AdminClassController {
                 : userService.listByIds(teacherIds).stream()
                         .collect(Collectors.toMap(User::getId, u -> u));
 
+        Map<Long,Long> studentCounts = classService.studentCounts(raw.getRecords().stream().map(Class::getId).toList());
         Page<Map<String, Object>> result = new Page<>(raw.getCurrent(), raw.getSize(), raw.getTotal());
         List<Map<String, Object>> rows = raw.getRecords().stream().map(c -> {
             Map<String, Object> row = new LinkedHashMap<>();
@@ -83,7 +84,7 @@ public class AdminClassController {
             row.put("teacherName", teacher == null ? null
                     : (teacher.getNickname() != null && !teacher.getNickname().isBlank()
                             ? teacher.getNickname() : teacher.getUsername()));
-            row.put("studentCount", c.getStudentCount());
+            row.put("studentCount", studentCounts.getOrDefault(c.getId(), 0L));
             row.put("createTime", c.getCreateTime());
             return row;
         }).toList();

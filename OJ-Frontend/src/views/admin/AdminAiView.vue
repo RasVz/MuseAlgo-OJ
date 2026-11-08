@@ -109,6 +109,7 @@
         description="模型、输出上限和 JSON 模式来自当前服务，本页只读；请到「AI 服务」编辑并测试。"
         style="margin-bottom: 12px"
       />
+      <el-alert v-if="configSaveError" :title="configSaveError" type="error" :closable="false" />
       <el-form :model="editableConfig" label-width="170px" inline>
         <el-form-item label="配额开关">
           <el-switch v-model="editableConfig.ai_quota_enabled" active-value="true" inactive-value="false" />
@@ -188,6 +189,7 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
 // AI 管理后台（仅管理员）：平台侧 AI 能力的运营面板。
 //
 // 四块内容：调用概览 + 趋势图、调用日志与用户 token 排行、运行时配置（配额开关、
@@ -212,6 +214,7 @@ const logs = ref([])
 const ranking = ref([])
 const config = ref({})
 const savingConfig = ref(false)
+const configSaveError = ref('')
 const editableConfig = ref({})
 const quotaUserId = ref('')
 const quotaInfo = ref(null)
@@ -248,11 +251,7 @@ const statusTag = (s) => ({
 
 // 布尔开关在这里统一转成字符串：后端配置项以字符串存储，
   // el-switch 的 active-value/inactive-value 也只认字符串，直接传布尔会显示为未选中。
-const loadOverview = async () => {
-  overview.value = unwrapResultData(await getAiOverview(days.value)) || {}
-  const trend = unwrapResultData(await getAiTrend(days.value)) || []
-  ranking.value = unwrapResultData(await getAiRanking(days.value)) || []
-  config.value = unwrapResultData(await getAiConfig()) || {}
+const syncEditableConfig = () => {
   editableConfig.value = {
     ai_quota_enabled: String(config.value.quotaEnabled),
     ai_quota_daily_tokens: config.value.dailyTokens ?? 30000,
@@ -263,27 +262,42 @@ const loadOverview = async () => {
     ai_max_tokens: config.value.maxTokens ?? 8192,
     ai_json_mode: String(config.value.jsonMode ?? true)
   }
+}
+
+const loadOverview = async () => {
+  overview.value = unwrapResultData(await getAiOverview(days.value)) || {}
+  const trend = unwrapResultData(await getAiTrend(days.value)) || []
+  ranking.value = unwrapResultData(await getAiRanking(days.value)) || []
+  config.value = unwrapResultData(await getAiConfig()) || {}
+  syncEditableConfig()
   renderTrend(trend)
   loadLogs()
 }
 
 const saveConfig = async () => {
   savingConfig.value = true
+  configSaveError.value = ''
   try {
     const serviceLevel = new Set(['ai_model', 'ai_max_tokens', 'ai_json_mode'])
     const entries = Object.entries(editableConfig.value)
       .filter(([key]) => !serviceManaged.value || !serviceLevel.has(key))
-    // 串行逐 key 保存并任一失败即中断：并发保存会互相覆盖，
-    // 中途失败继续则可能留下"配额已关但 token 上限还是旧的"这种不一致状态。
     for (const [key, value] of entries) {
       const res = await updateAiConfig(key, String(value))
-      if (!isResultSuccess(res)) {
-        ElMessage.error(getResultMessage(res, `保存 ${key} 失败`))
-        return
-      }
+      if (!isResultSuccess(res)) throw new Error(getResultMessage(res, `保存 ${key} 失败`))
     }
-    ElMessage.success('配置已保存，秒级生效')
     config.value = unwrapResultData(await getAiConfig()) || {}
+    syncEditableConfig()
+    ElMessage.success('配置已保存，秒级生效')
+  } catch (error) {
+    configSaveError.value = '配置未完整保存，部分选项可能已生效。'
+    showApiError(error, '配置保存失败')
+    try {
+      config.value = unwrapResultData(await getAiConfig()) || {}
+      syncEditableConfig()
+      configSaveError.value += '已重新加载实际配置，请核对后重试。'
+    } catch {
+      configSaveError.value += '实际配置读取失败，请重新加载后再操作。'
+    }
   } finally {
     savingConfig.value = false
   }

@@ -404,8 +404,9 @@ def render_sql(rows) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="生成演示题目测试数据")
-    parser.add_argument("--sql-only", action="store_true", help="只打印 SQL，不写文件")
-    parser.add_argument("--check", action="store_true", help="校验已有文件是否与参考实现一致")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--sql-only", action="store_true", help="只打印 SQL，不写文件")
+    mode.add_argument("--check", action="store_true", help="校验已有文件是否与参考实现一致")
     args = parser.parse_args()
 
     rows = build()

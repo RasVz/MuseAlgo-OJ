@@ -23,6 +23,8 @@ python3 tests/run_suite.py --output /tmp/oj-integration
 - ACM / OI 整场比赛，暂停 Judge0 API 服务和异步 worker 后结束比赛，确认提交仍在途且没有提前固化；恢复后自动固化，再重复重建/固化及 VP。仅暂停 worker 不能延迟 `wait=true` 同步判题，不能用机器较慢偶然形成的延迟代替故障注入。
 - 同一流程分别运行无 MQ、有 MQ、broker 故障三种模式；故障后重启 broker。成绩不依赖 MQ 缓存。
 
+`FullReviewIT` 与 `TagRatingRabbitIT` 在应用上下文启动前验证隔离数据源。运行器自动传入 `musealgo.review.synthetic=true` 和本次随机 MySQL 端口，并绑定本次 RabbitMQ；集成阶段暂停 outbox 首次轮询，随后真实应用阶段恢复正常轮询。单独调用 Maven 时也需明确设置隔离 JDBC URL、`-Dmusealgo.review.synthetic=true`、`-Dmusealgo.review.expected-db-port=<该 URL 的端口>` 及合成数据库/消息队列凭据；缺少门禁会失败，不会回退连接默认业务库。
+
 本地只需快速验证主流程时，可加 `--core-only`（保留集成、真实 API 和浏览器，跳过扩展 MQ 故障矩阵）；CI 默认仍执行完整矩阵。
 
 结果保存在指定输出目录；套件的浏览器失败 trace/screenshot 与 HTML 报告写入输出目录的 `browser-results/`、`browser-report/`；单独执行前端测试而未指定输出目录时才使用前端本地 `test-results/` 与 `playwright-report/`。它们只应包含隔离测试数据，不上传真实用户资料。GitHub `integration.yml` 保存 7 天证据；数据库维护矩阵由独立的 [`database.yml`](../.github/workflows/database.yml) 在 push、pull request 和手动运行时执行并保存 3 天证据。新工作流须推送后才能在 GitHub 验证，本地成功不等于远端已运行。

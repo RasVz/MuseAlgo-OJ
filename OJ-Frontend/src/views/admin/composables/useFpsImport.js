@@ -1,3 +1,5 @@
+
+import { showApiError } from '@/utils/errorFeedback'
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { importFpsProblemSet } from '@/api/problem'
@@ -39,7 +41,7 @@ export function useFpsImport({ onImported }) {
         await onImported()
       }
     } catch (error) {
-      ElMessage.error(error?.response?.data?.message || error?.message || 'FPS 导入失败')
+      showApiError(error, error?.response?.data?.message || error?.message || 'FPS 导入失败')
     } finally {
       importing.value = false
     }

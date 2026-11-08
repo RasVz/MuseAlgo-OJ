@@ -33,7 +33,7 @@ public class TraceIdFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
         String traceId = request.getHeader(TRACE_ID_HEADER);
-        if (traceId == null || traceId.isBlank() || traceId.length() > 64) {
+        if (traceId == null || !traceId.matches("[A-Za-z0-9_-]{1,64}")) {
             traceId = UUID.randomUUID().toString().replace("-", "").substring(0, 24);
         }
         MDC.put(MDC_KEY, traceId);

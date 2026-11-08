@@ -1,5 +1,9 @@
 package com.musealgo.oj.community.controller;
 
+import com.musealgo.oj.common.exception.ErrorResponses;
+import com.musealgo.oj.common.exception.CommonErrorCode;
+import com.musealgo.oj.community.error.CommunityErrorCode;
+
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -54,8 +58,8 @@ public class UserRelationController {
     @PostMapping("/toggle")
     public Result<String> toggleFollow(@RequestBody UserRelation params) {
         Long currentUserId = getCurrentUserId();
-        if (currentUserId == null) return Result.error("请先登录");
-        if (currentUserId.equals(params.getFollowedId())) return Result.error("不能关注自己");
+        if (currentUserId == null) return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "请先登录");
+        if (currentUserId.equals(params.getFollowedId())) return ErrorResponses.failure(CommunityErrorCode.SELF_FOLLOW_NOT_ALLOWED, "不能关注自己");
         return Result.success(userRelationService.toggleFollow(currentUserId, params.getFollowedId()));
     }
 

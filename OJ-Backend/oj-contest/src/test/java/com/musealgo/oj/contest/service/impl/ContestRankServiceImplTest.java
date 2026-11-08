@@ -15,6 +15,27 @@ import static org.mockito.Mockito.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ContestRankServiceImplTest {
+    @Test void missingContestCannotBeExportedAsAnEmptySuccessfulCsv() {
+        var contests = mock(ContestMapper.class);
+        var ranks = mock(ContestRankMapper.class);
+        var service = new ContestRankServiceImpl(ranks, contests, mock(ContestSubmissionQuery.class),
+                new ContestRankCalculator(), mock(RatingCalculator.class), mock(UserRatingService.class),
+                mock(UserQuery.class), mock(UserRatingCommand.class), mock(ContestUserMapper.class),
+                mock(VpAttemptMapper.class), mock(ContestSettlementMapper.class),
+                mock(com.musealgo.oj.contest.sse.ContestRankSsePublisher.class));
+        for (var export : List.<java.util.function.Function<Long, String>>of(service::exportCsv, service::exportGlobalCsv)) {
+            var error = assertThrows(com.musealgo.oj.common.exception.BusinessException.class, () -> export.apply(999L));
+            assertEquals("CONTEST_NOT_FOUND", error.getErrorCode().key());
+        }
+        verifyNoInteractions(ranks);
+        Contest deleted = new Contest(); deleted.setId(999L); deleted.setIsDeleted(1);
+        when(contests.selectById(999L)).thenReturn(deleted);
+        assertThrows(com.musealgo.oj.common.exception.BusinessException.class, () -> service.exportCsv(999L));
+        Contest existing = new Contest(); existing.setId(1L); existing.setCategory("ENTERTAINMENT");
+        when(contests.selectById(1L)).thenReturn(existing);
+        assertEquals("名次,用户,解题数,罚时,总分,Rating前,Rating后,奖项\n", service.exportCsv(1L));
+    }
+
     @Test void pendingSubmissionMustNotBecomeWrongAttempt() {
         var query=mock(ContestSubmissionQuery.class);var contests=mock(ContestMapper.class);
         var c=new Contest();c.setId(1L);c.setMode("ACM");c.setStartTime(LocalDateTime.now().minusHours(1));c.setEndTime(LocalDateTime.now().plusHours(1));
@@ -40,6 +61,7 @@ class ContestRankServiceImplTest {
         when(query.hasPending(2L)).thenReturn(false);
         when(query.findByContestId(2L)).thenReturn(List.of());
         when(contests.markRankFinalized(2L)).thenReturn(1);
+        when(settlements.insert(any(ContestSettlement.class))).thenReturn(1);
         var service=new ContestRankServiceImpl(ranks,contests,query,new ContestRankCalculator(),
                 mock(RatingCalculator.class),mock(UserRatingService.class),mock(UserQuery.class),mock(UserRatingCommand.class),
                 mock(ContestUserMapper.class),mock(VpAttemptMapper.class),settlements,rankSsePublisher);
@@ -52,4 +74,17 @@ class ContestRankServiceImplTest {
         inOrder.verify(settlements).insert(any(ContestSettlement.class));
         inOrder.verify(rankSsePublisher).officialAndGlobalChanged(2L);
     }
+    @Test void failedSettlementInsertMustNotFinalizeSuccessfully() {
+        var contests = mock(ContestMapper.class); var query = mock(ContestSubmissionQuery.class);
+        var c = new Contest(); c.setId(1L); c.setEndTime(LocalDateTime.now().minusHours(1));
+        when(contests.lockSettlement()).thenReturn(1); when(contests.selectByIdForUpdate(1L)).thenReturn(c);
+        when(contests.markRankFinalized(1L)).thenReturn(1);
+        var publisher = mock(com.musealgo.oj.contest.sse.ContestRankSsePublisher.class);
+        var service = new ContestRankServiceImpl(mock(ContestRankMapper.class),contests,query,new ContestRankCalculator(),
+                mock(RatingCalculator.class),mock(UserRatingService.class),mock(UserQuery.class),mock(UserRatingCommand.class),
+                mock(ContestUserMapper.class),mock(VpAttemptMapper.class),mock(ContestSettlementMapper.class),publisher);
+        assertThrows(IllegalStateException.class, () -> service.finalizeContest(1L));
+        verifyNoInteractions(publisher);
+    }
+
 }

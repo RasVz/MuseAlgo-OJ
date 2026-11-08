@@ -31,6 +31,7 @@
     </div>
 
     <section class="favorite-content" v-loading="loading">
+      <el-alert v-if="loadError" :title="loadError" type="error" :closable="false" />
       <template v-if="isPostTab && postList.length">
         <article
           v-for="item in postList"
@@ -90,7 +91,7 @@
       </template>
 
       <el-empty
-        v-else-if="!loading"
+        v-else-if="!loading && !loadError"
         :description="emptyDescription"
         :image-size="88"
       >
@@ -122,6 +123,8 @@ import { getFavoritePosts, getFavoriteProblemLists, removeFavorite } from '@/api
 const router = useRouter()
 const activeTab = ref('post')
 const loading = ref(false)
+const loadError = ref('')
+let loadGeneration = 0
 const postList = ref([])
 const problemList = ref([])
 const counts = ref({ post: 0, article: 0, problem_list: 0 })
@@ -142,31 +145,35 @@ const formatTime = (time) => time ? dayjs(time).format('YYYY-MM-DD') : '时间�
 
 // 动态与文章共用同一个列表组件与接口，只靠 type 参数区分（0=动态，1=文章）。
 const fetchPosts = async () => {
+  const generation = ++loadGeneration
+  const tab = activeTab.value
   loading.value = true
+  loadError.value = ''
   try {
-    const type = activeTab.value === 'post' ? 0 : 1
-    const res = await getFavoritePosts(type)
-    postList.value = res.code === 200 ? res.data || [] : []
-    counts.value[activeTab.value] = postList.value.length
+    const res = await getFavoritePosts(tab === 'post' ? 0 : 1)
+    if (generation !== loadGeneration) return
+    postList.value = res.data || []
+    counts.value[tab] = postList.value.length
   } catch (error) {
-    console.error(error)
-    postList.value = []
+    if (generation === loadGeneration) loadError.value = error.message || '收藏加载失败，请重试'
   } finally {
-    loading.value = false
+    if (generation === loadGeneration) loading.value = false
   }
 }
 
 const fetchProblemLists = async () => {
+  const generation = ++loadGeneration
   loading.value = true
+  loadError.value = ''
   try {
     const res = await getFavoriteProblemLists({ page: 1, size: 50 })
-    problemList.value = res.code === 200 ? res.data?.records || [] : []
+    if (generation !== loadGeneration) return
+    problemList.value = res.data?.records || []
     counts.value.problem_list = problemList.value.length
   } catch (error) {
-    console.error(error)
-    problemList.value = []
+    if (generation === loadGeneration) loadError.value = error.message || '收藏加载失败，请重试'
   } finally {
-    loading.value = false
+    if (generation === loadGeneration) loading.value = false
   }
 }
 

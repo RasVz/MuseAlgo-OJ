@@ -105,7 +105,7 @@ public class UserRatingServiceImpl implements UserRatingService {
     public void batchSave(List<UserRating> ratings) {
         if (ratings == null || ratings.isEmpty()) return;
         for (UserRating r : ratings) {
-            userRatingMapper.insert(r);
+            if (userRatingMapper.insert(r) != 1) throw new IllegalStateException("Rating流水保存失败");
         }
     }
 

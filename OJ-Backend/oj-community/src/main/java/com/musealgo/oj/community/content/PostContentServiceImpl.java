@@ -1,5 +1,8 @@
 package com.musealgo.oj.community.content;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.community.error.CommunityErrorCode;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -63,9 +66,14 @@ class PostContentServiceImpl implements PostContentService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public boolean publish(Post post, Long authorId) {
+        if (post.getClassId() != null) targets.requireClassAccess(post.getClassId(), authorId);
+        Post content = editableContent(post);
+        content.setClassId(post.getClassId()); content.setContestId(post.getContestId());
+        post = content;
         post.setAuthorId(authorId);
         post.setIsOfficial(0); post.setIsEssence(0); post.setIsTop(0);
         post.setViews(0); post.setLikes(0); post.setCommentCount(0);
+        post.setDislikes(0); post.setFavorites(0); post.setScore(0.0); post.setIsDeleted(0);
         normalize(post); classify(post);
         if (postMapper.insert(post) != 1) return false;
         replaceRelations(post, true);
@@ -77,8 +85,12 @@ class PostContentServiceImpl implements PostContentService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public boolean update(Post post, Long actorId) {
-        if (post == null || post.getId() == null) throw new IllegalArgumentException("参数错误");
+        if (post == null || post.getId() == null) throw new BusinessException(CommunityErrorCode.COMMUNITY_INPUT_INVALID, "参数错误");
         Post previous = targets.requireEditable(post.getId(), actorId);
+        // Only author-editable content enters the update; ownership and counters stay server-owned.
+        Post patch = editableContent(post);
+        patch.setId(post.getId());
+        post = patch;
         // Editorial flags are controlled by the governance flow, never by an author edit.
         post.setIsOfficial(previous.getIsOfficial());
         post.setIsEssence(previous.getIsEssence());
@@ -94,6 +106,15 @@ class PostContentServiceImpl implements PostContentService {
             replaceRelations(post, post.getRelatedProblemIds() != null);
         }
         return updated;
+    }
+
+    private Post editableContent(Post post) {
+        Post patch = new Post();
+        patch.setTitle(post.getTitle()); patch.setContent(post.getContent()); patch.setSummary(post.getSummary());
+        patch.setCategory(post.getCategory()); patch.setType(post.getType()); patch.setTags(post.getTags());
+        patch.setImages(post.getImages()); patch.setPrivacy(post.getPrivacy()); patch.setProblemId(post.getProblemId());
+        patch.setRelatedProblemIds(post.getRelatedProblemIds());
+        return patch;
     }
 
     private void normalize(Post post) { post.setTags(String.join(",", PostTagCatalog.normalizeAndValidate(post.getTags(), tags.enabledNames()))); }
@@ -136,9 +157,9 @@ class PostContentServiceImpl implements PostContentService {
     private void replaceRelations(Post post, boolean replace) {
         if (!replace || post.getId() == null || !Objects.equals(post.getType(), 2)) return;
         List<Long> ids = Optional.ofNullable(post.getRelatedProblemIds()).orElse(List.of()).stream().filter(Objects::nonNull).distinct().toList();
-        if (ids.size() > 12) throw new IllegalArgumentException("一篇文章最多关联 12 道练习题");
+        if (ids.size() > 12) throw new BusinessException(CommunityErrorCode.COMMUNITY_INPUT_INVALID, "一篇文章最多关联 12 道练习题");
         // 题目存在性校验走 oj-api 只读契约
-        if (!ids.isEmpty() && problemQuery.findTitleBatch(ids).size() != ids.size()) throw new IllegalArgumentException("包含不存在的关联题目");
+        if (!ids.isEmpty() && problemQuery.findTitleBatch(ids).size() != ids.size()) throw new BusinessException(CommunityErrorCode.POST_RELATED_PROBLEM_INVALID, "包含不存在的关联题目");
         relations.deleteByPostId(post.getId());
         ids.forEach(problemId -> { PostProblemRelation relation = new PostProblemRelation(); relation.setPostId(post.getId()); relation.setProblemId(problemId); relations.insert(relation); });
     }

@@ -55,6 +55,7 @@ public class ClassServiceImpl extends ServiceImpl<ClassMapper, Class> implements
 
     // 通过邀请码加入班级
     @Override
+    @org.springframework.transaction.annotation.Transactional(rollbackFor = Exception.class)
     public Integer joinByInviteCode(Long userId, String code) {
         // 1. 从 Redis 查询邀请码
         String key = "invite:code:" + code;
@@ -66,6 +67,7 @@ public class ClassServiceImpl extends ServiceImpl<ClassMapper, Class> implements
         }
 
         Long classId = Long.parseLong(classIdStr);
+        if (getByIdForUpdate(classId) == null) return 0;
 
         // 2. 检查是否已经加入过 (防止重复加入)
         // 假设你有这个检查方法，如果没有请加上
@@ -82,9 +84,19 @@ public class ClassServiceImpl extends ServiceImpl<ClassMapper, Class> implements
         classStudent.setClassId(classId);
         classStudent.setStudentId(userId);
         classStudent.setJoinTime(LocalDateTime.now());
-        classStudentMapper.insert(classStudent);
+        if (classStudentMapper.insert(classStudent) != 1) throw new IllegalStateException("班级成员保存失败");
 
+        refreshStudentCount(classId);
         // 2 - "加入班级成功"
         return 2;
+    }
+    @Override public Class getByIdForUpdate(Long id) { return baseMapper.selectByIdForUpdate(id); }
+    @Override public void refreshStudentCount(Long id) {
+        if (baseMapper.refreshStudentCount(id) != 1) throw new IllegalStateException("班级人数更新失败");
+    }
+    @Override public java.util.Map<Long,Long> studentCounts(java.util.List<Long> ids) {
+        if (ids == null || ids.isEmpty()) return java.util.Map.of();
+        return baseMapper.selectStudentCounts(ids).stream().collect(java.util.stream.Collectors.toMap(
+                row -> ((Number)row.get("classId")).longValue(), row -> ((Number)row.get("memberCount")).longValue()));
     }
 }

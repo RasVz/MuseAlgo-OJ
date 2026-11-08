@@ -234,7 +234,7 @@ public class AiService implements AiAssistant {
             if (result == null || !result.emitted()) {
                 onChunk.accept(API_FAIL_FALLBACK);
             }
-            return AiAskOutcome.fail(promptText, result == null ? null : result.source());
+            return AiAskOutcome.fail(promptText, result == null ? null : result.source(), result == null ? null : result.errorType());
         }
 
         sessionService.appendTurn(userId, problemId, studentQuestion, result.content());

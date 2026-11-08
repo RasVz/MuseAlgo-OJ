@@ -1,5 +1,8 @@
 package com.musealgo.oj.problem.application;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.problem.error.ProblemErrorCode;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import com.musealgo.oj.api.problem.ProblemAccessQuery;
@@ -21,7 +24,7 @@ public class ProblemReadAccessService implements ProblemAccessQuery {
 
     private Problem requireExisting(Long id) {
         Problem problem = problems.getById(id);
-        if (problem == null || Integer.valueOf(1).equals(problem.getIsDeleted())) throw new IllegalArgumentException("题目不存在");
+        if (problem == null || Integer.valueOf(1).equals(problem.getIsDeleted())) throw new BusinessException(ProblemErrorCode.PROBLEM_NOT_FOUND, "题目不存在");
         return problem;
     }
 

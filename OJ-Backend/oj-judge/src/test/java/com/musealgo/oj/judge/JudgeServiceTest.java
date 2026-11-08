@@ -52,4 +52,32 @@ class JudgeServiceTest {
             server.stop(0);
         }
     }
+    @ParameterizedTest
+    @ValueSource(strings = {"{}", "{\"status\":{}}", "{\"status\":{\"id\":0}}",
+            "{\"status\":{\"id\":1}}", "{\"status\":{\"id\":2}}",
+            "{\"status\":{\"id\":99}}"})
+    void incompleteOrUnknownJudgeResponseIsInfrastructureFailure(String body) throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/submissions", exchange -> {
+            exchange.getRequestBody().readAllBytes();
+            byte[] response = body.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response); exchange.close();
+        });
+        server.start();
+        try {
+            var pool = mock(Judge0EndpointPool.class);
+            String endpoint = "http://127.0.0.1:" + server.getAddress().getPort();
+            when(pool.candidates()).thenReturn(List.of(endpoint));
+            when(pool.tryAcquire(anyLong())).thenReturn(true);
+            var service = new JudgeService(pool);
+            ReflectionTestUtils.setField(service, "languageIds", Map.of("cpp", 54));
+            org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class,
+                    () -> service.judge("int main() {}", "cpp", "", null, 1.0, 262144));
+            org.mockito.Mockito.verify(pool).onFailure(endpoint);
+            org.mockito.Mockito.verify(pool).release();
+        } finally { server.stop(0); }
+    }
+
 }

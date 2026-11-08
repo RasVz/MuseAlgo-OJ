@@ -116,10 +116,11 @@ class LastAdminConcurrencyIT {
             assertEquals(1, successCount, "行锁串行化后应恰好一个降级成功，另一个被拦截，实际 r1="
                     + result1 + ", r2=" + result2);
             Result<String> rejected = List.of(result1, result2).stream()
-                    .filter(r -> r.getCode() != null && r.getCode() == 500)
+                    .filter(r -> r.getCode() != null && r.getCode() == 409)
                     .findFirst()
                     .orElseThrow();
             assertEquals("系统必须保留至少一个管理员", rejected.getMessage());
+            assertEquals("ADMIN_LAST_ADMIN_REQUIRED", rejected.getErrorCode());
             assertEquals(1, countEnabledAdmins(), "两个管理员互相降级后必须仍保留一个管理员");
             assertEquals(1, countEnabledAdminsAmong(tempAId, tempBId), "剩余管理员应是两个临时管理员之一");
         } finally {

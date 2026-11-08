@@ -1,5 +1,8 @@
 package com.musealgo.oj.contest.service.impl;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.contest.error.ContestErrorCode;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
@@ -71,13 +74,13 @@ public class ContestRankServiceImpl implements ContestRankService {
     public void finalizeContest(Long contestId) {
         if (contestMapper.lockSettlement() == null) throw new IllegalStateException("比赛结算锁记录缺失");
         Contest contest = contestMapper.selectByIdForUpdate(contestId);
-        if (contest == null) throw new IllegalArgumentException("比赛不存在");
+        if (contest == null) throw new BusinessException(ContestErrorCode.CONTEST_NOT_FOUND, "比赛不存在");
         if (contest.getRankFinalizedAt() != null) return;
         if (contest.getEndTime() == null || !contest.getEndTime().isBefore(LocalDateTime.now()))
-            throw new IllegalStateException("比赛尚未结束");
+            throw new BusinessException(ContestErrorCode.CONTEST_NOT_ENDED, "比赛尚未结束");
         if (contestMapper.countEarlierUnsettled(contestId, contest.getEndTime()) > 0)
-            throw new IllegalStateException("更早结束的比赛尚未结算，等待后重试");
-        if (contestSubmissionQuery.hasPending(contestId)) throw new IllegalStateException("仍有提交正在判题，等待后重试");
+            throw new BusinessException(ContestErrorCode.CONTEST_EARLIER_SETTLEMENT_PENDING, "更早结束的比赛尚未结算，等待后重试");
+        if (contestSubmissionQuery.hasPending(contestId)) throw new BusinessException(ContestErrorCode.CONTEST_JUDGING_PENDING, "仍有提交正在判题，等待后重试");
 
         List<ContestSubmission> all = contestSubmissionQuery.findByContestId(contestId);
         Set<Long> starred = starredUserIds(contestId);
@@ -120,7 +123,8 @@ public class ContestRankServiceImpl implements ContestRankService {
             entity.setCreateTime(now); entity.setUpdateTime(now);
             entities.add(entity);
         }
-        if (!entities.isEmpty()) contestRankMapper.batchInsert(entities);
+        if (!entities.isEmpty() && contestRankMapper.batchInsert(entities) != entities.size())
+            throw new IllegalStateException("比赛成绩保存不完整");
         if (contestMapper.markRankFinalized(contestId) != 1) throw new IllegalStateException("比赛固化标记写入失败");
         ContestSettlement settlement = new ContestSettlement();
         settlement.setContestId(contestId);
@@ -128,7 +132,7 @@ public class ContestRankServiceImpl implements ContestRankService {
         settlement.setRatingAlgorithmVersion(RATING_ALGORITHM_VERSION);
         settlement.setSettlementNo(1);
         settlement.setFinalizedAt(now);
-        contestSettlementMapper.insert(settlement);
+        if (contestSettlementMapper.insert(settlement) != 1) throw new IllegalStateException("比赛结算记录保存失败");
         rankSsePublisher.officialAndGlobalChanged(contestId);
     }
 
@@ -260,6 +264,10 @@ public class ContestRankServiceImpl implements ContestRankService {
     @Override public String exportGlobalCsv(Long contestId) { return exportCsv0(contestId, true); }
 
     private String exportCsv0(Long contestId, boolean global) {
+        Contest contest = contestMapper.selectById(contestId);
+        if (contest == null || Integer.valueOf(1).equals(contest.getIsDeleted())) {
+            throw new BusinessException(ContestErrorCode.CONTEST_NOT_FOUND, "比赛不存在");
+        }
         List<ContestRankVO> rows = global ? getGlobalRankList(contestId) : officialSnapshot(contestId);
         StringBuilder csv = new StringBuilder();
         csv.append(global ? "名次,用户,类型,解题数,罚时,总分,Rating前,Rating后,奖项\n"

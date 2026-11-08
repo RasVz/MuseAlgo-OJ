@@ -170,7 +170,7 @@ export function connectSSE(url, onEvent, options = {}) {
   }
 }
 
-async function readEventStream(body, handlers) {
+export async function readEventStream(body, handlers) {
   if (!body?.getReader) throw new Error('排行榜实时连接不支持流式响应')
 
   const reader = body.getReader()
@@ -199,8 +199,8 @@ async function readEventStream(body, handlers) {
 
     if (field === 'event') eventName = value
     else if (field === 'data') dataLines.push(value)
-    else if (field === 'id' && !value.includes('\u0000')) handlers.onLastEventId(value)
-    else if (field === 'retry' && /^\d+$/.test(value)) handlers.onRetry(Number(value))
+    else if (field === 'id' && !value.includes('\u0000')) handlers.onLastEventId?.(value)
+    else if (field === 'retry' && /^\d+$/.test(value)) handlers.onRetry?.(Number(value))
   }
 
   const drainLines = final => {
@@ -223,14 +223,18 @@ async function readEventStream(body, handlers) {
     }
   }
 
-  while (!handlers.isStopped()) {
-    const { value, done } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    drainLines(false)
+  try {
+    while (!handlers.isStopped()) {
+      const { value, done } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      drainLines(false)
+    }
+    buffer += decoder.decode()
+    drainLines(true)
+    if (dataLines.length > 0) dispatch()
+  } finally {
+    try { await reader.cancel() } catch { /* A closed stream must not replace its original error. */ }
+    finally { reader.releaseLock() }
   }
-
-  buffer += decoder.decode()
-  drainLines(true)
-  if (dataLines.length > 0) dispatch()
 }

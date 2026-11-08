@@ -114,10 +114,10 @@ class AiServiceReviewTest {
         when(submissionReviewQuery.findById(99L)).thenReturn(Optional.empty());
         List<String> chunks = new ArrayList<>();
 
-        AiAskOutcome outcome = newService().reviewSubmissionStream(1L, 99L, false, chunks::add);
-
-        assertEquals("FAIL", outcome.status());
-        assertTrue(chunks.stream().anyMatch(c -> c.contains("稍后再试")));
+        var failure = org.junit.jupiter.api.Assertions.assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
+                () -> newService().reviewSubmissionStream(1L, 99L, false, chunks::add));
+        assertEquals("AI_REVIEW_SUBMISSION_NOT_FOUND", failure.getErrorCode().key());
+        assertTrue(chunks.isEmpty());
     }
 
     @Test
@@ -126,11 +126,22 @@ class AiServiceReviewTest {
                 .thenReturn(Optional.of(waSubmission()));
         List<String> chunks = new ArrayList<>();
 
-        AiAskOutcome outcome = newService().reviewSubmissionStream(20L, 1L, false, chunks::add);
-
-        assertEquals("FAIL", outcome.status());
-        assertTrue(chunks.stream().anyMatch(c -> c.contains("无权")));
+        var failure = org.junit.jupiter.api.Assertions.assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
+                () -> newService().reviewSubmissionStream(20L, 1L, false, chunks::add));
+        assertEquals("ACCESS_DENIED", failure.getErrorCode().key());
+        assertTrue(chunks.isEmpty());
         verify(gateway, org.mockito.Mockito.never()).stream(any(), any());
         verify(quotaService, org.mockito.Mockito.never()).tryAcquire(anyLong(), anyBoolean());
     }
+    @Test void reviewMissingAndForbiddenHaveExplicitBusinessReasons() {
+        when(submissionReviewQuery.findById(99L)).thenReturn(Optional.empty());
+        var missing = org.junit.jupiter.api.Assertions.assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
+                () -> newService().reviewSubmissionStream(10L, 99L, false, value -> {}));
+        assertEquals("AI_REVIEW_SUBMISSION_NOT_FOUND", missing.getErrorCode().key());
+        when(submissionReviewQuery.findById(1L)).thenReturn(Optional.of(waSubmission()));
+        var denied = org.junit.jupiter.api.Assertions.assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
+                () -> newService().reviewSubmissionStream(20L, 1L, false, value -> {}));
+        assertEquals("ACCESS_DENIED", denied.getErrorCode().key());
+    }
+
 }

@@ -1,5 +1,9 @@
 package com.musealgo.oj.analytics.application;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.common.exception.CommonErrorCode;
+import com.musealgo.oj.analytics.error.AnalyticsErrorCode;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -95,7 +99,7 @@ public class PracticeAnalyticsService {
     public PracticeAnalyticsVO analyzeCurrentUser(String range) {
         Long userId = SecurityUtils.getUserId();
         if (userId == null) {
-            throw new ForbiddenException("请先登录");
+            throw new BusinessException(CommonErrorCode.AUTH_REQUIRED, "请先登录");
         }
         return analyze(userId, range, LocalDate.now());
     }
@@ -175,7 +179,7 @@ public class PracticeAnalyticsService {
                     start,
                     today);
         }
-        throw new IllegalArgumentException("range 仅支持 all 或 30d");
+        throw new BusinessException(AnalyticsErrorCode.ANALYTICS_INPUT_INVALID, "range 仅支持 all 或 30d");
     }
 
     /** 解析后的统计窗口：range + SQL 用的半开区间 + 展示用的日期区间。 */

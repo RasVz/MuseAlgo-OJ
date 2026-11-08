@@ -3,7 +3,6 @@ package com.musealgo.oj.judge.worker;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -19,8 +18,8 @@ import java.util.function.Supplier;
 /**
  * Outbox 归档任务 —— 定期清理 outbox_event 表，防止 PUBLISHED / FAILED 永久累积。
  * <p>
- * 与 {@link OutboxPublisher} 同模块（oj-judge，数据归属方），启用条件一致
- * （仅 {@code oj.messaging.rabbitmq-enabled=true} 时生效）。默认每天凌晨 3:30 低峰执行，
+ * 与 {@link OutboxPublisher} 同模块（oj-judge，数据归属方），本地投影与可选 MQ 均需归档。
+ * 默认每天凌晨 3:30 低峰执行，
  * cron 可通过 {@code oj.messaging.outbox.archive-cron} 配置。
  * </p>
  *
@@ -37,7 +36,6 @@ import java.util.function.Supplier;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-@ConditionalOnProperty(prefix = "oj.messaging", name = "rabbitmq-enabled", havingValue = "true")
 public class OutboxArchiveTask {
 
     private final OutboxEventMapper outboxEventMapper;

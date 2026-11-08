@@ -1,5 +1,9 @@
 package com.musealgo.oj.community.post;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.common.exception.CommonErrorCode;
+import com.musealgo.oj.community.error.CommunityErrorCode;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import com.musealgo.oj.community.entity.Post;
@@ -28,6 +32,7 @@ import com.musealgo.oj.community.service.PostService;
 @RequiredArgsConstructor
 class PostTargetServiceImpl implements PostTargetService {
     private final PostService posts;
+    private final com.musealgo.oj.api.teaching.ClassQuery classes;
 
     /**
      * 校验动态存在且未被软删除。
@@ -48,8 +53,33 @@ class PostTargetServiceImpl implements PostTargetService {
     @Override
     public Post requireExisting(Long postId) {
         Post post = posts.getById(postId);
-        if (post == null || Integer.valueOf(1).equals(post.getIsDeleted())) throw new IllegalArgumentException("文章不存在");
+        if (post == null || Integer.valueOf(1).equals(post.getIsDeleted())) throw new BusinessException(CommunityErrorCode.POST_NOT_FOUND, "文章不存在");
         return post;
+    }
+
+    @Override
+    public Post requireReadable(Long postId, Long actorId) {
+        Post post = requireExisting(postId);
+        if (!canReadClass(post.getClassId(), actorId)) throw new BusinessException(CommunityErrorCode.POST_NOT_FOUND, "文章不存在");
+        if (Integer.valueOf(1).equals(post.getPrivacy()) && (actorId == null || !actorId.equals(post.getAuthorId()))) {
+            throw new BusinessException(CommunityErrorCode.POST_NOT_FOUND, "文章不存在");
+        }
+        return post;
+    }
+
+    @Override
+    public boolean canReadClass(Long classId, Long actorId) {
+        if (classId == null) return true;
+        if (actorId == null) return false;
+        if (com.musealgo.oj.common.utils.SecurityUtils.isAdmin()) return true;
+        var info = classes.findById(classId).orElse(null);
+        return info != null && (actorId.equals(info.teacherId()) || classes.findStudentIds(classId).contains(actorId));
+    }
+
+    @Override
+    public void requireClassAccess(Long classId, Long actorId) {
+        if (!canReadClass(classId, actorId))
+            throw new com.musealgo.oj.common.exception.ForbiddenException("无权访问该班级内容");
     }
 
     /**
@@ -68,7 +98,8 @@ class PostTargetServiceImpl implements PostTargetService {
     @Override
     public Post requireEditable(Long postId, Long actorId) {
         Post post = requireExisting(postId);
-        if (actorId == null || !actorId.equals(post.getAuthorId())) throw new IllegalArgumentException("无权修改他人的动态");
+        if (actorId == null || !actorId.equals(post.getAuthorId())) throw new BusinessException(CommonErrorCode.ACCESS_DENIED, "无权修改他人的动态");
+        requireClassAccess(post.getClassId(), actorId);
         return post;
     }
 
@@ -93,10 +124,10 @@ class PostTargetServiceImpl implements PostTargetService {
      */
     @Override
     public Post requireCommentTarget(Long postId, Integer commentType) {
-        Post post = requireExisting(postId);
+        Post post = requireReadable(postId, com.musealgo.oj.common.utils.SecurityUtils.getUserId());
         boolean solution = Integer.valueOf(1).equals(post.getType());
         if ((Integer.valueOf(3).equals(commentType) && !solution) || (Integer.valueOf(1).equals(commentType) && solution)) {
-            throw new IllegalArgumentException("评论对象类型与内容类型不匹配");
+            throw new BusinessException(CommunityErrorCode.COMMUNITY_INPUT_INVALID, "评论对象类型与内容类型不匹配");
         }
         return post;
     }

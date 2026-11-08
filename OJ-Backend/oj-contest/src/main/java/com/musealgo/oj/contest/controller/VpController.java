@@ -1,5 +1,8 @@
 package com.musealgo.oj.contest.controller;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.common.exception.CommonErrorCode;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -75,7 +78,7 @@ public class VpController {
     private Long requireUserId() {
         Long userId = SecurityUtils.getUserId();
         if (userId == null) {
-            throw new ForbiddenException("请先登录");
+            throw new BusinessException(CommonErrorCode.AUTH_REQUIRED, "请先登录");
         }
         return userId;
     }

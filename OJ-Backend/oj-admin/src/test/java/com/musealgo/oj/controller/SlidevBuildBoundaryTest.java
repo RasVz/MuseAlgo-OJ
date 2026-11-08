@@ -31,7 +31,7 @@ class SlidevBuildBoundaryTest {
         Files.writeString(cli, "#!/bin/sh\nexec sleep 20\n"); assertTrue(cli.toFile().setExecutable(true));
         var paths = mock(SlidevPathProvider.class); when(paths.workerDir()).thenReturn(dir); when(paths.outputRoot()).thenReturn(dir.resolve("out")); when(paths.publicPath()).thenReturn("/coursewares/");
         var builder = new SlidevBuilderService(paths); ReflectionTestUtils.setField(builder, "buildTimeoutSeconds", 1L);
-        assertTimeout(java.time.Duration.ofSeconds(5), () -> assertThrows(IllegalStateException.class,
+        assertTimeout(java.time.Duration.ofSeconds(5), () -> assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
                 () -> builder.buildPresentation(new MockMultipartFile("file", "a.md", "text/plain", "# hi".getBytes()))));
         try (var files = Files.list(dir)) { assertTrue(files.noneMatch(f -> f.toString().endsWith(".md"))); }
     }

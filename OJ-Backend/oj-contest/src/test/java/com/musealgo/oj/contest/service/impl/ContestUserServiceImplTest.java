@@ -30,6 +30,7 @@ class ContestUserServiceImplTest {
 
     private Contest contest(boolean review) {
         Contest c = new Contest();
+        c.setVisible(1);
         c.setId(1L);
         c.setCategory("FORMAL");
         c.setRegistrationReview(review ? 1 : 0);
@@ -42,11 +43,12 @@ class ContestUserServiceImplTest {
     @Test
     void registerSnapshotsRatingAndEligibilityForOverLimitUser() {
         ReflectionTestUtils.setField(service, "baseMapper", contestUserMapper);
-        when(contestMapper.selectById(1L)).thenReturn(contest(false));
+        when(contestMapper.selectByIdForUpdate(1L)).thenReturn(contest(false));
         when(contestUserMapper.selectOne(any(), anyBoolean())).thenReturn(null);
         when(userQuery.findRating(7L)).thenReturn(1900);
         when(eligibilityService.isEligible(any(), any())).thenReturn(false);
         when(contestUserMapper.insert(any(ContestUser.class))).thenReturn(1);
+        when(contestMapper.update(any(), any())).thenReturn(1);
 
         ContestUser record = service.registerContest(1L, 7L);
 
@@ -59,11 +61,12 @@ class ContestUserServiceImplTest {
     @Test
     void registrationReviewMakesRegistrationPending() {
         ReflectionTestUtils.setField(service, "baseMapper", contestUserMapper);
-        when(contestMapper.selectById(1L)).thenReturn(contest(true));
+        when(contestMapper.selectByIdForUpdate(1L)).thenReturn(contest(true));
         when(contestUserMapper.selectOne(any(), anyBoolean())).thenReturn(null);
         when(userQuery.findRating(7L)).thenReturn(1500);
         when(eligibilityService.isEligible(any(), any())).thenReturn(true);
         when(contestUserMapper.insert(any(ContestUser.class))).thenReturn(1);
+        when(contestMapper.update(any(), any())).thenReturn(1);
 
         ContestUser record = service.registerContest(1L, 7L);
 
@@ -74,8 +77,8 @@ class ContestUserServiceImplTest {
     @Test
     void duplicateRegistrationIsRejected() {
         ReflectionTestUtils.setField(service, "baseMapper", contestUserMapper);
-        when(contestMapper.selectById(1L)).thenReturn(contest(false));
+        when(contestMapper.selectByIdForUpdate(1L)).thenReturn(contest(false));
         when(contestUserMapper.selectOne(any(), anyBoolean())).thenReturn(new ContestUser());
-        assertThrows(IllegalStateException.class, () -> service.registerContest(1L, 7L));
+        assertThrows(com.musealgo.oj.common.exception.BusinessException.class, () -> service.registerContest(1L, 7L));
     }
 }

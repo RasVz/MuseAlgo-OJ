@@ -30,6 +30,7 @@
 </template>
 
 <script setup>
+
 // 标准答案展示/编辑面板：纯展示组件，所有 AI 调用与保存动作都在 ProblemAiDialog 里。
 // 这里只负责「查看态 ↔ 编辑态」切换与 Markdown 渲染。
 import { computed } from 'vue'

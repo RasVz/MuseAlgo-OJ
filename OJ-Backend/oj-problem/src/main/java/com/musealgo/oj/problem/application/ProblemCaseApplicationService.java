@@ -1,5 +1,8 @@
 package com.musealgo.oj.problem.application;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.problem.error.ProblemErrorCode;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -176,12 +179,12 @@ public class ProblemCaseApplicationService {
         lockProblemRow(problemId);
         accessGuard.requireManagedProblem(problemId);
         if (cases == null || cases.isEmpty()) {
-            throw new IllegalArgumentException("测试用例不能为空");
+            throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "测试用例不能为空");
         }
         requireWithinCaseLimit(cases.size(), "保存后");
         for (FpsTestCase c : cases) {
             if (c.input() == null || c.output() == null) {
-                throw new IllegalArgumentException("测试用例内容不完整");
+                throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "测试用例内容不完整");
             }
         }
         List<ProblemCase> oldCases = problemCaseService.getProblemCases(problemId);
@@ -203,11 +206,11 @@ public class ProblemCaseApplicationService {
     @Transactional(rollbackFor = Exception.class)
     public void deleteCase(Long caseId) {
         if (caseId == null) {
-            throw new IllegalArgumentException("用例ID不能为空");
+            throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "用例ID不能为空");
         }
         ProblemCase pc = problemCaseService.getById(caseId);
         if (pc == null) {
-            throw new IllegalArgumentException("测试用例不存在");
+            throw new BusinessException(ProblemErrorCode.PROBLEM_CASE_NOT_FOUND, "测试用例不存在");
         }
         Long problemId = pc.getProblemId();
         lockProblemRow(problemId);
@@ -276,7 +279,7 @@ public class ProblemCaseApplicationService {
         lockProblemRow(problemId);
         accessGuard.requireManagedProblem(problemId);
         if (cases == null || cases.isEmpty()) {
-            throw new IllegalArgumentException("测试用例不能为空");
+            throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "测试用例不能为空");
         }
 
         List<ProblemCase> existing = problemCaseService.getProblemCases(problemId);
@@ -298,7 +301,7 @@ public class ProblemCaseApplicationService {
         int skipped = 0;
         for (FpsTestCase c : cases) {
             if (c.input() == null || c.output() == null) {
-                throw new IllegalArgumentException("测试用例内容不完整");
+                throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "测试用例内容不完整");
             }
             if (!seen.add(normalizeCaseInput(c.input()))) {
                 skipped++;
@@ -309,7 +312,7 @@ public class ProblemCaseApplicationService {
 
         int total = existing.size() + toAdd.size();
         if (total > MAX_CASES_PER_PROBLEM) {
-            throw new IllegalArgumentException("追加后测试数据将超过单题上限 "
+            throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "追加后测试数据将超过单题上限 "
                     + MAX_CASES_PER_PROBLEM + " 组（现有 " + existing.size() + " 组），"
                     + "请先清理旧用例（覆盖导入或批量保存）后重试");
         }
@@ -402,7 +405,7 @@ public class ProblemCaseApplicationService {
 
     private void requireWithinCaseLimit(int count, String stage) {
         if (count > MAX_CASES_PER_PROBLEM) {
-            throw new IllegalArgumentException(stage + "测试数据超过单题上限 "
+            throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, stage + "测试数据超过单题上限 "
                     + MAX_CASES_PER_PROBLEM + " 组（当前 " + count + " 组），请先精简用例后重试");
         }
     }
@@ -508,7 +511,7 @@ public class ProblemCaseApplicationService {
     /** 均分分值：如 100 分 3 组 → 34/33/33；用例数小于 1 或序号越界抛异常。 */
     public static int importedCaseScore(int index, int caseCount) {
         if (caseCount <= 0 || index < 0 || index >= caseCount) {
-            throw new IllegalArgumentException("测试用例序号无效");
+            throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "测试用例序号无效");
         }
         return TARGET_TOTAL_SCORE / caseCount + (index < TARGET_TOTAL_SCORE % caseCount ? 1 : 0);
     }

@@ -1,5 +1,9 @@
 package com.musealgo.oj.community.service.impl;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.common.exception.CommonErrorCode;
+import com.musealgo.oj.community.error.CommunityErrorCode;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import org.springframework.beans.BeanUtils;
@@ -88,7 +92,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, Comment> impl
     @Transactional(rollbackFor = Exception.class)
     public void publishComment(CommentDTO dto) {
         Long currentUserId = SecurityUtils.getUserId();
-        if(currentUserId == null) throw new RuntimeException("请先登录");
+        if(currentUserId == null) throw new BusinessException(CommonErrorCode.AUTH_REQUIRED, "请先登录");
 
         CommentTarget target = new CommentTarget(dto.getEntityId(), dto.getEntityType());
         CommentTargetDetails targetDetails = handlerFor(target).requireTarget(target.id(), target.type());
@@ -196,17 +200,25 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, Comment> impl
      * @throws IllegalArgumentException 引用不存在、已删除、跨讨论区，或被回复人与评论作者不符
      */
     private void validateReply(CommentDTO dto, CommentTarget target) {
+        // replyUserId is display/notification data, never an authorization source. Clear the
+        // request value before every branch and restore it only from a same-target comment.
+        Long requestedReplyUserId = dto.getReplyUserId();
+        dto.setReplyUserId(null);
         boolean hasParent = dto.getParentId() != null && dto.getParentId() != 0;
         boolean hasReplyTarget = dto.getReplyCommentId() != null && dto.getReplyCommentId() != 0;
         if (!hasParent && !hasReplyTarget) return;
 
-        if (hasParent) requireCommentInTarget(dto.getParentId(), target, "父评论不存在或不属于当前讨论区");
+        Comment parent = hasParent
+                ? requireCommentInTarget(dto.getParentId(), target, "父评论不存在或不属于当前讨论区")
+                : null;
         if (hasReplyTarget) {
             Comment replyTarget = requireCommentInTarget(dto.getReplyCommentId(), target, "被回复评论不存在或不属于当前讨论区");
-            if (dto.getReplyUserId() != null && !dto.getReplyUserId().equals(replyTarget.getUserId())) {
-                throw new IllegalArgumentException("被回复用户与评论不一致");
+            if (requestedReplyUserId != null && !requestedReplyUserId.equals(replyTarget.getUserId())) {
+                throw new BusinessException(CommunityErrorCode.COMMUNITY_INPUT_INVALID, "被回复用户与评论不一致");
             }
             dto.setReplyUserId(replyTarget.getUserId());
+        } else if (parent != null) {
+            dto.setReplyUserId(parent.getUserId());
         }
     }
 
@@ -214,7 +226,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, Comment> impl
         Comment comment = this.getById(commentId);
         if (comment == null || Integer.valueOf(1).equals(comment.getIsDeleted())
                 || !target.id().equals(comment.getEntityId()) || !target.type().equals(comment.getEntityType())) {
-            throw new IllegalArgumentException(message);
+            throw new BusinessException(CommunityErrorCode.COMMUNITY_INPUT_INVALID, message);
         }
         return comment;
     }
@@ -231,7 +243,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, Comment> impl
     private CommentTargetHandler handlerFor(CommentTarget target) {
         target.validate();
         CommentTargetHandler handler = targetHandlers.get(target.type());
-        if (handler == null) throw new IllegalArgumentException("不支持的评论对象类型");
+        if (handler == null) throw new BusinessException(CommunityErrorCode.COMMUNITY_INPUT_INVALID, "不支持的评论对象类型");
         return handler;
     }
 

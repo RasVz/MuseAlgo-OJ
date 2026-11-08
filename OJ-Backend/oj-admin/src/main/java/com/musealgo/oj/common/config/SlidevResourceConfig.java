@@ -1,6 +1,7 @@
 package com.musealgo.oj.common.config;
 
 import org.springframework.context.annotation.Configuration;
+import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import com.musealgo.oj.teaching.SlidevPathProvider;
@@ -27,9 +28,18 @@ import com.musealgo.oj.teaching.SlidevPathProvider;
 public class SlidevResourceConfig implements WebMvcConfigurer {
 
     private final String resourceLocation;
+    private final CoursewareStaticResourceInterceptor coursewareAuthorization;
 
-    public SlidevResourceConfig(SlidevPathProvider paths) {
+    public SlidevResourceConfig(SlidevPathProvider paths,
+                                CoursewareStaticResourceInterceptor coursewareAuthorization) {
         this.resourceLocation = paths.outputRoot().toUri().toString();
+        this.coursewareAuthorization = coursewareAuthorization;
+    }
+
+    @Override
+    public void addInterceptors(InterceptorRegistry registry) {
+        registry.addInterceptor(coursewareAuthorization)
+                .addPathPatterns("/coursewares/**", "/api/coursewares/**");
     }
 
     @Override

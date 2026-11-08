@@ -67,7 +67,7 @@ public class JudgeTaskServiceImpl implements JudgeTaskService {
         task.setUpdatedAt(LocalDateTime.now());
 
         try {
-            judgeTaskMapper.insert(task);
+            if (judgeTaskMapper.insert(task) != 1) throw new IllegalStateException("判题任务保存失败");
             log.info("【判题任务】创建成功 submissionId={}, taskId={}", submissionId, task.getId());
             return task;
         } catch (DuplicateKeyException e) {
@@ -75,6 +75,7 @@ public class JudgeTaskServiceImpl implements JudgeTaskService {
             JudgeTask existing = judgeTaskMapper.selectOne(
                     new LambdaUpdateWrapper<JudgeTask>()
                             .eq(JudgeTask::getSubmissionId, submissionId));
+            if (existing == null) throw new IllegalStateException("判题任务冲突后未找到记录", e);
             log.info("【判题任务】幂等跳过 submissionId={}, 已有 taskId={}",
                     submissionId, existing != null ? existing.getId() : null);
             return existing;
@@ -182,9 +183,9 @@ public class JudgeTaskServiceImpl implements JudgeTaskService {
         item.setStatus(RejudgeItem.STATUS_FAILED);
         item.setFinishedAt(now);
         item.setErrorMessage(truncate(errorMessage, 1000));
-        rejudgeItemMapper.updateById(item);
+        if (rejudgeItemMapper.updateById(item) != 1) throw new IllegalStateException("重判条目结果保存失败");
 
-        RejudgeOperation operation = rejudgeOperationMapper.selectById(item.getOperationId());
+        RejudgeOperation operation = rejudgeOperationMapper.selectForUpdate(item.getOperationId());
         if (operation != null) {
             int failed = (operation.getFailedItems() == null ? 0 : operation.getFailedItems()) + 1;
             int succeeded = operation.getSucceededItems() == null ? 0 : operation.getSucceededItems();
@@ -194,7 +195,7 @@ public class JudgeTaskServiceImpl implements JudgeTaskService {
                 operation.setStatus(succeeded > 0 ? RejudgeOperation.STATUS_PARTIAL : RejudgeOperation.STATUS_FAILED);
                 operation.setFinishedAt(now);
             }
-            rejudgeOperationMapper.updateById(operation);
+            if (rejudgeOperationMapper.updateById(operation) != 1) throw new IllegalStateException("重判操作进度保存失败");
         }
         log.warn("【T8 重判】失败并恢复旧结果 submissionId={}, operationId={}, reason={}",
                 task.getSubmissionId(), item.getOperationId(), errorMessage);

@@ -3,7 +3,6 @@ package com.musealgo.oj.judge.worker;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import com.musealgo.oj.judge.entity.OutboxEvent;
@@ -23,17 +22,20 @@ import java.util.List;
  * </ol>
  * 这保证了 "至少一次" 的消息送达语义。
  *
- * <h3>Opt-in</h3>
- * 仅当 {@code oj.messaging.rabbitmq-enabled=true} 时才启用。
+ * Local projections always run from the durable outbox. Rabbit notifications are optional;
+ * projection or notification failures retain the existing five-attempt backoff and FAILED state.
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
-@ConditionalOnProperty(prefix = "oj.messaging", name = "rabbitmq-enabled", havingValue = "true")
 public class OutboxPublisher {
 
     private final OutboxEventMapper outboxEventMapper;
     private final RabbitTemplate rabbitTemplate;
+    private final com.musealgo.oj.api.submission.SubmissionJudgedProcessor localProcessor;
+    @org.springframework.beans.factory.annotation.Value("${oj.messaging.rabbitmq-enabled:true}")
+    private boolean rabbitEnabled;
+    private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
 
     private static final int POLL_LIMIT = 50;
     private static final int MAX_RETRIES = 5;
@@ -42,7 +44,8 @@ public class OutboxPublisher {
     /**
      * 轮询 outbox_event，间隔可通过 {@code oj.messaging.outbox.poll-interval-ms} 配置，默认 5000ms。
      */
-    @Scheduled(fixedDelayString = "${oj.messaging.outbox.poll-interval-ms:5000}")
+    @Scheduled(fixedDelayString = "${oj.messaging.outbox.poll-interval-ms:5000}",
+            initialDelayString = "${oj.messaging.outbox.initial-delay-ms:0}")
     public void publishPending() {
         List<OutboxEvent> events;
         try {
@@ -62,13 +65,14 @@ public class OutboxPublisher {
             try {
                 // 投递到 oj.event 交换机，routingKey = event_type
                 // 例如 submission.judged → 被 oj.rank.update 队列消费
-                rabbitTemplate.convertAndSend(
-                        "oj.event",
-                        event.getEventType(),
-                        event.getPayload()
-                );
-
-                outboxEventMapper.markPublished(event.getId());
+                if (OutboxEvent.EVENT_SUBMISSION_JUDGED.equals(event.getEventType())) {
+                    var judged = objectMapper.readValue(event.getPayload(), com.musealgo.oj.api.submission.SubmissionJudgedEvent.class);
+                    if (judged.submissionId() == null) throw new IllegalStateException("判题事件缺少提交编号");
+                    localProcessor.process(judged.submissionId());
+                }
+                if (rabbitEnabled) rabbitTemplate.convertAndSend("oj.event", event.getEventType(), event.getPayload());
+                if (outboxEventMapper.markPublished(event.getId()) != 1)
+                    throw new IllegalStateException("判题事件投递状态更新失败");
                 log.debug("【Outbox】投递成功 eventId={}, type={}", event.getId(), event.getEventType());
 
             } catch (Exception e) {

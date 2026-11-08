@@ -35,6 +35,7 @@ class ContestRankingSseControllerTest {
         SseRegistry registry = mock(SseRegistry.class);
         ContestService contestService = mock(ContestService.class);
         Contest contest = new Contest();
+        contest.setVisible(1);
         contest.setMode("OI");
         contest.setStartTime(LocalDateTime.now().minusMinutes(10));
         contest.setEndTime(LocalDateTime.now().plusMinutes(10));

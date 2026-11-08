@@ -38,6 +38,7 @@
         SELECT
         r.id,
         r.class_id        AS classId,
+        r.contest_id      AS contestId,
         r.problem_id      AS problemId,
         r.submission_a_id AS submissionAId,
         r.submission_b_id AS submissionBId,
@@ -57,6 +58,19 @@
         WHERE 1 = 1
         <if test="classId != null">
             AND r.class_id = #{classId}
+        </if>
+        <if test="contestId != null">
+            AND r.contest_id = #{contestId}
+        </if>
+        <if test="restrictOwner">
+            AND (1 = 0
+                <if test="classIds != null and !classIds.isEmpty()">
+                    OR r.class_id IN <foreach collection="classIds" item="scope" open="(" separator="," close=")">#{scope}</foreach>
+                </if>
+                <if test="contestIds != null and !contestIds.isEmpty()">
+                    OR r.contest_id IN <foreach collection="contestIds" item="scope" open="(" separator="," close=")">#{scope}</foreach>
+                </if>
+            )
         </if>
         <if test="problemId != null">
             AND r.problem_id = #{problemId}

@@ -52,7 +52,8 @@ class ContestSettlementIT {
     @Test void pendingThenConcurrentFinalizeAndReplayAreExactlyOnce() throws Exception {
         submit(users.get(0),2,0,2,null);var pending=submit(users.get(0),0,0,5,null);
         submit(users.get(1),1,100,10,null);submit(users.get(1),1,100,3,999L);
-        assertThrows(IllegalStateException.class,()->ranks.finalizeContest(contest.getId()));
+        assertEquals("CONTEST_JUDGING_PENDING", assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
+                ()->ranks.finalizeContest(contest.getId())).getErrorCode().key());
         assertFalse(ranks.hasFinalizedRank(contest.getId()));
         pending.setStatus((byte)1);pending.setScore(100);pending.setJudgePhase("FINISHED");submissions.updateById(pending);
         var pool=Executors.newFixedThreadPool(2);

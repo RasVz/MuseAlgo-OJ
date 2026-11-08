@@ -1,5 +1,8 @@
 package com.musealgo.oj.community.controller;
 
+import com.musealgo.oj.common.exception.ErrorResponses;
+import com.musealgo.oj.common.exception.CommonErrorCode;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
@@ -33,7 +36,7 @@ public class NotificationController {
     @GetMapping("/list")
     public Result<List<Map<String, Object>>> list(@RequestParam(defaultValue = "all") String scope) {
         Long userId = SecurityUtils.getUserId();
-        if (userId == null) return Result.error(401, "请先登录");
+        if (userId == null) return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "请先登录");
         NotificationService.NotificationPrefs prefs = notificationService.loadPreferences(userId);
         List<Map<String, Object>> list = new ArrayList<>(notificationService.list(userId, scope));
         if (!"interactions".equals(scope)) list.addAll(upcomingTasks(userId, prefs));
@@ -58,7 +61,7 @@ public class NotificationController {
     @PostMapping("/{id}/read")
     public Result<Void> markRead(@PathVariable Long id) {
         Long userId = SecurityUtils.getUserId();
-        if (userId == null) return Result.error(401, "请先登录");
+        if (userId == null) return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "请先登录");
         notificationService.markRead(userId, id);
         return Result.success(null);
     }
@@ -66,7 +69,7 @@ public class NotificationController {
     @PostMapping("/read-all")
     public Result<Void> markAllRead() {
         Long userId = SecurityUtils.getUserId();
-        if (userId == null) return Result.error(401, "请先登录");
+        if (userId == null) return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "请先登录");
         notificationService.markAllRead(userId);
         return Result.success(null);
     }

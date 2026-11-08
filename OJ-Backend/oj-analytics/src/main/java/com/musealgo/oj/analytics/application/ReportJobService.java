@@ -1,5 +1,8 @@
 package com.musealgo.oj.analytics.application;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.analytics.error.AnalyticsErrorCode;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
@@ -148,13 +151,13 @@ public class ReportJobService {
         if (!SecurityUtils.isAdmin()) throw new ForbiddenException("仅管理员可操作外部通道");
         String normalized = channel == null ? "" : channel.trim().toUpperCase();
         if (!EXTERNAL_CHANNELS.contains(normalized)) {
-            throw new IllegalArgumentException("外部通道仅支持 EMAIL/SMS/WECHAT");
+            throw new BusinessException(AnalyticsErrorCode.ANALYTICS_INPUT_INVALID, "外部通道仅支持 EMAIL/SMS/WECHAT");
         }
-        if (!externalDryRunOnly) throw new IllegalStateException("禁止关闭外部 dry-run-only");
-        if (recipientId == null || recipientId <= 0) throw new IllegalArgumentException("缺少有效接收者");
+        if (!externalDryRunOnly) throw new BusinessException(AnalyticsErrorCode.REPORT_EXTERNAL_SEND_DISABLED, "禁止关闭外部 dry-run-only");
+        if (recipientId == null || recipientId <= 0) throw new BusinessException(AnalyticsErrorCode.ANALYTICS_INPUT_INVALID, "缺少有效接收者");
         ReportJob job = jobMapper.selectForUpdate(jobId);
-        if (job == null) throw new IllegalArgumentException("REPORT_JOB_NOT_FOUND");
-        if (!"GENERATED".equals(job.getStatus())) throw new IllegalStateException("REPORT_NOT_READY");
+        if (job == null) throw new BusinessException(AnalyticsErrorCode.REPORT_JOB_NOT_FOUND, "REPORT_JOB_NOT_FOUND");
+        if (!"GENERATED".equals(job.getStatus())) throw new BusinessException(AnalyticsErrorCode.REPORT_NOT_READY, "REPORT_NOT_READY");
         ReportDelivery delivery = deliveryMapper.selectOne(new LambdaQueryWrapper<ReportDelivery>()
                 .eq(ReportDelivery::getJobId, jobId)
                 .eq(ReportDelivery::getChannel, normalized)
@@ -192,14 +195,19 @@ public class ReportJobService {
 
     private ReportJob requireJob(Long jobId) {
         ReportJob job = jobMapper.selectById(jobId);
-        if (job == null) throw new IllegalArgumentException("REPORT_JOB_NOT_FOUND");
+        if (job == null) throw new BusinessException(AnalyticsErrorCode.REPORT_JOB_NOT_FOUND, "REPORT_JOB_NOT_FOUND");
         return job;
+    }
+
+    /** Preflight for batch requests so a shared invalid period cannot be accepted per student. */
+    public void validatePeriod(LocalDate periodStart, LocalDate periodEnd) {
+        resolvePeriod(periodStart, periodEnd);
     }
 
     private static LocalDate[] resolvePeriod(LocalDate periodStart, LocalDate periodEnd) {
         if (periodStart != null || periodEnd != null) {
             if (periodStart == null || periodEnd == null || periodEnd.isBefore(periodStart)) {
-                throw new IllegalArgumentException("INVALID_PERIOD");
+                throw new BusinessException(AnalyticsErrorCode.INVALID_PERIOD, "INVALID_PERIOD");
             }
             return new LocalDate[]{periodStart, periodEnd};
         }

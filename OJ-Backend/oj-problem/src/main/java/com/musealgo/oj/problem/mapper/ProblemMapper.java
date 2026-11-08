@@ -58,6 +58,12 @@ public interface ProblemMapper extends BaseMapper<Problem> {
 
     List<String> selectPublicSources();
 
+    /** 搜索候选中当前公开、未删除且满足难度条件的ID；分页和计数使用同一集合。 */
+    List<Long> selectVisibleSearchIds(@Param("problemIds") List<Long> problemIds,
+                                    @Param("difficulty") Integer difficulty,
+                                    @Param("minDifficulty") Integer minDifficulty,
+                                    @Param("maxDifficulty") Integer maxDifficulty);
+
     java.util.List<Problem> selectRandomUnsolvedPublicProblems(@Param("userId") Long userId,
                                                                @Param("limit") Integer limit);
 

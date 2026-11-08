@@ -1,5 +1,9 @@
 package com.musealgo.oj.teaching.controller;
 
+import com.musealgo.oj.common.exception.ErrorResponses;
+import com.musealgo.oj.common.exception.CommonErrorCode;
+import com.musealgo.oj.teaching.error.TeachingErrorCode;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 import com.musealgo.oj.common.api.Result;
@@ -86,12 +90,17 @@ public class ClassProblemListController {
 
         Long userId = SecurityUtils.getUserId();
         if (userId == null) {
-            return Result.error("未登录");
+            return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "未登录");
         }
+
+        SecurityUtils.requireTeacherOrAdmin();
+        Class targetClass = classService.getById(classId);
+        if (targetClass == null) return ErrorResponses.failure(TeachingErrorCode.CLASS_NOT_FOUND);
+        SecurityUtils.requireOwnerOrAdmin(targetClass.getTeacherId());
 
         String title = body.get("title");
         if (title == null || title.trim().isEmpty()) {
-            return Result.error("题单名称不能为空");
+            return ErrorResponses.failure(TeachingErrorCode.TEACHING_INPUT_INVALID, "题单名称不能为空");
         }
 
         Long id = problemListCommand.createClassProblemList(
@@ -115,13 +124,13 @@ public class ClassProblemListController {
 
         Long userId = SecurityUtils.getUserId();
         if (userId == null) {
-            return Result.error("登录已过期");
+            return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "登录已过期");
         }
 
         // 查询原题单
         ProblemListView old = problemListQuery.findById(id).orElse(null);
         if (old == null) {
-            return Result.error("题单不存在");
+            return ErrorResponses.failure(TeachingErrorCode.PROBLEM_LIST_NOT_FOUND, "题单不存在");
         }
 
         // 校验权限：只能修改自己创建的题单或者是班级老师
@@ -129,13 +138,13 @@ public class ClassProblemListController {
             // 检查是否是班级老师
             Class cls = classService.getById(classId);
             if (cls == null || !cls.getTeacherId().equals(userId)) {
-                return Result.error("无权修改");
+                return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "无权修改");
             }
         }
 
         // 校验题单是否属于该班级
         if (!classId.equals(old.classId())) {
-            return Result.error("题单不属于该班级");
+            return ErrorResponses.failure(TeachingErrorCode.TEACHING_INPUT_INVALID, "题单不属于该班级");
         }
 
         problemListCommand.updateClassProblemList(id, body.get("title"), body.get("description"));
@@ -156,18 +165,18 @@ public class ClassProblemListController {
 
         Long userId = SecurityUtils.getUserId();
         if (userId == null) {
-            return Result.error("登录已过期");
+            return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "登录已过期");
         }
 
         // 查询原题单
         ProblemListView old = problemListQuery.findById(id).orElse(null);
         if (old == null) {
-            return Result.error("题单不存在");
+            return ErrorResponses.failure(TeachingErrorCode.PROBLEM_LIST_NOT_FOUND, "题单不存在");
         }
 
         // 校验题单是否属于该班级
         if (!classId.equals(old.classId())) {
-            return Result.error("题单不属于该班级");
+            return ErrorResponses.failure(TeachingErrorCode.TEACHING_INPUT_INVALID, "题单不属于该班级");
         }
 
         // 校验权限：只能删除自己创建的题单或者是班级老师
@@ -175,7 +184,7 @@ public class ClassProblemListController {
             // 检查是否是班级老师
             Class cls = classService.getById(classId);
             if (cls == null || !cls.getTeacherId().equals(userId)) {
-                return Result.error("无权删除");
+                return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "无权删除");
             }
         }
 

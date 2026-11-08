@@ -1,5 +1,8 @@
 package com.musealgo.oj.analytics.application;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.analytics.error.AnalyticsErrorCode;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -215,7 +218,7 @@ public class ReportJobLifecycleService {
     @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
     public ReportJob retryFailed(Long jobId, Long actorId) {
         ReportJob job = jobMapper.selectForUpdate(jobId);
-        if (job == null) throw new IllegalArgumentException("REPORT_JOB_NOT_FOUND");
+        if (job == null) throw new BusinessException(AnalyticsErrorCode.REPORT_JOB_NOT_FOUND, "REPORT_JOB_NOT_FOUND");
         ReportActorSnapshot actor = actorQuery.findCurrentActor(actorId).orElse(null);
         if (!accessService.canActorAccessStudent(actorId, actor, job.getClassId(), job.getStudentId())) {
             throw new com.musealgo.oj.common.exception.ForbiddenException("无权限操作该班级报告");

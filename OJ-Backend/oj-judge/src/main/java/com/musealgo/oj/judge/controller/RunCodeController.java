@@ -1,5 +1,8 @@
 package com.musealgo.oj.judge.controller;
 
+import com.musealgo.oj.common.exception.ErrorResponses;
+import com.musealgo.oj.judge.error.JudgeErrorCode;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 import com.musealgo.oj.common.api.Result;
@@ -44,16 +47,11 @@ public class RunCodeController {
         String input = params.get("input");
 
         if (code == null || code.trim().isEmpty()) {
-            return Result.error("代码不能为空");
+            return ErrorResponses.failure(JudgeErrorCode.SUBMISSION_CODE_REQUIRED, "代码不能为空");
         }
 
-        try {
-            Map<String, Object> result = runCodeService.executeCode(code, language, input == null ? "" : input);
-            return Result.success(result);
-        } catch (IllegalArgumentException e) {
-            return Result.error(e.getMessage());
-        } catch (Exception e) {
-            return Result.error("运行代码失败：" + e.getMessage());
-        }
+        Map<String, Object> result = runCodeService.executeCode(code, language, input == null ? "" : input);
+        return Result.success(result);
+
     }
 }

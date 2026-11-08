@@ -22,6 +22,7 @@ import com.musealgo.oj.ai.application.AiServiceUpdateService;
 import com.musealgo.oj.common.annotation.AuditLog;
 import com.musealgo.oj.common.annotation.RateLimit;
 import com.musealgo.oj.common.api.Result;
+import com.musealgo.oj.common.exception.ErrorResponses;
 import com.musealgo.oj.common.utils.SecurityUtils;
 
 import java.util.List;
@@ -129,6 +130,6 @@ public class AdminAiServiceController {
 
     @ExceptionHandler(AiAdminException.class)
     public Result<String> handleAdminException(AiAdminException e) {
-        return Result.error(e.getCode(), e.getMessage());
+        return ErrorResponses.failure(e.getErrorCode(), e.getMessage());
     }
 }

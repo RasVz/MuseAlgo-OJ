@@ -1,5 +1,11 @@
 package com.musealgo.oj.problem.controller;
 
+import com.musealgo.oj.common.utils.RequestValues;
+
+import com.musealgo.oj.common.exception.ErrorResponses;
+import com.musealgo.oj.common.exception.CommonErrorCode;
+import com.musealgo.oj.problem.error.ProblemErrorCode;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
@@ -65,7 +71,7 @@ public class ProblemController {
     @PreAuthorize("hasAuthority('problem:manage')")
     public Result<Long> addProblem(@RequestBody ProblemDTO dto) {
         Long userId = SecurityUtils.getUserId();
-        if (userId == null) return Result.error("请先登录");
+        if (userId == null) return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "请先登录");
         return Result.success(appService.create(dto, userId));
     }
 
@@ -127,7 +133,7 @@ public class ProblemController {
     @GetMapping("/recommendations/random")
     public Result<List<Problem>> getRandomRecommended(@RequestParam(defaultValue = "3") Integer limit) {
         Long userId = SecurityUtils.getUserId();
-        if (userId == null) return Result.error("请先登录");
+        if (userId == null) return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "请先登录");
         return Result.success(problemService.getRandomUnsolvedPublicProblems(userId, limit));
     }
 
@@ -143,7 +149,7 @@ public class ProblemController {
             @RequestParam(defaultValue = "id") String sortBy,
             @RequestParam(defaultValue = "ascending") String sortOrder) {
         Long userId = SecurityUtils.getUserId();
-        if (userId == null) return Result.error("未登录");
+        if (userId == null) return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "未登录");
         return Result.success(appService.getMyCreatedProblemList(
                 userId, page, 50, keyword, difficulty, tag, privacy, isPublic, sortBy, sortOrder));
     }
@@ -176,7 +182,7 @@ public class ProblemController {
     @PreAuthorize("hasAuthority('problem:manage')")
     public Result<ProblemFormatPreviewItem> previewFormatProblem(@RequestBody ProblemFormatRequest request) {
         if (request == null || request.problemIds() == null || request.problemIds().size() != 1) {
-            return Result.error("预览一次只能选择一道题目");
+            return ErrorResponses.failure(ProblemErrorCode.PROBLEM_INPUT_INVALID, "预览一次只能选择一道题目");
         }
         return Result.success(appService.previewFormatProblem(request.problemIds().get(0), request.ipEnabled()));
     }
@@ -196,9 +202,9 @@ public class ProblemController {
     @PreAuthorize("hasAuthority('problem:manage')")
     public Result<String> saveStd(@RequestBody Map<String, String> body) {
         if (body == null || body.get("problemId") == null || body.get("problemId").trim().isEmpty()) {
-            return Result.error("题目 ID 不能为空");
+            return ErrorResponses.failure(ProblemErrorCode.PROBLEM_INPUT_INVALID, "题目 ID 不能为空");
         }
-        appService.saveStd(Long.valueOf(body.get("problemId")), body.get("code"), body.get("explanation"));
+        appService.saveStd(RequestValues.longValue(body.get("problemId"), "problemId"), body.get("code"), body.get("explanation"));
         return Result.success("标准答案已保存");
     }
 
@@ -215,7 +221,7 @@ public class ProblemController {
     @PreAuthorize("hasAuthority('problem:manage')")
     public Result<String> clearStd(@RequestBody Map<String, Long> body) {
         if (body == null || body.get("problemId") == null) {
-            return Result.error("题目 ID 不能为空");
+            return ErrorResponses.failure(ProblemErrorCode.PROBLEM_INPUT_INVALID, "题目 ID 不能为空");
         }
         appService.clearStd(body.get("problemId"));
         return Result.success("标准答案已清除");
@@ -234,10 +240,10 @@ public class ProblemController {
     @PreAuthorize("hasAuthority('problem:manage')")
     public Result<Map<String, Object>> testAndSaveStd(@RequestBody TestAndSaveStdRequest request) {
         if (request == null || request.problemId() == null) {
-            return Result.error("题目 ID 不能为空");
+            return ErrorResponses.failure(ProblemErrorCode.PROBLEM_INPUT_INVALID, "题目 ID 不能为空");
         }
         if (request.code() == null || request.code().isBlank()) {
-            return Result.error("标准答案代码不能为空");
+            return ErrorResponses.failure(ProblemErrorCode.PROBLEM_INPUT_INVALID, "标准答案代码不能为空");
         }
         TestDataGenerationService.StdVerifyResult verify =
                 testDataGenerationService.verifyStdAgainstCases(request.problemId(), request.code());
@@ -282,7 +288,7 @@ public class ProblemController {
     @PreAuthorize("hasAuthority('problem:manage')")
     public Result<String> saveStdAndClearCases(@RequestBody SaveStdAndClearCasesRequest request) {
         if (request == null || request.problemId() == null) {
-            return Result.error("题目 ID 不能为空");
+            return ErrorResponses.failure(ProblemErrorCode.PROBLEM_INPUT_INVALID, "题目 ID 不能为空");
         }
         appService.saveStdAndClearCases(request.problemId(), request.code(), request.explanation());
         return Result.success("标准答案已保存，该题测试数据已全部清空，请重新生成测试数据");
@@ -291,11 +297,8 @@ public class ProblemController {
     @Operation(summary = "题目详情")
     @GetMapping("/{id}")
     public Result<ProblemDetailVO> getProblemDetail(@PathVariable Long id) {
-        try {
-            return Result.success(appService.getDetail(id));
-        } catch (IllegalArgumentException e) {
-            return Result.error(e.getMessage());
-        }
+        return Result.success(appService.getDetail(id));
+
     }
 
     @Operation(summary = "更新题目")
@@ -329,7 +332,7 @@ public class ProblemController {
     @PreAuthorize("hasAnyRole('TEACHER', 'ADMIN')")
     public Result<Integer> uploadCases(@RequestParam("file") MultipartFile file,
                                        @RequestParam("problemId") Long problemId) {
-        if (file.isEmpty()) return Result.error("文件为空");
+        if (file.isEmpty()) return ErrorResponses.failure(ProblemErrorCode.PROBLEM_INPUT_INVALID, "文件为空");
         return Result.success(appService.importCases(problemId, file));
     }
 
@@ -339,11 +342,11 @@ public class ProblemController {
     @PreAuthorize("hasAuthority('problem:manage')")
     public Result<FpsImportResult> importFps(@RequestParam("file") MultipartFile file) {
         Long userId = SecurityUtils.getUserId();
-        if (userId == null) return Result.error("请先登录");
+        if (userId == null) return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "请先登录");
         try {
             return Result.success(fpsImportService.importFile(file, userId));
         } catch (IllegalArgumentException e) {
-            return Result.fail(400, e.getMessage());
+            return ErrorResponses.failure(ProblemErrorCode.PROBLEM_INPUT_INVALID, e.getMessage());
         }
     }
 }

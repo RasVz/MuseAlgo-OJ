@@ -146,6 +146,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // 课件资源管理：教师与管理员共用。教师只能编辑/删除自己上传的课件（isOwner 判断），
 // 管理员不受此限制。课件有两种形态：Slidev 编译产物（url）与腾讯文档嵌入链接。
 // 判定依据是 teacherId 与当前登录用户是否一致，而非角色。
@@ -155,8 +157,9 @@ import { DataBoard } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox, ElConfigProvider } from 'element-plus'
 import dayjs from 'dayjs'
 import CoursewareEditDialog from './components/CoursewareEditDialog.vue'
-import { getCoursewareList, deleteCourseware } from '@/api/courseware'
+import { getCoursewareDetail, getCoursewareList, deleteCourseware } from '@/api/courseware'
 import { useUserStore } from '@/stores/userStore'
+import { normalizeCoursewareUrl } from '@/utils/coursewareUrl'
 
 const router = useRouter()
 
@@ -248,8 +251,26 @@ const handleDelete = (row) => {
   })
 }
 
-const handlePreview = (row) => {
-  if (row.url) window.open(row.url, '_blank')
+const handlePreview = async (row) => {
+  if (!row.url) return
+  const previewWindow = window.open('about:blank', '_blank')
+  if (!previewWindow) {
+    ElMessage.warning('浏览器阻止了预览窗口，请允许弹出窗口后重试')
+    return
+  }
+  previewWindow.opener = null
+
+  try {
+    // The detail request authorizes private courseware and sets the path-scoped
+    // HttpOnly credential required by the iframe's static assets.
+    const response = await getCoursewareDetail(row.id)
+    const safeUrl = normalizeCoursewareUrl(response?.data?.url)
+    if (!safeUrl) throw new Error('课件地址无效')
+    previewWindow.location.replace(safeUrl)
+  } catch (caughtError) {
+    previewWindow.close()
+    showApiError(caughtError, '无权预览该课件或课件暂不可用')
+  }
 }
 
 const handleGoProblemList = (problemListId) => {

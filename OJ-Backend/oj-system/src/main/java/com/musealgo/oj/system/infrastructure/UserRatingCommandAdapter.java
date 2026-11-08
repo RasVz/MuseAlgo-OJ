@@ -52,6 +52,7 @@ public class UserRatingCommandAdapter implements UserRatingCommand {
     }
 
     @Override
+    @org.springframework.transaction.annotation.Transactional(rollbackFor = Exception.class)
     public void batchUpdateRatings(Map<Long, Integer> userIdToRating) {
         if (userIdToRating == null || userIdToRating.isEmpty()) {
             return;
@@ -60,7 +61,7 @@ public class UserRatingCommandAdapter implements UserRatingCommand {
             User user = new User();
             user.setId(userId);
             user.setRating(rating);
-            userService.updateById(user);
+            if (!userService.updateById(user)) throw new IllegalStateException("用户Rating更新失败");
         });
     }
 }

@@ -22,6 +22,9 @@ public interface UserService extends IService<User> {
 
     boolean changePassword(Long userId, String oldPassword, String newPassword);
 
+    /** Persists an already encoded administrator-set password and revokes prior sessions. */
+    boolean updatePassword(Long userId, String encodedPassword);
+
     String getPreferences(Long userId);
 
     boolean updatePreferences(Long userId, String preferences);

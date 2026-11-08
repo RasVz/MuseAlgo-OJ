@@ -29,6 +29,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 import { ref, reactive, watch, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/userStore'
@@ -88,7 +90,7 @@ const handleCreate = async () => {
     }
   } catch (error) {
     console.error(error)
-    ElMessage.error('创建失败，请稍后重试')
+    showApiError(error, '创建失败，请稍后重试')
   } finally {
     createLoading.value = false
   }

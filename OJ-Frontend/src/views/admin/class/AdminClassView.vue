@@ -88,6 +88,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // 教师端的「我的班级」列表。数据源是 getTeacherClassList（传当前用户 ID），
 // 因此教师看不到他人班级；管理员在这一页看到的是自己作为教师身份创建的班级，
 // 跨教师的全局视图在 /admin/classes。
@@ -118,7 +120,7 @@ const fetchList = async () => {
     }
   } catch (error) {
     console.error(error)
-    ElMessage.error('获取班级列表失败，请稍后重试')
+    showApiError(error, '获取班级列表失败，请稍后重试')
   } finally {
     listLoading.value = false
   }

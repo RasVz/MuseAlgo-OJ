@@ -9,9 +9,9 @@ package com.musealgo.oj.problem.application;
  * 而不是通用参数错误。抛出时事务已回滚，不会留下半写状态。
  * </p>
  */
-public class CaseSetChangedException extends RuntimeException {
+public class CaseSetChangedException extends com.musealgo.oj.common.exception.BusinessException {
 
     public CaseSetChangedException(String message) {
-        super(message);
+        super(com.musealgo.oj.problem.error.ProblemErrorCode.PROBLEM_CASE_SET_CHANGED, message);
     }
 }

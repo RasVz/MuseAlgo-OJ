@@ -30,5 +30,8 @@ public interface PlagiarismReportMapper extends BaseMapper<PlagiarismReport> {
             @Param("classId") Long classId,
             @Param("contestId") Long contestId,
             @Param("problemId") Long problemId,
-            @Param("status") String status);
+            @Param("status") String status,
+            @Param("restrictOwner") boolean restrictOwner,
+            @Param("classIds") java.util.List<Long> classIds,
+            @Param("contestIds") java.util.List<Long> contestIds);
 }

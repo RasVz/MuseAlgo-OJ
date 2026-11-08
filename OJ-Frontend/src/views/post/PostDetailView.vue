@@ -109,6 +109,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // 文章详情页：正文渲染 + 目录 + 点赞/收藏/关注 + 楼中楼评论 + 举报。
 // 点赞与收藏都是"先请求后更新 UI"而非乐观更新：文章详情页是低频操作，
 // 等一次往返换来的是"数字和服务端一定一致"，不值得为省 200ms 引入回滚逻辑。
@@ -230,7 +232,7 @@ const handleLike = async () => {
   try {
     const res = await togglePostLike(post.value.id, !post.value.isLiked)
     if (res.code === 200 && res.data) applyReactionData(res.data)
-  } catch { ElMessage.error('操作失败') }
+  } catch (caughtError) { showApiError(caughtError, '操作失败') }
 }
 
 const handleFavorite = async () => {
@@ -244,8 +246,8 @@ const handleFavorite = async () => {
 
     post.value.isFavorited = !wasFavorited
     ElMessage.success(wasFavorited ? '已取消收藏' : '已收藏')
-  } catch {
-    ElMessage.error('收藏操作失败')
+  } catch (caughtError) {
+    showApiError(caughtError, '收藏操作失败')
   }
 }
 

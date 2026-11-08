@@ -64,6 +64,7 @@
       </button>
     </div>
 
+    <el-alert v-if="loadError" :title="loadError" type="error" :closable="false" />
     <section v-if="items.length" class="review-list">
       <article v-for="item in items" :key="item.problemId" class="review-item">
         <div class="review-index">#{{ item.problemId }}</div>
@@ -87,7 +88,7 @@
       </article>
     </section>
 
-    <el-empty v-else-if="!loading" :image-size="100" :description="scope === 'today' ? '今天没有待复习题，继续保持！' : '还没有待复习的错题'">
+    <el-empty v-else-if="!loading && !loadError" :image-size="100" :description="scope === 'today' ? '今天没有待复习题，继续保持！' : '还没有待复习的错题'">
       <el-button type="primary" @click="router.push({ name: 'ProblemSet' })">去题库练习</el-button>
     </el-empty>
   </main>
@@ -108,6 +109,8 @@ import { getDifficultyColor, getDifficultyLabel } from '@/utils/difficulty'
 const router = useRouter()
 const scope = ref('today')
 const loading = ref(false)
+const loadError = ref('')
+let loadGeneration = 0
 const updatingId = ref(null)
 const items = ref([])
 const analyzing = ref(false)
@@ -122,16 +125,16 @@ const reasonLabel = (reason) => reason === 'UNSOLVED_7_DAYS' ? '超过 7 天未�
 const formatDate = (value) => value ? dayjs(value).format('YYYY-MM-DD') : '今日'
 
 const load = async () => {
+  const generation = ++loadGeneration
   loading.value = true
+  loadError.value = ''
   try {
     const res = await getReviewBook(scope.value)
-    items.value = res.code === 200 ? res.data || [] : []
-    if (res.code !== 200) ElMessage.error(res.msg || '错题本加载失败')
+    if (generation === loadGeneration) items.value = res.data || []
   } catch (error) {
-    console.error(error)
-    items.value = []
+    if (generation === loadGeneration) loadError.value = error.message || '错题本加载失败，请重试'
   } finally {
-    loading.value = false
+    if (generation === loadGeneration) loading.value = false
   }
 }
 const changeScope = (value) => {

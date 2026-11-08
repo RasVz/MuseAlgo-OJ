@@ -95,7 +95,7 @@ public class JudgeCompletionService {
         event.setRetryCount(0);
         event.setNextAttemptAt(LocalDateTime.now());
         event.setCreatedAt(LocalDateTime.now());
-        outboxEventMapper.insert(event);
+        if (outboxEventMapper.insert(event) != 1) throw new IllegalStateException("判题事件保存失败");
 
         log.info("【判题Worker】Outbox 事件已写入 eventId={}, submissionId={}",
                 event.getId(), task.getSubmissionId());
@@ -128,19 +128,19 @@ public class JudgeCompletionService {
         item.setStatus(RejudgeItem.STATUS_SUCCEEDED);
         item.setFinishedAt(now);
         item.setErrorMessage(null);
-        rejudgeItemMapper.updateById(item);
+        if (rejudgeItemMapper.updateById(item) != 1) throw new IllegalStateException("重判条目结果保存失败");
 
-        RejudgeOperation operation = rejudgeOperationMapper.selectById(item.getOperationId());
+        RejudgeOperation operation = rejudgeOperationMapper.selectForUpdate(item.getOperationId());
         if (operation != null) {
             int succeeded = nonNull(operation.getSucceededItems()) + 1;
             int failed = nonNull(operation.getFailedItems());
             int total = nonNull(operation.getTotalItems());
             operation.setSucceededItems(succeeded);
             if (succeeded + failed >= total) {
-                operation.setStatus(RejudgeOperation.STATUS_COMPLETED);
+                operation.setStatus(failed > 0 ? RejudgeOperation.STATUS_PARTIAL : RejudgeOperation.STATUS_COMPLETED);
                 operation.setFinishedAt(now);
             }
-            rejudgeOperationMapper.updateById(operation);
+            if (rejudgeOperationMapper.updateById(operation) != 1) throw new IllegalStateException("重判操作进度保存失败");
         }
 
         // 重判可能把 AC 改成 WA 或反之，缓存列必须按提交表全量重算（幂等）。

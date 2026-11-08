@@ -1,3 +1,5 @@
+
+import { showApiError } from '@/utils/errorFeedback'
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import html2canvas from 'html2canvas'
@@ -43,7 +45,7 @@ export function useReportExport() {
       setTimeout(() => URL.revokeObjectURL(url), 1000)
       ElMessage.success('图片导出成功')
     } catch (error) {
-      ElMessage.error('导出图片失败: ' + (error?.message || '未知错误'))
+      showApiError(error, '导出图片失败: ' + (error?.message || '未知错误'))
     } finally {
       frame?.remove()
       host?.remove()

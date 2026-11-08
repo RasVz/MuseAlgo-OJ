@@ -1,11 +1,13 @@
 package com.musealgo.oj.common.api;
 
 import lombok.Data;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import java.util.Map;
 
 /**
  * 全局统一响应体 {@code {code, message, data}}。
  * <p>
- * {@code code} 取业务码，<strong>只有 {@code 200} 表示成功</strong>，HTTP 状态码始终为 200。
+ * {@code code} 取业务码，<strong>只有 {@code 200} 表示成功</strong>，普通业务响应沿用 HTTP 200；Security、报告预览等保留实际 HTTP 状态。
  * 前端拦截器就是按「code 是否等于 200」决定成功还是弹错，所以这个约定不能改成「HTTP 2xx 即成功」
  * 或引入别的成功码——那会让所有接口的失败分支走到成功逻辑上。
  * </p>
@@ -23,6 +25,12 @@ public class Result<T> {
     private Integer code; // 200成功, 401未登录, 500错误
     private String message;
     private T data;
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private String errorCode;
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private String traceId;
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private Map<String, ?> details;
 
     public static <T> Result<T> success(T data) {
         Result<T> r = new Result<>();

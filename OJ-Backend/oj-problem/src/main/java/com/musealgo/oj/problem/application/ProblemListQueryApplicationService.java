@@ -10,7 +10,6 @@ import org.springframework.util.StringUtils;
 import com.musealgo.oj.problem.entity.Problem;
 import com.musealgo.oj.problem.service.ProblemService;
 
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -108,12 +107,10 @@ public class ProblemListQueryApplicationService {
     }
 
     private Set<String> getTableColumns(String t) {
-        try {
-            Set<String> s = new HashSet<>();
-            for (Map<String, Object> r : jdbcTemplate.queryForList("SHOW COLUMNS FROM " + t))
-                if (r.get("Field") != null) s.add(r.get("Field").toString());
-            return s;
-        } catch (Exception e) { return Collections.emptySet(); }
+        Set<String> columns = new HashSet<>();
+        for (Map<String, Object> row : jdbcTemplate.queryForList("SHOW COLUMNS FROM " + t))
+            if (row.get("Field") != null) columns.add(row.get("Field").toString());
+        return columns;
     }
 
     private String pickColumn(Set<String> cs, String... cands) {

@@ -36,6 +36,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 /**
  * 首页侧栏「题目推荐」卡片：按用户当前练习情况给出可做的题目，支持手动换一批。
  *
@@ -93,7 +95,7 @@ const fetchRecommendations = async () => {
   } catch (error) {
     recommendedProblems.value = []
     console.error('获取推荐失败', error)
-    ElMessage.error('获取题目推荐失败')
+    showApiError(error, '获取题目推荐失败')
   } finally {
     loading.value = false
   }

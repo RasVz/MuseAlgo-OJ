@@ -14,7 +14,7 @@ class ProblemListContractTest {
         var lists=mock(ProblemListService.class);var users=mock(UserQuery.class);
         var homework=new ProblemList();homework.setId(4L);homework.setCreatorId(2L);homework.setType((byte)4);
         when(lists.getById(4L)).thenReturn(homework);when(users.findDisplayInfo(2L)).thenReturn(Optional.empty());
-        var result=new ProblemListController(users,lists).getDetail(4L).getData();
+        var result=new ProblemListController(mock(com.musealgo.oj.problem.application.ProblemListAccessService.class), mock(com.musealgo.oj.api.teaching.ClassQuery.class),users,lists).getDetail(4L).getData();
         assertEquals((byte)4,result.getType());
     }
 }

@@ -1,5 +1,8 @@
 package com.musealgo.oj.community.notification;
 
+import com.musealgo.oj.common.exception.ErrorResponses;
+import com.musealgo.oj.community.error.CommunityErrorCode;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -47,13 +50,13 @@ public class ReportNotificationAdminController {
             try {
                 parsedJobId = Long.valueOf(jobId.trim());
             } catch (NumberFormatException error) {
-                return Result.error(400, "任务 ID 必须为数字");
+                return ErrorResponses.failure(CommunityErrorCode.COMMUNITY_INPUT_INVALID, "任务 ID 必须为数字");
             }
         }
         try {
             return Result.success(adminService.list(status, eventKind, parsedJobId, page, size));
         } catch (IllegalArgumentException error) {
-            return Result.error(400, error.getMessage());
+            throw error;
         }
     }
 
@@ -66,7 +69,8 @@ public class ReportNotificationAdminController {
         ReportNotificationAdminService.RedriveOutcome outcome = adminService.redrive(
                 intentId, request == null ? null : request.reason(), SecurityUtils.getUserId());
         if (!outcome.success()) {
-            Result<Map<String, String>> failure = Result.error(outcome.resultCode(), outcome.message());
+            Result<Map<String, String>> failure = ErrorResponses.failure(new com.musealgo.oj.common.exception.ErrorDefinition(
+                    outcome.errorCode(), outcome.resultCode(), outcome.message()));
             failure.setData(Map.of("errorCode", outcome.errorCode()));
             return failure;
         }

@@ -147,6 +147,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // 班级成员管理：查看成员、改备注、移出班级，以及批量生成学习周报。
 // 备注采用行内编辑（editingRemark + tempRemark 两个 UI 状态字段），
 // 编辑态挂在行数据上而不是全局 state，才能做到同时只编辑一行。
@@ -525,7 +527,7 @@ const handleBatchGenerate = async () => {
       else stopReportPolling()
     }
   } catch (e) {
-    ElMessage.error('批量受理失败：' + (e?.message || '网络异常'))
+    showApiError(e, '批量受理失败：' + (e?.message || '网络异常'))
   } finally {
     batchGenerating.value = false
   }

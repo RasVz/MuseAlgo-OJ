@@ -1,5 +1,8 @@
 package com.musealgo.oj.community.notification;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.community.error.CommunityErrorCode;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -45,7 +48,7 @@ public class ReportNotificationAdminService {
         String normalizedStatus = normalizeStatus(status);
         String normalizedEventKind = normalizeEventKind(eventKind);
         if (jobId != null && jobId <= 0) {
-            throw new IllegalArgumentException("任务 ID 必须为正数");
+            throw new BusinessException(CommunityErrorCode.COMMUNITY_INPUT_INVALID, "任务 ID 必须为正数");
         }
 
         StringBuilder where = new StringBuilder(" WHERE 1 = 1");
@@ -195,7 +198,7 @@ public class ReportNotificationAdminService {
         if (status == null || status.isBlank()) return null;
         String normalized = status.trim().toUpperCase(Locale.ROOT);
         if (!ALLOWED_STATUSES.contains(normalized)) {
-            throw new IllegalArgumentException("不支持的通知状态");
+            throw new BusinessException(CommunityErrorCode.COMMUNITY_INPUT_INVALID, "不支持的通知状态");
         }
         return normalized;
     }
@@ -204,7 +207,7 @@ public class ReportNotificationAdminService {
         if (eventKind == null || eventKind.isBlank()) return null;
         String normalized = eventKind.trim().toUpperCase(Locale.ROOT);
         if (!ALLOWED_EVENT_KINDS.contains(normalized)) {
-            throw new IllegalArgumentException("不支持的报告通知事件类型");
+            throw new BusinessException(CommunityErrorCode.COMMUNITY_INPUT_INVALID, "不支持的报告通知事件类型");
         }
         return normalized;
     }

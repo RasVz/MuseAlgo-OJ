@@ -62,6 +62,10 @@ class JudgeTaskServiceImplTest {
                         new com.baomidou.mybatisplus.core.MybatisConfiguration(), "test"), JudgeTask.class);
     }
 
+    @Test void refusedTaskInsertCannotReportQueued() {
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class, () -> service.submit(99L));
+    }
+
     @Test
     void claimBatchIncrementsGenerationAndKeepsRetryBudget() {
         when(judgeTaskMapper.claimTasks(2)).thenReturn(List.of(task(1L, 10L, 0, 0), task(2L, 11L, 2, 1)));
@@ -138,7 +142,9 @@ class JudgeTaskServiceImplTest {
         operation.setTotalItems(1);
         operation.setSucceededItems(0);
         operation.setFailedItems(0);
-        when(rejudgeOperationMapper.selectById(9L)).thenReturn(operation);
+        when(rejudgeOperationMapper.selectForUpdate(9L)).thenReturn(operation);
+        when(rejudgeOperationMapper.updateById(operation)).thenReturn(1);
+        when(rejudgeItemMapper.updateById(any(RejudgeItem.class))).thenReturn(1);
 
         service.fail(task, "judge0 unavailable on all retries");
 

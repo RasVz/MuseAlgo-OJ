@@ -1,5 +1,9 @@
 package com.musealgo.oj.community.controller;
 
+import com.musealgo.oj.common.exception.ErrorResponses;
+import com.musealgo.oj.common.exception.CommonErrorCode;
+import com.musealgo.oj.community.error.CommunityErrorCode;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
@@ -45,6 +49,7 @@ import java.util.Map;
 @RequestMapping("/community")
 @RequiredArgsConstructor
 public class CommunityGovernanceController {
+    private final com.musealgo.oj.community.post.PostTargetService postTargets;
     private final JdbcTemplate jdbcTemplate;
     private final PostService postService;
     private final CommunityTagService communityTagService;
@@ -54,11 +59,8 @@ public class CommunityGovernanceController {
      * 提交举报。
      * <p>
      * {@code content_report} 上的唯一约束是
-     * {@code (reporter_id, post_id, status)}——它约束的是「同一用户对同一内容
-     * <b>在同一个处理状态下</b>只能有一条记录」，而不是终身只能举报一次。
-     * 因此这里的语义是：待审核（PENDING）期间重复提交会被拒，
-     * 但上一条已结案（RESOLVED / DISMISSED）后仍可再次举报。
-     * 这符合实际需要——内容被解封后用户应能重新举报。
+     * 仅约束同一用户、同一内容的 PENDING 记录（V71 的 nullable generated key）。
+     * 已结案记录保留历史；结案后可以再次提交并再次达到同一终态。
      * </p>
      * <p>
      * 实现上<b>不</b>先查后插（那样在并发下有窗口、且无法区分是哪种状态冲突），
@@ -69,24 +71,25 @@ public class CommunityGovernanceController {
     @AuditLog(module = "community", action = "report_post")
     public Result<Void> report(@RequestBody Map<String, String> payload) {
         Long userId = SecurityUtils.getUserId();
-        if (userId == null) return Result.error(401, "请先登录");
+        if (userId == null) return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "请先登录");
         Long postId;
-        try { postId = Long.parseLong(payload.get("postId")); } catch (Exception e) { return Result.error("举报对象无效"); }
+        try { postId = Long.parseLong(payload.get("postId")); } catch (Exception e) { return ErrorResponses.failure(CommunityErrorCode.COMMUNITY_INPUT_INVALID, "举报对象无效"); }
         String reason = payload.get("reason");
-        if (reason == null || reason.isBlank()) return Result.error("请选择举报原因");
+        if (reason == null || reason.isBlank()) return ErrorResponses.failure(CommunityErrorCode.COMMUNITY_INPUT_INVALID, "请选择举报原因");
         Post post = postService.getById(postId);
-        if (post == null || (post.getIsDeleted() != null && post.getIsDeleted() == 1)) return Result.error("内容不存在");
+        if (post == null || (post.getIsDeleted() != null && post.getIsDeleted() == 1)) return ErrorResponses.failure(CommunityErrorCode.POST_NOT_FOUND, "内容不存在");
+        postTargets.requireReadable(postId, userId);
         try {
             jdbcTemplate.update("INSERT INTO content_report (reporter_id, post_id, reason, detail) VALUES (?, ?, ?, ?)", userId, postId, reason, payload.get("detail"));
         } catch (org.springframework.dao.DuplicateKeyException e) {
-            return Result.error("你已举报过该内容，正在等待审核");
+            return ErrorResponses.failure(CommunityErrorCode.COMMUNITY_REPORT_ALREADY_PENDING, "你已举报过该内容，正在等待审核");
         }
         return Result.success(null);
     }
 
     @GetMapping("/moderation/reports")
     public Result<List<Map<String, Object>>> reports(@RequestParam(defaultValue = "PENDING") String status) {
-        if (!SecurityUtils.isAdmin()) return Result.error(403, "仅管理员可审核举报");
+        if (!SecurityUtils.isAdmin()) return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "仅管理员可审核举报");
         return Result.success(jdbcTemplate.queryForList("SELECT r.id, r.reason, r.detail, r.status, r.create_time AS createTime, p.id AS postId, p.title, "
                 + "ru.nickname AS reporterName, ru.username AS reporterUsername, "
                 + "au.nickname AS reportedName, au.username AS reportedUsername "
@@ -98,7 +101,7 @@ public class CommunityGovernanceController {
 
     @GetMapping("/moderation/reports/{id}")
     public Result<Map<String, Object>> reportDetail(@PathVariable Long id) {
-        if (!SecurityUtils.isAdmin()) return Result.error(403, "仅管理员可审核举报");
+        if (!SecurityUtils.isAdmin()) return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "仅管理员可审核举报");
         List<Map<String, Object>> records = jdbcTemplate.queryForList(
                 "SELECT r.id, r.reason, r.detail, r.status, r.create_time AS createTime, "
                         + "p.id AS postId, p.title, p.create_time AS postCreateTime, "
@@ -107,7 +110,7 @@ public class CommunityGovernanceController {
                         + "FROM content_report r JOIN post p ON p.id = r.post_id "
                         + "LEFT JOIN user ru ON ru.id = r.reporter_id "
                         + "LEFT JOIN user au ON au.id = p.author_id WHERE r.id = ?", id);
-        if (records.isEmpty()) return Result.error("举报记录不存在");
+        if (records.isEmpty()) return ErrorResponses.failure(CommunityErrorCode.COMMUNITY_REPORT_NOT_FOUND, "举报记录不存在");
         return Result.success(records.get(0));
     }
 
@@ -121,26 +124,29 @@ public class CommunityGovernanceController {
      * <b>注意这里改的是 {@code privacy} 而非 {@code is_deleted}，原因见类头注释。</b>
      * <p>
      * 另需注意：结案只把当前这条记录改成终态，同一用户对同一内容的
-     * <b>其他</b> PENDING 记录不会被联动处理。但由于唯一键含 {@code status}，
+     * <b>其他</b> PENDING 记录不会被联动处理。唯一键只约束 PENDING，
      * 用户在旧记录结案后仍可再次提交举报——这是有意的，
      * 详见 {@link #report} 的说明。
      * </p>
      */
     @PostMapping("/moderation/reports/{id}")
     @AuditLog(module = "community", action = "resolve_report")
+    @org.springframework.transaction.annotation.Transactional(rollbackFor = Exception.class)
     public Result<Void> resolveReport(@PathVariable Long id, @RequestBody Map<String, Object> payload) {
         Long adminId = SecurityUtils.getUserId();
-        if (!SecurityUtils.isAdmin()) return Result.error(403, "仅管理员可审核举报");
+        if (!SecurityUtils.isAdmin()) return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "仅管理员可审核举报");
         List<Map<String, Object>> records = jdbcTemplate.queryForList("SELECT post_id AS postId FROM content_report WHERE id = ?", id);
-        if (records.isEmpty()) return Result.error("举报记录不存在");
+        if (records.isEmpty()) return ErrorResponses.failure(CommunityErrorCode.COMMUNITY_REPORT_NOT_FOUND, "举报记录不存在");
         boolean hide = Boolean.TRUE.equals(payload.get("hide"));
         String status = hide ? "RESOLVED" : "DISMISSED";
-        jdbcTemplate.update("UPDATE content_report SET status = ?, handler_id = ?, handle_note = ?, handled_at = NOW() WHERE id = ?", status, adminId, payload.get("note"), id);
+        if (jdbcTemplate.update("UPDATE content_report SET status = ?, handler_id = ?, handle_note = ?, handled_at = NOW() WHERE id = ? AND status = 'PENDING'", status, adminId, payload.get("note"), id) != 1)
+            throw new com.musealgo.oj.common.exception.BusinessException(CommonErrorCode.STATE_CONFLICT, "举报已处理，请刷新后查看");
         if (hide) {
             Long postId = ((Number) records.get(0).get("postId")).longValue();
             Post post = postService.getById(postId);
             if (post != null) {
-                jdbcTemplate.update("UPDATE post SET privacy = 1 WHERE id = ?", postId);
+                if (jdbcTemplate.update("UPDATE post SET privacy = 1 WHERE id = ?", postId) != 1)
+                    throw new IllegalStateException("帖子隐藏失败");
                 notificationService.notify(new NotificationCommand(post.getAuthorId(), adminId, NotificationType.MODERATION,
                         NotificationTargetType.POST, postId, "你的内容已被限制可见", "管理员已根据举报处理该内容"));
             }
@@ -151,9 +157,9 @@ public class CommunityGovernanceController {
     @PostMapping("/moderation/post/{id}")
     @AuditLog(module = "community", action = "moderate_post")
     public Result<Void> moderatePost(@PathVariable Long id, @RequestBody Map<String, Object> payload) {
-        if (!SecurityUtils.isAdmin()) return Result.error(403, "仅管理员可管理内容");
+        if (!SecurityUtils.isAdmin()) return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "仅管理员可管理内容");
         Post post = postService.getById(id);
-        if (post == null) return Result.error("内容不存在");
+        if (post == null) return ErrorResponses.failure(CommunityErrorCode.POST_NOT_FOUND, "内容不存在");
         Integer top = asFlag(payload.get("isTop"), post.getIsTop());
         Integer essence = asFlag(payload.get("isEssence"), post.getIsEssence());
         Integer privacy = asFlag(payload.get("privacy"), post.getPrivacy());
@@ -163,7 +169,7 @@ public class CommunityGovernanceController {
 
     @GetMapping("/moderation/tags")
     public Result<List<Map<String, Object>>> tags() {
-        if (!SecurityUtils.isAdmin()) return Result.error(403, "仅管理员可管理标签");
+        if (!SecurityUtils.isAdmin()) return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "仅管理员可管理标签");
         return Result.success(communityTagService.all());
     }
 
@@ -171,18 +177,18 @@ public class CommunityGovernanceController {
     @AuditLog(module = "community", action = "add_tag")
     public Result<Void> addTag(@RequestBody Map<String, String> payload) {
         Long userId = SecurityUtils.getUserId();
-        if (!SecurityUtils.isAdmin()) return Result.error(403, "仅管理员可管理标签");
+        if (!SecurityUtils.isAdmin()) return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "仅管理员可管理标签");
         String name = payload.get("name") == null ? "" : payload.get("name").trim();
         String group = payload.get("groupName") == null ? "自定义标签" : payload.get("groupName").trim();
-        if (name.isEmpty() || name.length() > 64 || group.isEmpty()) return Result.error("标签名称或分组不合法");
-        try { communityTagService.save(name, group, userId); } catch (org.springframework.dao.DuplicateKeyException e) { return Result.error("该标签已存在"); }
+        if (name.isEmpty() || name.length() > 64 || group.isEmpty()) return ErrorResponses.failure(CommunityErrorCode.COMMUNITY_INPUT_INVALID, "标签名称或分组不合法");
+        try { communityTagService.save(name, group, userId); } catch (org.springframework.dao.DuplicateKeyException e) { return ErrorResponses.failure(CommunityErrorCode.COMMUNITY_TAG_ALREADY_EXISTS, "该标签已存在"); }
         return Result.success(null);
     }
 
     @PostMapping("/moderation/tags/{id}")
     @AuditLog(module = "community", action = "set_tag")
     public Result<Void> setTagEnabled(@PathVariable Long id, @RequestParam boolean enabled) {
-        if (!SecurityUtils.isAdmin()) return Result.error(403, "仅管理员可管理标签");
+        if (!SecurityUtils.isAdmin()) return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "仅管理员可管理标签");
         communityTagService.setEnabled(id, enabled);
         return Result.success(null);
     }

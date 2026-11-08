@@ -1,5 +1,8 @@
 package com.musealgo.oj.system.controller;
 
+import com.musealgo.oj.common.exception.ErrorResponses;
+import com.musealgo.oj.system.error.SystemErrorCode;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -46,7 +49,7 @@ public class FileController {
     public Result<String> uploadImage(@RequestParam("file") MultipartFile file) {
         // 校验文件是否为空
         if (file.isEmpty()) {
-            return Result.fail("上传文件不能为空");
+            return ErrorResponses.failure(SystemErrorCode.SYSTEM_INPUT_INVALID, "上传文件不能为空");
         }
 
         // 调用 COS 服务上传，并拿到图片的 URL

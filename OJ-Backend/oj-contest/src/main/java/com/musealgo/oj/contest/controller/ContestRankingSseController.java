@@ -9,6 +9,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import com.musealgo.oj.common.exception.ForbiddenException;
 import com.musealgo.oj.common.utils.SecurityUtils;
 import com.musealgo.oj.contest.entity.Contest;
+import com.musealgo.oj.contest.application.ContestAccessPolicy;
 import com.musealgo.oj.contest.service.ContestService;
 import com.musealgo.oj.contest.sse.ContestRankBoardType;
 import com.musealgo.oj.contest.sse.SseRegistry;
@@ -69,6 +70,7 @@ public class ContestRankingSseController {
 
     private SseEmitter openStream(Long contestId, ContestRankBoardType boardType) {
         Contest contest = contestService.getById(contestId);
+        ContestAccessPolicy.requireReadable(contest);
         if (isOiContestInProgress(contest) && !SecurityUtils.isTeacherOrAdmin()) {
             throw new ForbiddenException("OI 比赛进行中，排行榜暂不可见");
         }

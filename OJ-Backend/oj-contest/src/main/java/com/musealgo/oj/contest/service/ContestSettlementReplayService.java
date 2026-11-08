@@ -1,5 +1,8 @@
 package com.musealgo.oj.contest.service;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.contest.error.ContestErrorCode;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -103,7 +106,7 @@ public class ContestSettlementReplayService {
         replay.setStatus("RUNNING"); replay.setTotalContests(before.contests().size());
         replay.setAffectedUsers(before.userRatings().size()); replay.setStartedAt(now); replay.setCreateTime(now);
         replay.setBackupJson(json(new ReplayBackup(2, before, null)));
-        replayMapper.insert(replay);
+        requireWrite(replayMapper.insert(replay));
 
         Map<Long, Integer> ratings = baseRatings(before);
         clearResults(before.contests());
@@ -111,7 +114,7 @@ public class ContestSettlementReplayService {
         userRatingCommand.batchUpdateRatings(ratings);
         replay.setBackupJson(json(new ReplayBackup(2, before, fingerprint(state(fromContestId)))));
         replay.setStatus("COMPLETED"); replay.setFinishedAt(LocalDateTime.now());
-        replayMapper.updateById(replay);
+        requireWrite(replayMapper.updateById(replay));
         log.info("链式重放完成 from={}, contests={}, replayId={}", fromContestId, before.contests().size(), replay.getId());
         return result(replay);
     }
@@ -126,7 +129,7 @@ public class ContestSettlementReplayService {
 
     public ContestSettlementReplay getReplay(Long replayId) {
         ContestSettlementReplay replay = replayMapper.selectById(replayId);
-        if (replay == null) throw new IllegalArgumentException("重放记录不存在");
+        if (replay == null) throw new BusinessException(ContestErrorCode.SETTLEMENT_REPLAY_NOT_FOUND, "重放记录不存在");
         return replay;
     }
 
@@ -159,39 +162,39 @@ public class ContestSettlementReplayService {
         ReplayState before = backup.before();
         clearResults(before.contests());
         // 保留原主键和时间，保证可逐字段核对，也支持按逆序恢复多次重放。
-        before.ranks().forEach(contestRankMapper::insert);
-        before.ratingHistory().forEach(userRatingMapper::insert);
+        before.ranks().forEach(row -> requireWrite(contestRankMapper.insert(row)));
+        before.ratingHistory().forEach(row -> requireWrite(userRatingMapper.insert(row)));
         List<Long> ids = before.contests().stream().map(Contest::getId).toList();
         settlementMapper.delete(new LambdaQueryWrapper<ContestSettlement>().in(ContestSettlement::getContestId, ids));
-        before.settlements().forEach(settlementMapper::insert);
+        before.settlements().forEach(row -> requireWrite(settlementMapper.insert(row)));
         userRatingCommand.batchUpdateRatings(before.userRatings());
         replay.setStatus("RESTORED"); replay.setRestoredBy(operatorId); replay.setRestoredAt(LocalDateTime.now());
-        replay.setRestoreReason(reason.trim()); replayMapper.updateById(replay);
+        replay.setRestoreReason(reason.trim()); requireWrite(replayMapper.updateById(replay));
         return result(replay);
     }
 
     private ReplayBackup restorableBackup(ContestSettlementReplay replay) {
-        if (!"COMPLETED".equals(replay.getStatus())) throw new IllegalStateException("仅成功且未恢复的重放可恢复");
+        if (!"COMPLETED".equals(replay.getStatus())) throw new BusinessException(ContestErrorCode.SETTLEMENT_REPLAY_NOT_RESTORABLE, "仅成功且未恢复的重放可恢复");
         try {
             ReplayBackup backup = objectMapper.readValue(replay.getBackupJson(), ReplayBackup.class);
             if (backup.version() != 2 || backup.before() == null || backup.afterFingerprint() == null)
-                throw new IllegalArgumentException("备份版本不支持恢复");
+                throw new BusinessException(ContestErrorCode.CONTEST_INPUT_INVALID, "备份版本不支持恢复");
             return backup;
-        } catch (Exception e) {
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             throw new IllegalStateException("旧版或不完整备份不能自动恢复，请走数据库恢复流程", e);
         }
     }
 
     private void requireEnabledAndReason(String reason) {
-        if (!enabled) throw new IllegalStateException("链式重放维护开关未开启");
+        if (!enabled) throw new BusinessException(ContestErrorCode.SETTLEMENT_REPLAY_DISABLED, "链式重放维护开关未开启");
         if (reason == null || reason.isBlank() || reason.length() > 500)
-            throw new IllegalArgumentException("必须填写 1~500 字的操作原因");
+            throw new BusinessException(ContestErrorCode.CONTEST_INPUT_INVALID, "必须填写 1~500 字的操作原因");
     }
 
     private void requireExecutable(SettlementReplayPreviewVO preview, String confirm) {
-        if (!preview.canExecute()) throw new IllegalStateException(String.join("；", preview.warnings()));
+        if (!preview.canExecute()) throw new BusinessException(ContestErrorCode.SETTLEMENT_REPLAY_BLOCKED, String.join("；", preview.warnings()));
         if (!Objects.equals(preview.confirmation(), confirm == null ? null : confirm.trim()))
-            throw new IllegalStateException("预览已变化或确认串不匹配，请重新预览");
+            throw new BusinessException(ContestErrorCode.SETTLEMENT_REPLAY_PREVIEW_CHANGED, "预览已变化或确认串不匹配，请重新预览");
     }
 
     private void lockChain() {
@@ -264,7 +267,7 @@ public class ContestSettlementReplayService {
             entities.add(entity);
         }
         if (!entities.isEmpty()) {
-            contestRankMapper.batchInsert(entities);
+            if (contestRankMapper.batchInsert(entities) != entities.size()) throw new IllegalStateException("比赛成绩保存不完整");
         }
 
         ContestSettlement settlement = settlementMapper.selectById(contest.getId());
@@ -281,10 +284,14 @@ public class ContestSettlementReplayService {
         settlement.setRatingAlgorithmVersion(RATING_VERSION);
         settlement.setUpdateTime(now);
         if (settlementMapper.selectById(contest.getId()) == null) {
-            settlementMapper.insert(settlement);
+            requireWrite(settlementMapper.insert(settlement));
         } else {
-            settlementMapper.updateById(settlement);
+            requireWrite(settlementMapper.updateById(settlement));
         }
+    }
+
+    private void requireWrite(int affected) {
+        if (affected != 1) throw new IllegalStateException("结算重放记录保存失败");
     }
 
     private List<ContestRankVO> concat(List<ContestRankVO> a, List<ContestRankVO> b) {
@@ -352,7 +359,11 @@ public class ContestSettlementReplayService {
     private ReplayState state(Long fromId) {
         List<Contest> all = contestMapper.selectFinalizedForReplay();
         Contest from = all.stream().filter(c -> Objects.equals(c.getId(), fromId)).findFirst()
-                .orElseThrow(() -> new IllegalStateException("起点比赛不存在或尚未固化"));
+                .orElseThrow(() -> {
+                    Contest requested = contestMapper.selectById(fromId);
+                    return requested == null ? new BusinessException(ContestErrorCode.CONTEST_NOT_FOUND)
+                            : new BusinessException(ContestErrorCode.SETTLEMENT_REPLAY_BLOCKED, "起点比赛尚未固化");
+                });
         if (from.getEndTime() == null) throw new IllegalStateException("起点比赛缺少结束时间");
         List<Contest> chain = all.stream().filter(c -> c.getEndTime() != null
                 && (c.getEndTime().isAfter(from.getEndTime()) || c.getEndTime().equals(from.getEndTime()) && c.getId() >= fromId)).toList();

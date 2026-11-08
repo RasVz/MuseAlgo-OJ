@@ -107,7 +107,8 @@ class ContestSettlementReplayIT {
         var replay = jdbc.queryForMap("SELECT status, backup_json FROM contest_settlement_replay WHERE id = ?", result.replayId());
         assertEquals("COMPLETED", replay.get("status"));
         assertNotNull(replay.get("backup_json"));
-        assertThrows(IllegalStateException.class, () -> replayService.execute(contestA, "旧预览不得二次执行", 1L, preview.confirmation()));
+        assertEquals("SETTLEMENT_REPLAY_PREVIEW_CHANGED", assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
+                () -> replayService.execute(contestA, "旧预览不得二次执行", 1L, preview.confirmation())).getErrorCode().key());
         var restore = replayService.previewRestore(result.replayId());
         assertTrue(restore.canExecute(), restore.warnings().toString());
         replayService.restore(result.replayId(), "验证完整反向恢复", 1L, restore.confirmation());
@@ -116,7 +117,8 @@ class ContestSettlementReplayIT {
         assertEquals(settlementsBefore, jdbc.queryForList("SELECT * FROM contest_settlement WHERE contest_id IN (?, ?) ORDER BY contest_id", contestA, contestB));
         assertEquals(ratingsBeforeReplay.get(userA), ratingOf(userA));
         assertEquals("RESTORED", replayService.getReplay(result.replayId()).getStatus());
-        assertThrows(IllegalStateException.class, () -> replayService.previewRestore(result.replayId()));
+        assertEquals("SETTLEMENT_REPLAY_NOT_RESTORABLE", assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
+                () -> replayService.previewRestore(result.replayId())).getErrorCode().key());
     }
 
     @Test
@@ -154,7 +156,8 @@ class ContestSettlementReplayIT {
         jdbc.update("UPDATE contest_rank SET award='后续颁奖' WHERE contest_id=?", contestA);
         var restore = replayService.previewRestore(result.replayId());
         assertFalse(restore.canExecute());
-        assertThrows(IllegalStateException.class, () -> replayService.restore(result.replayId(), "不得覆盖后续颁奖", 1L, restore.confirmation()));
+        assertEquals("SETTLEMENT_REPLAY_BLOCKED", assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
+                () -> replayService.restore(result.replayId(), "不得覆盖后续颁奖", 1L, restore.confirmation())).getErrorCode().key());
     }
 
     @Test

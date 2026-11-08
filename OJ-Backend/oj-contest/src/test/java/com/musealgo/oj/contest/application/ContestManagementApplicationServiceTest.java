@@ -6,6 +6,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import com.musealgo.oj.contest.entity.Contest;
 import com.musealgo.oj.contest.service.ContestService;
+import com.musealgo.oj.common.security.AuthenticatedUser;
 import java.time.LocalDateTime;
 import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
@@ -43,4 +44,59 @@ class ContestManagementApplicationServiceTest {
         assertEquals(1600, existing.getRatingMax());
         verifyNoInteractions(levels);
     }
+
+    @Test void sharedContestGuardRejectsStudentBeforeReadingContest() {
+        var repository = mock(ContestService.class);
+        var access = new ContestManagementApplicationService(repository,
+                mock(com.musealgo.oj.contest.service.ContestLevelService.class));
+        login(2L, "ROLE_STUDENT");
+
+        assertThrows(com.musealgo.oj.common.exception.ForbiddenException.class,
+                () -> access.requireManagedContest(7L));
+
+        verifyNoInteractions(repository);
+    }
+
+    @Test void sharedContestGuardAllowsOwnerTeacherAndRejectsAnotherTeacher() {
+        var repository = mock(ContestService.class);
+        var access = new ContestManagementApplicationService(repository,
+                mock(com.musealgo.oj.contest.service.ContestLevelService.class));
+        var owned = new Contest(); owned.setId(7L); owned.setAuthorId(1L);
+        when(repository.getByIdForUpdate(7L)).thenReturn(owned);
+
+        login(1L, "ROLE_TEACHER");
+        assertSame(owned, access.requireManagedContest(7L));
+
+        login(2L, "ROLE_TEACHER");
+        assertThrows(com.musealgo.oj.common.exception.ForbiddenException.class,
+                () -> access.requireManagedContest(7L));
+        verify(repository, times(2)).getByIdForUpdate(7L);
+    }
+
+    @Test void sharedContestGuardAllowsAdminRegardlessOfAuthor() {
+        var repository = mock(ContestService.class);
+        var access = new ContestManagementApplicationService(repository,
+                mock(com.musealgo.oj.contest.service.ContestLevelService.class));
+        var owned = new Contest(); owned.setId(7L); owned.setAuthorId(99L);
+        when(repository.getByIdForUpdate(7L)).thenReturn(owned);
+        login(1L, "ROLE_ADMIN");
+
+        assertSame(owned, access.requireManagedContest(7L));
+    }
+
+    private static void login(Long userId, String role) {
+        AuthenticatedUser principal = () -> userId;
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                principal, null, List.of(new SimpleGrantedAuthority(role))));
+    }
+    @Test void unknownFormalLevelIsAnExplicitRequestRejection() {
+        var repository=mock(ContestService.class);var levels=mock(com.musealgo.oj.contest.service.ContestLevelService.class);
+        login(1L,"ROLE_ADMIN");
+        var input=new Contest();input.setTitle("synthetic");input.setCategory("FORMAL");input.setLevelCode("missing");
+        input.setStartTime(LocalDateTime.now().plusDays(1));input.setEndTime(LocalDateTime.now().plusDays(2));input.setDuration(60);
+        var failure=assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
+                ()->new ContestManagementApplicationService(repository,levels).create(input,1L));
+        assertEquals("CONTEST_LEVEL_NOT_FOUND",failure.getErrorCode().key());
+    }
+
 }

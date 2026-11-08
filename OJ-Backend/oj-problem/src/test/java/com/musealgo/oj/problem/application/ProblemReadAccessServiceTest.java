@@ -57,7 +57,7 @@ class ProblemReadAccessServiceTest {
     }
     @Test void deletedProblemCannotBeReadEvenByAdmin() {
         problem(true).setIsDeleted(1); login(8L, "ADMIN");
-        assertThrows(IllegalArgumentException.class, () -> access.requireReadable(1L));
+        assertThrows(com.musealgo.oj.common.exception.BusinessException.class, () -> access.requireReadable(1L));
     }
     @Test void publicListSerializationNeverIncludesStandardAnswer() throws Exception {
         var p = new com.musealgo.oj.problem.entity.vo.ProblemVO(); p.setStdAnswer("SECRET-CODE"); p.setStdExplanation("SECRET-EXPLANATION");

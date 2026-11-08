@@ -1,5 +1,8 @@
 package com.musealgo.oj.problem.application;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.problem.error.ProblemErrorCode;
+
 import org.springframework.stereotype.Component;
 import com.musealgo.oj.common.utils.SecurityUtils;
 import com.musealgo.oj.problem.entity.Problem;
@@ -30,7 +33,7 @@ public class ProblemAccessGuard {
         SecurityUtils.requireTeacherOrAdmin();
         Problem problem = problemService.getById(problemId);
         if (problem == null) {
-            throw new IllegalArgumentException("题目不存在");
+            throw new BusinessException(ProblemErrorCode.PROBLEM_NOT_FOUND, "题目不存在");
         }
         SecurityUtils.requireOwnerOrAdmin(problem.getAuthorId());
         return problem;

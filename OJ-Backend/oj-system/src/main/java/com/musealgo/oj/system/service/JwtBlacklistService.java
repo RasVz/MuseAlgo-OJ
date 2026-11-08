@@ -1,6 +1,8 @@
 package com.musealgo.oj.system.service;
 
 import lombok.extern.slf4j.Slf4j;
+import com.musealgo.oj.common.exception.CommonErrorCode;
+import com.musealgo.oj.common.exception.DependencyUnavailableException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -12,8 +14,7 @@ import java.util.concurrent.TimeUnit;
  * <p>
  * 键：{@code oj:jwt:blacklist:{jti}}，TTL = token 剩余有效期，到期自动消失。
  * <p>
- * 故障策略：<b>fail-open</b>——Redis 异常时 {@link #isRevoked} 返回
- * false 并记 warn，保证 Redis 抖动不影响正常登录态（内网教学平台可用性优先）。
+ * 故障策略：fail-closed——Redis 异常时拒绝通过黑名单检查，避免已撤销会话恢复授权。
  */
 @Slf4j
 @Service
@@ -45,18 +46,19 @@ public class JwtBlacklistService {
      * 查询 jti 是否已被拉黑。
      *
      * @param jti JWT ID；null/空白返回 false
-     * @return true=已拉黑；Redis 异常时 fail-open 返回 false 并记 warn
+     * @return true=已拉黑；Redis 故障抛出受控不可用异常，调用方必须拒绝授权
      */
     public boolean isRevoked(String jti) {
         if (jti == null || jti.isBlank()) {
             return false;
         }
         try {
-            return Boolean.TRUE.equals(stringRedisTemplate.hasKey(KEY_PREFIX + jti));
+            Boolean revoked = stringRedisTemplate.hasKey(KEY_PREFIX + jti);
+            if (revoked == null) throw new IllegalStateException("JWT revocation lookup returned no result");
+            return revoked;
         } catch (Exception e) {
-            // fail-open：Redis 异常时放行（不阻断正常请求），仅记录
-            log.warn("JWT 黑名单检查失败（fail-open 放行）: jti={}, err={}", jti, e.getMessage());
-            return false;
+            log.warn("JWT 黑名单检查失败（fail-closed 拒绝授权）: jti={}, err={}", jti, e.getMessage());
+            throw new DependencyUnavailableException(CommonErrorCode.AUTH_DEPENDENCY_UNAVAILABLE, e);
         }
     }
 }

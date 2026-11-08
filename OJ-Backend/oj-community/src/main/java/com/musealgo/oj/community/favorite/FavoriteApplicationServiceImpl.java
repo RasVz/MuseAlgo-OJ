@@ -1,5 +1,8 @@
 package com.musealgo.oj.community.favorite;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.community.error.CommunityErrorCode;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import lombok.RequiredArgsConstructor;
@@ -57,6 +60,7 @@ class FavoriteApplicationServiceImpl implements FavoriteApplicationService {
     private final ProblemListCommand problemListCommand;
     private final JdbcTemplate jdbcTemplate;
     private final CommunityInteractionService interactionService;
+    private final com.musealgo.oj.community.post.PostTargetService postTargets;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -86,8 +90,13 @@ class FavoriteApplicationServiceImpl implements FavoriteApplicationService {
     @Transactional(rollbackFor = Exception.class)
     public boolean toggle(FavoriteCommand command) {
         command.validate();
-        if (command.targetType() != FavoriteTargetType.POST) requireGenericTarget(command);
-        return isActive(command) ? deactivate(command) : activate(command);
+        if (command.targetType() == FavoriteTargetType.POST) {
+            if (jdbcTemplate.queryForList("SELECT id FROM post WHERE id = ? FOR UPDATE", Long.class, command.targetId()).isEmpty())
+                throw new BusinessException(CommunityErrorCode.POST_NOT_FOUND);
+            return isActive(command) ? deactivate(command) : activate(command);
+        }
+        requireGenericTarget(command);
+        return changeGeneric(command, null);
     }
 
     @Override
@@ -151,7 +160,7 @@ class FavoriteApplicationServiceImpl implements FavoriteApplicationService {
                     try {
                         FavoriteTargetType type = FavoriteTargetType.from(row.get("target_type"));
                         if (counts.containsKey(type.responseKey())) counts.put(type.responseKey(), ((Number) row.get("cnt")).intValue());
-                    } catch (IllegalArgumentException ignored) { }
+                    } catch (IllegalArgumentException | BusinessException ignored) { }
                 });
         return counts;
     }
@@ -170,11 +179,15 @@ class FavoriteApplicationServiceImpl implements FavoriteApplicationService {
 
     @Override
     public List<Map<String, Object>> favoritePosts(Long userId, Integer postType) {
-        return jdbcTemplate.queryForList("SELECT p.id, p.title, p.summary, p.type, p.likes, p.comment_count, p.create_time, u.nickname AS authorName "
+        var rows = jdbcTemplate.queryForList("SELECT p.id, p.class_id AS classId, p.title, p.summary, p.type, p.likes, p.comment_count, p.create_time, u.nickname AS authorName "
                         + "FROM user_favorite uf JOIN post p ON p.id = uf.target_id AND p.is_deleted = 0 "
                         + "LEFT JOIN user u ON u.id = p.author_id WHERE uf.user_id = ? AND uf.target_type = ? AND uf.status = 1 "
-                        + "AND p.type = ? ORDER BY uf.create_time DESC LIMIT 50",
-                userId, FavoriteTargetType.POST.databaseValue(), postType);
+                        + "AND (p.privacy = 0 OR p.author_id = ?) AND p.type = ? ORDER BY uf.create_time DESC LIMIT 50",
+                userId, FavoriteTargetType.POST.databaseValue(), userId, postType);
+        Map<Long, Boolean> classAccess = new java.util.HashMap<>();
+        return rows.stream().filter(row -> row.get("classId") == null || classAccess.computeIfAbsent(
+                        ((Number) row.get("classId")).longValue(), id -> postTargets.canReadClass(id, userId)))
+                .peek(row -> row.remove("classId")).toList();
     }
 
     /**
@@ -204,6 +217,12 @@ class FavoriteApplicationServiceImpl implements FavoriteApplicationService {
                 + "WHERE uf.user_id = ? AND uf.target_type = ? AND uf.status = 1 ";
         List<Object> parameters = new ArrayList<>();
         parameters.add(userId); parameters.add(FavoriteTargetType.PROBLEM_LIST.databaseValue());
+        if (!com.musealgo.oj.common.utils.SecurityUtils.isAdmin()) {
+            base += "AND ((pl.type NOT IN (3,4) AND (pl.privacy=1 OR pl.creator_id=?)) "
+                    + "OR (pl.type IN (3,4) AND (EXISTS (SELECT 1 FROM class c WHERE c.id=pl.class_id AND c.teacher_id=?) "
+                    + "OR EXISTS (SELECT 1 FROM class_student cs WHERE cs.class_id=pl.class_id AND cs.student_id=?)))) ";
+            parameters.add(userId); parameters.add(userId); parameters.add(userId);
+        }
         if (keyword != null && !keyword.trim().isEmpty()) { base += "AND pl.title LIKE ? "; parameters.add("%" + keyword.trim() + "%"); }
         Long total = jdbcTemplate.queryForObject("SELECT COUNT(1) " + base, Long.class, parameters.toArray());
         List<Object> dataParameters = new ArrayList<>(parameters); dataParameters.add(offset); dataParameters.add(safeSize);
@@ -236,8 +255,10 @@ class FavoriteApplicationServiceImpl implements FavoriteApplicationService {
      * @return 变更后的状态（取消收藏即返回 {@code false}，不是「是否改变」）
      * @throws IllegalStateException 插入失败
      */
-    private boolean changeGeneric(FavoriteCommand command, boolean active) {
-        UserFavorite favorite = userFavoriteService.getOne(favoriteQuery(command));
+    private boolean changeGeneric(FavoriteCommand command, Boolean desiredState) {
+        UserFavorite favorite = userFavoriteService.getOne(favoriteQuery(command).last("FOR UPDATE"));
+        boolean active = desiredState != null ? desiredState
+                : favorite == null || !Integer.valueOf(1).equals(favorite.getStatus());
         if (favorite == null) {
             if (!active) return false;
             LocalDateTime now = LocalDateTime.now();
@@ -255,11 +276,11 @@ class FavoriteApplicationServiceImpl implements FavoriteApplicationService {
         boolean wasActive = Integer.valueOf(1).equals(favorite.getStatus());
         if (wasActive == active) return active;
         LocalDateTime now = LocalDateTime.now();
-        userFavoriteService.update(new LambdaUpdateWrapper<UserFavorite>()
+        if (!userFavoriteService.update(new LambdaUpdateWrapper<UserFavorite>()
                 .set(UserFavorite::getStatus, active ? 1 : 0)
                 .set(UserFavorite::getCancelTime, active ? null : now)
                 .set(UserFavorite::getUpdateTime, now)
-                .eq(UserFavorite::getId, favorite.getId()));
+                .eq(UserFavorite::getId, favorite.getId()))) throw new IllegalStateException("收藏状态更新失败");
         updateTargetCount(command.targetType(), command.targetId(), active ? 1 : -1);
         return active;
     }
@@ -271,8 +292,8 @@ class FavoriteApplicationServiceImpl implements FavoriteApplicationService {
             case CONTEST -> "contest";
             case POST -> throw new IllegalStateException("帖子收藏由互动模块处理");
         };
-        Integer count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM " + table + " WHERE id = ?", Integer.class, command.targetId());
-        if (count == null || count == 0) throw new IllegalArgumentException("收藏目标不存在");
+        List<Long> targets = jdbcTemplate.queryForList("SELECT id FROM " + table + " WHERE id = ? FOR UPDATE", Long.class, command.targetId());
+        if (targets.isEmpty()) throw new BusinessException(CommunityErrorCode.FAVORITE_TARGET_NOT_FOUND, "收藏目标不存在");
     }
 
     private LambdaQueryWrapper<UserFavorite> favoriteQuery(FavoriteCommand command) {

@@ -1,181 +1,128 @@
-/**
- * axios 实例与全局拦截器。
- * <p>
- * 集中处理三件事，让业务代码不必各自重复：
- * 1. 注入 Authorization 头；
- * 2. 把后端统一响应体（{@code {code, message, data}}）解包成可直接使用的数据；
- * 3. Token 过期时自动用 refreshToken 换新并重放原请求。
- * </p>
- * <p>
- * 交互提示（弹窗、toast）不直接依赖 element-plus，而是通过 {@link authBus}
- * 发事件、由 {@code useAuthInterceptor} 统一接管——这样 utils 层可独立测试，
- * 也避免在非组件环境（路由守卫）中直接调用 UI 组件。
- * </p>
- */
+/** Shared request/authentication error handling; success payloads retain the Result contract. */
 import axios from 'axios'
 import { useUserStore } from '@/stores/userStore'
 import { authBus } from '@/utils/eventBus'
 import { trackApiFail } from '@/utils/metrics'
+import { ApiError, decodeResponse, responseError } from '@/utils/apiError'
 
-// baseURL 走 vite dev proxy / Nginx 反代，前端不写死后端域名
-const service = axios.create({
-  baseURL: '/api',
-  timeout: 10000
-})
+const service = axios.create({ baseURL: '/api', timeout: 10000 })
+let refreshPromise = null
+let refreshingFor = null
+let lastRefresh = null
 
-// === Token 刷新队列 ===
-// 并发场景下多个请求同时 401，若各自去刷新会互相覆盖 refreshToken。
-// 这里用「单飞」策略：第一个 401 发起刷新，其余请求挂起进 requests 队列，
-// 刷新成功后统一带上新 token 重放；刷新失败则整队reject，避免请求悬挂。
-let isRefreshing = false
-let requests = []
+service.interceptors.request.use(config => {
+  const token = useUserStore().getAccessToken()
+  if (token) config.headers['Authorization'] = 'Bearer ' + token
+  return config
+}, error => Promise.reject(error))
 
-function rejectQueuedRequests(error) {
-  requests.forEach(({ reject }) => reject(error))
-  requests = []
+function notify(error, config) {
+  if (error.notified || config?.silent || config?.authFailureHandled) return
+  error.notified = true
+  authBus.emit('request:error', error.message)
 }
 
-// === 请求拦截器 ===
-service.interceptors.request.use(
-  config => {
-    const token = useUserStore().getAccessToken()
-    if (token) {
-      config.headers['Authorization'] = 'Bearer ' + token
-    }
-    return config
-  },
-  error => Promise.reject(error)
-)
-
-// === 响应拦截器 ===
-service.interceptors.response.use(
-  async response => {
-    // HTTP 200 也可能携带业务错误 JSON；Blob 下载必须先恢复统一错误契约。
-    let res = response.data
-    if (response.config?.responseType === 'blob') {
-      const contentType = response.headers?.['content-type'] || response.data?.type || ''
-      if (!contentType.includes('json')) return response.data
-      try {
-        res = JSON.parse(await response.data.text())
-      } catch {
-        throw new Error('下载响应格式错误')
-      }
-    }
-
-    // 登录凭据失败由登录页面处理；其他业务 401 仍表示登录态失效。
-    if (res.code === 401) {
-      if (!response.config?.authFailureHandled) authBus.emit('auth:fail')
-      return Promise.reject(new Error(res.message || 'Unauthorized'))
-    }
-    // 业务层 403 → 已登录但无权限，保持登录态，仅提示原因
-    if (res.code === 403) {
-      authBus.emit('request:error', res.message || '无权访问该内容')
-      const err = new Error(res.message || 'Forbidden')
-      // 附带原始业务响应，方便调用方识别是 403 并做对应 UI 处理
-      err.response = { data: res }
-      return Promise.reject(err)
-    }
-    // 业务层其他错误码（400/500 等）→ 统一全局提示，避免页面静默失败。
-    // 页面如需自行处理提示，可在请求配置中传 silent: true 跳过全局 toast。
-    if (res.code !== 200) {
-      if (!response.config?.silent) {
-        authBus.emit('request:error', res.message || '请求失败')
-      }
-      const err = new Error(res.message || 'Request failed')
-      // 附带原始业务响应，方便调用方识别业务码并做对应 UI 处理
-      err.response = { data: res }
-      return Promise.reject(err)
-    }
-    return res
-  },
-  async error => {
-    const originalRequest = error.config
-
-    // Closing a view intentionally cancels its request; it is not a network failure.
-    if (axios.isCancel(error) || error.code === 'ERR_CANCELED') {
-      return Promise.reject(error)
-    }
-
-    if (!error.response) {
-      trackApiFail(originalRequest?.url) // 体验埋点：网络异常
-      authBus.emit('request:error', '网络连接异常')
-      return Promise.reject(error)
-    }
-
-    const status = error.response.status
-
-    if (status === 401 && originalRequest?.authFailureHandled) {
-      return Promise.reject(new Error(error.response.data?.message || '用户名或密码错误'))
-    }
-
-    // === 1. 处理 401 Token 过期 (尝试刷新) ===
-    if (status === 401) {
-      // 刷新接口自身 401 说明 refreshToken 也失效了，不能再重试，直接判登录失效
-      if (originalRequest.url.includes('/auth/refresh')) {
-        authBus.emit('auth:fail')
-        return Promise.reject(error)
-      }
-
-      // 已有刷新在进行中：本次请求挂起，等刷新完成后由队列统一重放
-      if (isRefreshing) {
-        return new Promise((resolve, reject) => {
-          requests.push({
-            resolve: (newToken) => {
-              originalRequest.headers['Authorization'] = 'Bearer ' + newToken
-              resolve(service(originalRequest))
-            },
-            reject
-          })
-        })
-      }
-
-      originalRequest._retry = true
-      isRefreshing = true
-
-      const refreshToken = useUserStore().getRefreshToken()
-
-      if (!refreshToken) {
-        isRefreshing = false
-        rejectQueuedRequests(error)
-        authBus.emit('auth:fail')
-        return Promise.reject(error)
-      }
-
-      try {
-        const { data } = await axios.post('/api/auth/refresh', { refreshToken })
-        const newAccessToken = data.accessToken
-
-        if (newAccessToken) {
-          // 通过 store 统一写入，保持响应式同步
-          useUserStore().setAccessToken(newAccessToken)
-
-          requests.forEach(({ resolve }) => resolve(newAccessToken))
-          requests = []
-          originalRequest.headers['Authorization'] = 'Bearer ' + newAccessToken
-          return service(originalRequest)
-        } else {
-          throw new Error('Refresh failed')
-        }
-      } catch (refreshError) {
-        authBus.emit('auth:fail')
-        rejectQueuedRequests(refreshError)
-        return Promise.reject(refreshError)
-      } finally {
-        isRefreshing = false
-      }
-    }
-
-    // === 2. 处理 403 无权限：登录态仍然有效，只提示，不清登录 ===
-    if (status === 403) {
-      authBus.emit('request:error', '无权访问该资源')
-      return Promise.reject(error)
-    }
-
-    // === 3. 其他错误 (500, 404) ===
-    trackApiFail(originalRequest?.url) // 体验埋点：接口失败
-    authBus.emit('request:error', error.message || '系统繁忙')
-    return Promise.reject(error)
+function expireSession(error) {
+  if (!error.authNotified) {
+    error.authNotified = true
+    authBus.emit('auth:fail')
   }
-)
+}
+
+function refreshAccessToken() {
+  const store = useUserStore()
+  const refreshToken = store.getRefreshToken()
+  if (!refreshPromise || refreshingFor !== refreshToken) {
+    const previousToken = store.getAccessToken()
+    if (!refreshToken) {
+      const error = new ApiError('请重新登录', { code: 401, errorCode: 'AUTH_REFRESH_INVALID' })
+      expireSession(error)
+      return Promise.reject(error)
+    }
+    const pending = axios.post('/api/auth/refresh', { refreshToken }).then(response => {
+      const body = response.data
+      if (body?.code !== 200) throw responseError(response)
+      const token = body.data
+      if (typeof token !== 'string' || !token) {
+        throw new ApiError('登录刷新响应格式错误', { errorCode: 'INVALID_RESPONSE', response })
+      }
+      if (store.getRefreshToken() !== refreshToken || store.getAccessToken() !== previousToken) throw sessionChanged()
+      store.setAccessToken(token)
+      lastRefresh = { previousToken, token, refreshToken }
+      return token
+    }).catch(async cause => {
+      const error = cause instanceof ApiError ? cause : cause.response
+        ? responseError({ ...cause.response, data: await decodeResponse(cause.response) })
+        : new ApiError('网络连接异常', { errorCode: 'NETWORK_ERROR' })
+      if ((error.code === 401 || error.status === 401) && store.getRefreshToken() === refreshToken) expireSession(error)
+      throw error
+    }).finally(() => {
+      if (refreshPromise === pending) { refreshPromise = null; refreshingFor = null }
+    })
+    refreshPromise = pending
+    refreshingFor = refreshToken
+  }
+  return refreshPromise
+}
+
+function sessionChanged() {
+  return new ApiError('登录状态已变化，请重新操作', { errorCode: 'AUTH_SESSION_CHANGED' })
+}
+
+async function handleFailure(error, config = {}) {
+  const unauthorized = error.code === 401 || error.status === 401
+  if (unauthorized && config.authFailureHandled) throw error
+  const legacyHttp401 = !error.response?.data?.errorCode && error.status === 401
+  const mayRefresh = error.errorCode === 'AUTH_TOKEN_EXPIRED' || legacyHttp401
+  if (unauthorized && mayRefresh && !config._retry && !config.url?.includes('/auth/')) {
+    config._retry = true
+    const sentAuthorization = config.headers?.get?.('Authorization') || config.headers?.Authorization || config.headers?.authorization
+    const currentToken = useUserStore().getAccessToken()
+    let token
+    try {
+      if ((sentAuthorization || null) !== (currentToken ? 'Bearer ' + currentToken : null)) {
+        // Reuse only a rotation performed for this session; never replay across an account switch.
+        if (lastRefresh?.previousToken && sentAuthorization === 'Bearer ' + lastRefresh.previousToken
+            && currentToken === lastRefresh.token && useUserStore().getRefreshToken() === lastRefresh.refreshToken) token = currentToken
+        else throw sessionChanged()
+      } else token = await refreshAccessToken()
+    } catch (refreshError) {
+      if (refreshError.errorCode !== 'AUTH_SESSION_CHANGED' && refreshError.code !== 401 && refreshError.status !== 401) notify(refreshError, config)
+      throw refreshError
+    }
+    config.headers = { ...config.headers, Authorization: 'Bearer ' + token }
+    return service(config)
+  }
+  if (unauthorized) expireSession(error)
+  else notify(error, config)
+  if (error.status >= 500 || error.code >= 500 || !error.response) trackApiFail(config.url)
+  throw error
+}
+
+service.interceptors.response.use(async response => {
+  let data
+  try {
+    data = await decodeResponse(response)
+  } catch (error) {
+    return handleFailure(error, response.config)
+  }
+  if (response.config?.responseType === 'blob' && data === response.data) return data
+  if (data?.code === 200) return data
+  return handleFailure(responseError({ ...response, data }), response.config)
+}, async cause => {
+  if (axios.isCancel(cause) || cause.code === 'ERR_CANCELED') throw cause
+  if (!cause.response) {
+    return handleFailure(new ApiError(cause.code === 'ECONNABORTED' ? '请求超时，请稍后重试' : '网络连接异常', {
+      errorCode: cause.code === 'ECONNABORTED' ? 'REQUEST_TIMEOUT' : 'NETWORK_ERROR', config: cause.config
+    }), cause.config)
+  }
+  try {
+    const data = await decodeResponse({ ...cause.response, config: cause.config })
+    return handleFailure(responseError({ ...cause.response, data, config: cause.config }), cause.config)
+  } catch (error) {
+    if (error instanceof ApiError && error.errorCode === 'INVALID_RESPONSE') return handleFailure(error, cause.config)
+    throw error
+  }
+})
 
 export default service

@@ -1,5 +1,8 @@
 package com.musealgo.oj.problem.service.impl;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.problem.error.ProblemErrorCode;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -103,7 +106,7 @@ public class ExamPaperServiceImpl implements ExamPaperService {
     public Long savePaper(ExamPaperDTO dto, Long createBy) {
         ExamPaper paper = dto.getId() == null ? new ExamPaper() : examPaperMapper.selectById(dto.getId());
         if (paper == null) {
-            throw new IllegalArgumentException("试卷不存在: " + dto.getId());
+            throw new BusinessException(ProblemErrorCode.EXAM_PAPER_NOT_FOUND, "试卷不存在: " + dto.getId());
         }
         paper.setTitle(dto.getTitle());
         paper.setDescription(dto.getDescription());
@@ -155,7 +158,7 @@ public class ExamPaperServiceImpl implements ExamPaperService {
             for (ExamPaperDTO.ExamQuestionItem item : dto.getQuestions()) {
                 String normalizedAnswer = ObjectiveJudge.normalize(item.getQuestionType(), item.getAnswer());
                 if (normalizedAnswer == null) {
-                    throw new IllegalArgumentException("第 " + qOrder + " 题的标准答案不合法: " + item.getAnswer());
+                    throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "第 " + qOrder + " 题的标准答案不合法");
                 }
                 ExamQuestion question = new ExamQuestion();
                 question.setPaperId(paper.getId());
@@ -180,7 +183,10 @@ public class ExamPaperServiceImpl implements ExamPaperService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void deletePaper(Long id) {
-        examPaperMapper.deleteById(id); // @TableLogic 逻辑删除
+        ExamPaper deleted = new ExamPaper();
+        deleted.setId(id);
+        deleted.setUpdateTime(LocalDateTime.now());
+        examPaperMapper.deleteById(deleted); // 逻辑删除同时保留非空更新时间
         examPaperProblemMapper.delete(
                 new LambdaQueryWrapper<ExamPaperProblem>().eq(ExamPaperProblem::getPaperId, id));
         examQuestionMapper.delete(
@@ -226,7 +232,7 @@ public class ExamPaperServiceImpl implements ExamPaperService {
     public Long copyPaper(Long paperId, Long createBy) {
         ExamPaper source = examPaperMapper.selectById(paperId);
         if (source == null) {
-            throw new IllegalArgumentException("试卷不存在: " + paperId);
+            throw new BusinessException(ProblemErrorCode.EXAM_PAPER_NOT_FOUND, "试卷不存在: " + paperId);
         }
         LocalDateTime now = LocalDateTime.now();
         ExamPaper copy = new ExamPaper();
@@ -350,7 +356,7 @@ public class ExamPaperServiceImpl implements ExamPaperService {
         try {
             return OBJECT_MAPPER.writeValueAsString(options);
         } catch (Exception e) {
-            throw new IllegalArgumentException("选项格式不合法", e);
+            throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "选项格式不合法");
         }
     }
 

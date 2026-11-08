@@ -89,7 +89,7 @@ class TestDataGenerationServiceTest {
         when(problemCaseService.getProblemCases(9L)).thenReturn(List.of());
 
         assertThatThrownBy(() -> service.verifyStdAgainstCases(9L, "int main(){}"))
-                .isInstanceOf(IllegalArgumentException.class)
+                .isInstanceOf(com.musealgo.oj.common.exception.BusinessException.class)
                 .hasMessageContaining("暂无测试用例");
     }
 

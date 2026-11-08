@@ -1,5 +1,8 @@
 package com.musealgo.oj.community.controller;
 
+import com.musealgo.oj.common.exception.ErrorResponses;
+import com.musealgo.oj.community.error.CommunityErrorCode;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
@@ -65,7 +68,7 @@ public class AdminAnnouncementController {
     public Result<String> save(@RequestBody Post post) {
         if (post.getTitle() == null || post.getTitle().isBlank()
                 || post.getContent() == null || post.getContent().isBlank()) {
-            return Result.error("标题与内容不能为空");
+            return ErrorResponses.failure(CommunityErrorCode.COMMUNITY_INPUT_INVALID, "标题与内容不能为空");
         }
         post.setCategory("announcement");
         if (post.getId() == null) {
@@ -74,14 +77,14 @@ public class AdminAnnouncementController {
             post.setIsDeleted(0);
             if (post.getIsTop() == null) post.setIsTop(0);
             if (post.getPrivacy() == null) post.setPrivacy(1);
-            postService.save(post);
+            if (!postService.save(post)) throw new IllegalStateException("公告保存失败");
         } else {
             Post update = new Post();
             update.setId(post.getId());
             update.setTitle(post.getTitle());
             update.setContent(post.getContent());
             update.setIsTop(post.getIsTop() == null ? 0 : post.getIsTop());
-            postService.updateById(update);
+            if (!postService.updateById(update)) return ErrorResponses.failure(CommunityErrorCode.POST_NOT_FOUND, "公告不存在");
         }
         return Result.success("保存成功");
     }
@@ -90,7 +93,7 @@ public class AdminAnnouncementController {
     @AuditLog(module = "announcement", action = "delete_announcement")
     @PostMapping("/delete/{id}")
     public Result<String> delete(@PathVariable Long id) {
-        postService.removeById(id);
+        if (!postService.removeById(id)) return ErrorResponses.failure(CommunityErrorCode.POST_NOT_FOUND, "公告不存在");
         return Result.success("已删除");
     }
 }

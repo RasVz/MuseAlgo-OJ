@@ -1,5 +1,9 @@
 package com.musealgo.oj.ai.controller;
 
+import com.musealgo.oj.common.exception.ErrorResponses;
+import com.musealgo.oj.common.exception.CommonErrorCode;
+import com.musealgo.oj.ai.error.AiErrorCode;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -107,13 +111,13 @@ public class TeacherAiController {
 
     private Result<String> workbenchJson(String toolKey, String scene, String userPrompt) {
         if (userPrompt == null || userPrompt.isBlank()) {
-            return Result.error("请输入内容");
+            return ErrorResponses.failure(AiErrorCode.AI_INPUT_INVALID, "请输入内容");
         }
         long startMs = System.currentTimeMillis();
         AiCompletionResult call = teacherWorkbenchService.teacherWorkbenchJsonDetailed(toolKey, userPrompt);
         String raw = call.content();
         JSONObject json = AiService.extractJsonObject(raw);
-        if (json == null) {
+        if (json == null && call.success()) {
             // 首次输出超长截断/死循环/格式损坏：追加针对性约束重试（最多两次修复）
             String[] repairs = {
                     "\n\n【重要】你上一次的输出因过长被截断或格式损坏。请重新输出精简的 JSON："
@@ -127,7 +131,7 @@ public class TeacherAiController {
                 call = teacherWorkbenchService.teacherWorkbenchJsonDetailed(toolKey, userPrompt + repair);
                 raw = call.content();
                 json = AiService.extractJsonObject(raw);
-                if (json != null) {
+                if (json != null || !call.success()) {
                     break;
                 }
             }
@@ -137,7 +141,14 @@ public class TeacherAiController {
         if (!success) {
             log.warn("【命题工作台】{} 返回不可解析内容: {}", toolKey,
                     raw == null ? "null" : raw.substring(0, Math.min(raw.length(), 200)));
-            return Result.error("生成失败，请稍后重试");
+            if (!call.success()) {
+                if ("INVALID_RESPONSE".equals(call.errorType()) || "RESPONSE_TOO_LARGE".equals(call.errorType())) {
+                    return ErrorResponses.failure(AiErrorCode.AI_RESPONSE_INVALID);
+                }
+                return ErrorResponses.failure("TIMEOUT".equals(call.errorType())
+                        ? CommonErrorCode.UPSTREAM_TIMEOUT : AiErrorCode.AI_UPSTREAM_FAILED);
+            }
+            return ErrorResponses.failure(AiErrorCode.AI_RESPONSE_INVALID);
         }
         return Result.success(json.toString());
     }
@@ -211,7 +222,7 @@ public class TeacherAiController {
 
     private Result<String> chat(String toolKey, String scene, String input, String extra) {
         if (input == null || input.isBlank()) {
-            return Result.error("请输入内容");
+            return ErrorResponses.failure(AiErrorCode.AI_INPUT_INVALID, "请输入内容");
         }
         long startMs = System.currentTimeMillis();
         String userPrompt = extra != null && !extra.isBlank()

@@ -1,5 +1,8 @@
 package com.musealgo.oj.problem.application;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.problem.error.ProblemErrorCode;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -88,21 +91,21 @@ public class TestDataGenerationService {
      */
     public GenerateVerifyResult generateAndVerify(Long problemId, String generatorCode) {
         if (problemId == null) {
-            throw new IllegalArgumentException("题目ID不能为空");
+            throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "题目ID不能为空");
         }
         SecurityUtils.requireTeacherOrAdmin();
         Problem problem = problemService.getById(problemId);
         if (problem == null) {
-            throw new IllegalArgumentException("题目不存在");
+            throw new BusinessException(ProblemErrorCode.PROBLEM_NOT_FOUND, "题目不存在");
         }
         SecurityUtils.requireOwnerOrAdmin(problem.getAuthorId());
 
         String stdCode = problem.getStdAnswer();
         if (stdCode == null || stdCode.isBlank()) {
-            throw new IllegalArgumentException("该题尚未保存标准答案，请先在「标准答案」中生成并保存，再生成测试数据");
+            throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "该题尚未保存标准答案，请先在「标准答案」中生成并保存，再生成测试数据");
         }
         if (generatorCode == null || generatorCode.isBlank()) {
-            throw new IllegalArgumentException("生成器代码不能为空");
+            throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "生成器代码不能为空");
         }
 
         // 1. 执行生成器（Judge0 沙箱，无输入，只读 stdout）
@@ -112,13 +115,13 @@ public class TestDataGenerationService {
         int genStatus = statusOf(genResult);
         String genStdout = stringOf(genResult.get("stdout"));
         if (genStatus != 3) {
-            throw new IllegalArgumentException("生成器运行失败：" + describeFailure(genStatus, genResult));
+            throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "生成器运行失败：" + describeFailure(genStatus, genResult));
         }
         if (genStdout == null || genStdout.isBlank()) {
-            throw new IllegalArgumentException("生成器没有任何输出，请修改生成器后重新执行");
+            throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "生成器没有任何输出，请修改生成器后重新执行");
         }
         if (genStdout.length() > MAX_GENERATOR_OUTPUT_CHARS) {
-            throw new IllegalArgumentException("生成器输出超过 200KB 保护上限，请减小数据规模后重新执行");
+            throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "生成器输出超过 200KB 保护上限，请减小数据规模后重新执行");
         }
 
         // 2. 按分隔符切分为多组输入，过滤空组
@@ -127,7 +130,7 @@ public class TestDataGenerationService {
                 .filter(s -> !s.isEmpty())
                 .collect(Collectors.toList());
         if (inputs.isEmpty()) {
-            throw new IllegalArgumentException("生成器输出无法解析出测试数据（未找到 " + CASE_SEPARATOR + " 分隔符），请修改生成器后重试");
+            throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "生成器输出无法解析出测试数据（未找到 " + CASE_SEPARATOR + " 分隔符），请修改生成器后重试");
         }
 
         // 3. 逐组用 std 实测（并发，结果按组序归位）
@@ -198,21 +201,21 @@ public class TestDataGenerationService {
      */
     public StdVerifyResult verifyStdAgainstCases(Long problemId, String stdCode) {
         if (problemId == null) {
-            throw new IllegalArgumentException("题目ID不能为空");
+            throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "题目ID不能为空");
         }
         SecurityUtils.requireTeacherOrAdmin();
         Problem problem = problemService.getById(problemId);
         if (problem == null) {
-            throw new IllegalArgumentException("题目不存在");
+            throw new BusinessException(ProblemErrorCode.PROBLEM_NOT_FOUND, "题目不存在");
         }
         SecurityUtils.requireOwnerOrAdmin(problem.getAuthorId());
         if (stdCode == null || stdCode.isBlank()) {
-            throw new IllegalArgumentException("标准答案代码不能为空");
+            throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "标准答案代码不能为空");
         }
 
         List<ProblemCase> cases = problemCaseService.getProblemCases(problemId);
         if (cases.isEmpty()) {
-            throw new IllegalArgumentException("该题暂无测试用例，无法验证标准答案；请先导入或生成测试用例后再测试并保存");
+            throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "该题暂无测试用例，无法验证标准答案；请先导入或生成测试用例后再测试并保存");
         }
         // 记录验证开始时（尚未读取任何用例内容前）的集合指纹，供保存前判断数据是否已被改动
         String fingerprint = CaseSetFingerprint.of(cases);

@@ -76,7 +76,7 @@ class SubmissionApplicationServiceTest {
         command.setProblemId(100L);
         command.setLanguage("go");
         command.setCode("package main");
-        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+        org.junit.jupiter.api.Assertions.assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
                 () -> new SubmissionApplicationService(problemAccess, submissionService, contextResolver).submit(command));
         org.mockito.Mockito.verifyNoInteractions(submissionService);
     }

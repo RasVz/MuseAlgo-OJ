@@ -1,5 +1,8 @@
 package com.musealgo.oj.community.comment;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.community.error.CommunityErrorCode;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import com.musealgo.oj.community.entity.Comment;
@@ -37,7 +40,7 @@ class ProblemCommentTargetHandler implements CommentTargetHandler {
     public CommentTargetDetails requireTarget(Long targetId, Integer targetType) {
         // 题目存在性 + 未删除校验走 oj-api 只读契约
         if (!problemQuery.existsNotDeleted(targetId)) {
-            throw new IllegalArgumentException("评论目标不存在");
+            throw new BusinessException(CommunityErrorCode.COMMENT_TARGET_NOT_FOUND, "评论目标不存在");
         }
         return new CommentTargetDetails(NotificationTargetType.PROBLEM, null);
     }

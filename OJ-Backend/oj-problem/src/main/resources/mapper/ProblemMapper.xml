@@ -2,6 +2,26 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.musealgo.oj.problem.mapper.ProblemMapper">
 
+    <!-- 先在数据库确定完整候选窗口的可见集合，再由应用层按索引相关性分页。 -->
+    <select id="selectVisibleSearchIds" resultType="java.lang.Long">
+        SELECT id FROM problem
+        WHERE is_public = 1 AND is_deleted = 0
+        <choose>
+            <when test="problemIds != null and problemIds.size() > 0">
+                AND id IN
+                <foreach collection="problemIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+            </when>
+            <otherwise>AND 1 = 0</otherwise>
+        </choose>
+        <choose>
+            <when test="difficulty != null">AND difficulty = #{difficulty}</when>
+            <otherwise>
+                <if test="minDifficulty != null">AND difficulty &gt;= #{minDifficulty}</if>
+                <if test="maxDifficulty != null">AND difficulty &lt;= #{maxDifficulty}</if>
+            </otherwise>
+        </choose>
+    </select>
+
     <!--
       ========================================================================
       题目（problem）主表的结果映射与题库检索。
@@ -83,6 +103,7 @@
         FROM problem p
         <where>
             p.is_public = 1
+            AND p.is_deleted = 0
             <if test="keyword != null and keyword != ''">
                 AND (p.title LIKE CONCAT('%', #{keyword}, '%') OR p.id LIKE CONCAT('%', #{keyword}, '%'))
             </if>

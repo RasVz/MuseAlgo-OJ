@@ -154,7 +154,8 @@ class ServiceBoundaryContractTest(unittest.TestCase):
         self.assertIn("ORDER BY end_time, id", mapper)
         self.assertIn("c.getEndTime().isAfter(from.getEndTime())", source)
         self.assertIn("c.getEndTime().equals(from.getEndTime()) && c.getId() >= fromId", source)
-        self.assertIn("起点比赛不存在或尚未固化", source)
+        self.assertIn("ContestErrorCode.CONTEST_NOT_FOUND", source)
+        self.assertIn("ContestErrorCode.SETTLEMENT_REPLAY_BLOCKED", source)
         self.assertIn("起点比赛缺少结束时间", source)
 
     def test_confirmation_binds_fingerprint_and_prefix(self):

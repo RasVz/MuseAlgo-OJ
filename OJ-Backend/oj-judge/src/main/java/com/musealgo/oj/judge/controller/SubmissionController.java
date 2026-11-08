@@ -1,5 +1,9 @@
 package com.musealgo.oj.judge.controller;
 
+import com.musealgo.oj.common.exception.ErrorResponses;
+import com.musealgo.oj.common.exception.CommonErrorCode;
+import com.musealgo.oj.judge.error.JudgeErrorCode;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -214,7 +218,7 @@ public class SubmissionController {
     public Result<SubmissionDetailVO> detail(@RequestParam Long id) {
         Submission submission = submissionService.getById(id);
         if (submission == null) {
-            return Result.error("评测记录不存在");
+            return ErrorResponses.failure(JudgeErrorCode.SUBMISSION_NOT_FOUND, "评测记录不存在");
         }
         // V52 拆表：详情展示源码，从 submission_code 补载
         SubmissionCode codeRecord = submissionCodeMapper.selectById(id);
@@ -222,7 +226,7 @@ public class SubmissionController {
 
         Long currentUserId = SecurityUtils.getUserId();
         if (currentUserId == null) {
-            return Result.error(401, "请先登录");
+            return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "请先登录");
         }
 
         String problemTitle = problemQuery.findTitleById(submission.getProblemId()).orElse("未知题目");
@@ -247,14 +251,14 @@ public class SubmissionController {
                 boolean isContestEnded = contest != null && contest.endTime() != null
                         && LocalDateTime.now().isAfter(contest.endTime());
                 if (!isContestEnded || activeVp) {
-                    return Result.error(403, "比赛进行中，仅可查看自己的提交代码详情");
+                    return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "比赛进行中，仅可查看自己的提交代码详情");
                 }
             } else if (activeVp) {
-                return Result.error(403, "虚拟赛进行中，仅可查看自己的提交代码详情");
+                return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "虚拟赛进行中，仅可查看自己的提交代码详情");
             }
             // 非比赛（或比赛已结束）：按提交人是否分享判断
             if (!userQuery.isSubmissionSharingEnabled(submission.getUserId())) {
-                return Result.error(403, "该用户未分享提交记录，无法查看");
+                return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "该用户未分享提交记录，无法查看");
             }
         }
 

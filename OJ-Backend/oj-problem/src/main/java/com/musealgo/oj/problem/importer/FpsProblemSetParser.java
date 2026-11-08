@@ -105,7 +105,7 @@ public class FpsProblemSetParser {
         } catch (IllegalArgumentException e) {
             throw e;
         } catch (ParserConfigurationException | SAXException | IOException e) {
-            throw new IllegalArgumentException("FPS XML 格式无效: " + e.getMessage(), e);
+            throw new IllegalArgumentException("FPS XML 格式无效", e);
         }
     }
 

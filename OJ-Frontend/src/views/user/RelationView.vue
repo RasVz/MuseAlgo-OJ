@@ -97,15 +97,19 @@ const isMe = computed(() => {
 
 // 初始化：获取目标用户信息
 const initTargetUser = async () => {
+  const targetId = targetUserId.value
   try {
-    const res = await getUserInfo(targetUserId.value)
+    const res = await getUserInfo(targetId)
+    if (targetId !== targetUserId.value) return
     if (res.code === 200) {
       targetUserName.value = res.data.nickname || res.data.username
     }
   } catch { /* 忽略 */ }
 }
 
+let loadGeneration = 0
 const fetchData = async () => {
+  const generation = ++loadGeneration
   loading.value = true
   try {
     const params = { page: currentPage.value, size: pageSize }
@@ -116,12 +120,15 @@ const fetchData = async () => {
       res = await getFollowerList(targetUserId.value, params)
     }
 
+    if (generation !== loadGeneration) return
     if (res.code === 200) {
       userList.value = res.data.records
       total.value = res.data.total
     }
+  } catch {
+    // Shared request handling presents the concrete failure.
   } finally {
-    loading.value = false
+    if (generation === loadGeneration) loading.value = false
   }
 }
 

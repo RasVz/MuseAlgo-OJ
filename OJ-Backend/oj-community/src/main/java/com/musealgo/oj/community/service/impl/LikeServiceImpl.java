@@ -1,5 +1,8 @@
 package com.musealgo.oj.community.service.impl;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.common.exception.CommonErrorCode;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -10,49 +13,40 @@ import com.musealgo.oj.community.service.LikeService;
 import java.time.Duration;
 import java.util.Set;
 
-/**
- * 评论点赞：Redis 集合作为唯一事实来源，交互实时生效。
- * <p>
- * <b>为什么点赞不直接写库：</b>
- * 点赞是高频写路径（点一下即一次），且最终一致即可。走 Redis Set 可用
- * {@code SADD}/{@code SREM} 的原子返回直接判定「状态是否真的翻转」，
- * 而「先查再插」的数据库写法在并发下需要唯一索引兜底并处理冲突重试，
- * 代码量与出错面都更大。
- * </p>
- * <p>
- * <b>注意——当前的持久化链路并未接通：</b>
- * 本类只写 Redis，{@link #markDirty} 把变更过的评论 ID 塞进
- * {@code comment:like:dirty_ids}，并预留了 {@link #getLikedUserIds} 供落库读取。
- * 但全仓<b>没有任何定时任务消费该 dirty 集合</b>，
- * {@code comment_like} 表因此始终为空。所以点赞数据只存在于 Redis，
- * TTL 到期即丢失（已过期 key 的评论点赞数会归零）。
- * 新增落库消费任务时，请复用 {@link #getLikedUserIds}，不要绕过它直接读 Redis key。
- * </p>
- * <p>
- * <b>为何不干脆去掉 dirty 机制：</b>
- * 它标记的是「哪些 key 需要回写」的边界，加载定时任务时无需全量扫描评论表，
- * 本身是正确设计；缺的只是消费者。
- * </p>
- */
+/** 评论点赞缓存；冷缓存先恢复持久化关系，dirty 集合由定时任务回写。 */
 @Service
 @RequiredArgsConstructor
 public class LikeServiceImpl implements LikeService {
 
     private final RedisTemplate<String, Object> redisTemplate;
+    private final com.musealgo.oj.community.mapper.CommentLikeMapper commentLikeMapper;
+    private static final String EMPTY = "__initialized_empty__";
+    private static final org.springframework.data.redis.core.script.DefaultRedisScript<Long> INSTALL =
+            new org.springframework.data.redis.core.script.DefaultRedisScript<>(
+                    "if redis.call('exists',KEYS[1])==0 then redis.call('rename',KEYS[2],KEYS[1]); return 1 "
+                            + "else redis.call('del',KEYS[2]); return 0 end", Long.class);
+
+    private void ensureCache(Long commentId) {
+        String key = LIKE_USERS_KEY_PREFIX + commentId;
+        if (Boolean.TRUE.equals(redisTemplate.hasKey(key))) return;
+        var persisted = commentLikeMapper.selectList(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.musealgo.oj.community.entity.CommentLike>()
+                .eq(com.musealgo.oj.community.entity.CommentLike::getCommentId, commentId));
+        String temporary = key + ":restore:" + java.util.UUID.randomUUID();
+        try {
+            redisTemplate.opsForSet().add(temporary, EMPTY);
+            redisTemplate.expire(temporary, Duration.ofDays(likeSetTtlDays));
+            for (var row : persisted) redisTemplate.opsForSet().add(temporary, row.getUserId());
+            // 其他请求先完成恢复或写入时，不用旧数据库快照覆盖它。
+            redisTemplate.execute(INSTALL, java.util.List.of(key, temporary));
+        } finally { redisTemplate.delete(temporary); }
+    }
+
 
     // Redis Key 前缀
     private static final String LIKE_USERS_KEY_PREFIX = "comment:like:users:";
     private static final String DIRTY_COMMENTS_KEY = "comment:like:dirty_ids";
 
-    /**
-     * 点赞集合 TTL（默认 30 天）。
-     * <p>
-     * 防「永不过期」内存膨胀：落库后 Redis 集合仍保留用于实时计数/状态查询，
-     * 若评论长期无人点赞则自然过期回收。活跃评论每次新点赞都会续期。
-     * 副作用权衡：沉寂超过 TTL 的评论 Redis 计数归零（DB 中已同步的计数不受影响），
-     * 对已无人关注的评论影响可忽略。
-     * </p>
-     */
+    /** 活跃点赞缓存保留时间；过期后从数据库恢复。 */
     @Value("${comment.like.ttl-days:30}")
     private long likeSetTtlDays;
 
@@ -69,7 +63,7 @@ public class LikeServiceImpl implements LikeService {
     @Override
     public void toggleLike(Long commentId) {
         Long userId = SecurityUtils.getUserId();
-        if (userId == null) throw new RuntimeException("请先登录");
+        if (userId == null) throw new BusinessException(CommonErrorCode.AUTH_REQUIRED, "请先登录");
         if (isLiked(commentId, userId)) deactivate(commentId, userId);
         else activate(commentId, userId);
     }
@@ -77,6 +71,7 @@ public class LikeServiceImpl implements LikeService {
     @Override
     public boolean activate(Long commentId, Long userId) {
         if (commentId == null || userId == null) return false;
+        ensureCache(commentId);
         String key = LIKE_USERS_KEY_PREFIX + commentId;
         Long added = redisTemplate.opsForSet().add(key, userId);
         boolean changed = added != null && added > 0;
@@ -91,6 +86,7 @@ public class LikeServiceImpl implements LikeService {
     @Override
     public boolean deactivate(Long commentId, Long userId) {
         if (commentId == null || userId == null) return false;
+        ensureCache(commentId);
         Long removed = redisTemplate.opsForSet().remove(LIKE_USERS_KEY_PREFIX + commentId, userId);
         boolean changed = removed != null && removed > 0;
         if (changed) markDirty(commentId);
@@ -116,9 +112,10 @@ public class LikeServiceImpl implements LikeService {
     @Override
     public Integer getLikeCount(Long commentId) {
         String key = LIKE_USERS_KEY_PREFIX + commentId;
-        // SCARD 获取集合大小，O(1) 复杂度
+        ensureCache(commentId);
         Long size = redisTemplate.opsForSet().size(key);
-        return size != null ? size.intValue() : 0;
+        int sentinel = Boolean.TRUE.equals(redisTemplate.opsForSet().isMember(key, EMPTY)) ? 1 : 0;
+        return size != null ? Math.max(0, size.intValue() - sentinel) : 0;
     }
 
     /**
@@ -134,6 +131,7 @@ public class LikeServiceImpl implements LikeService {
     @Override
     public boolean isLiked(Long commentId, Long userId) {
         if (commentId == null || userId == null) return false;
+        ensureCache(commentId);
         return Boolean.TRUE.equals(redisTemplate.opsForSet().isMember(LIKE_USERS_KEY_PREFIX + commentId, userId));
     }
 
@@ -142,6 +140,10 @@ public class LikeServiceImpl implements LikeService {
      */
     @Override
     public Set<Object> getLikedUserIds(Long commentId) {
-        return redisTemplate.opsForSet().members(LIKE_USERS_KEY_PREFIX + commentId);
+        ensureCache(commentId);
+        Set<Object> members = redisTemplate.opsForSet().members(LIKE_USERS_KEY_PREFIX + commentId);
+        if (members == null) return java.util.Set.of();
+        members.remove(EMPTY);
+        return members;
     }
 }

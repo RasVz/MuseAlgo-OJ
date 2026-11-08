@@ -50,7 +50,10 @@ public interface ProblemListMapper extends BaseMapper<ProblemList> {
                                       @Param("classId") Long classId,
                                       @Param("creatorId") Long creatorId,
                                       @Param("keyword") String keyword,
-                                      @Param("privacy") Integer privacy);
+                                      @Param("privacy") Integer privacy,
+                                      @Param("actorId") Long actorId,
+                                      @Param("admin") boolean admin,
+                                      @Param("classIds") java.util.List<Long> classIds);
 
     List<Map<String, Object>> selectHomeworkStudents(@Param("classId") Long classId);
 

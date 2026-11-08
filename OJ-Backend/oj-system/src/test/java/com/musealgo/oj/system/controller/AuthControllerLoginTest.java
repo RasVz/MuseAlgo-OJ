@@ -55,4 +55,50 @@ class AuthControllerLoginTest {
                 .andExpect(jsonPath("$.code").value(401))
                 .andExpect(jsonPath("$.message").value("用户名或密码错误"));
     }
+    @org.junit.jupiter.api.Test
+    void authenticationInfrastructureFailureIsNotInvalidCredentials() throws Exception {
+        AuthenticationManager manager = mock(AuthenticationManager.class);
+        when(manager.authenticate(any())).thenThrow(new org.springframework.security.authentication.InternalAuthenticationServiceException("SQL private detail"));
+        LoginFailureGuard guard = mock(LoginFailureGuard.class);
+        var mvc = MockMvcBuilders.standaloneSetup(new AuthController(mock(UserService.class), manager,
+                mock(JwtUtils.class), mock(JwtBlacklistService.class), guard))
+                .setControllerAdvice(new GlobalExceptionHandler()).build();
+        mvc.perform(post("/auth/login").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"username\":\"student\",\"password\":\"password\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(503))
+                .andExpect(jsonPath("$.errorCode").value("AUTH_DEPENDENCY_UNAVAILABLE"))
+                .andExpect(jsonPath("$.message").value("暂时无法验证登录状态，请稍后重试"));
+        org.mockito.Mockito.verify(guard, org.mockito.Mockito.never()).recordFailure(any());
+    }
+
+    @org.junit.jupiter.api.Test
+    void duplicateRegistrationHasStableConflictReason() throws Exception {
+        UserService users = mock(UserService.class);
+        when(users.registerCheck(any())).thenReturn(1);
+        var mvc = MockMvcBuilders.standaloneSetup(new AuthController(users, mock(AuthenticationManager.class),
+                mock(JwtUtils.class), mock(JwtBlacklistService.class), mock(LoginFailureGuard.class)))
+                .setControllerAdvice(new GlobalExceptionHandler()).build();
+        mvc.perform(post("/auth/register").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"username\":\"student\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(409))
+                .andExpect(jsonPath("$.errorCode").value("AUTH_USERNAME_TAKEN"));
+        org.mockito.Mockito.verify(users, org.mockito.Mockito.never()).register(any());
+    }
+
+    @org.junit.jupiter.api.Test
+    void refreshDependencyFailurePreservesUnavailableReason() throws Exception {
+        JwtUtils jwt = mock(JwtUtils.class);
+        when(jwt.extractUsername("valid-refresh")).thenReturn("student");
+        when(jwt.validateRefreshToken("valid-refresh", "student")).thenReturn(true);
+        when(jwt.extractJti("valid-refresh")).thenReturn("test-jti");
+        JwtBlacklistService blacklist = mock(JwtBlacklistService.class);
+        when(blacklist.isRevoked("test-jti")).thenThrow(new com.musealgo.oj.common.exception.DependencyUnavailableException(
+                com.musealgo.oj.common.exception.CommonErrorCode.AUTH_DEPENDENCY_UNAVAILABLE, new RuntimeException("redis private detail")));
+        var mvc = MockMvcBuilders.standaloneSetup(new AuthController(mock(UserService.class), mock(AuthenticationManager.class),
+                jwt, blacklist, mock(LoginFailureGuard.class))).setControllerAdvice(new GlobalExceptionHandler()).build();
+        mvc.perform(post("/auth/refresh").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"refreshToken\":\"valid-refresh\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(503))
+                .andExpect(jsonPath("$.errorCode").value("AUTH_DEPENDENCY_UNAVAILABLE"));
+    }
 }

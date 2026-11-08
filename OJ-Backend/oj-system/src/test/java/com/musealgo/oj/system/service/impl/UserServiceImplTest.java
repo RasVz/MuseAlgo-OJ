@@ -3,6 +3,8 @@ package com.musealgo.oj.system.service.impl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -12,6 +14,7 @@ import com.musealgo.oj.system.mapper.UserMapper;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -50,6 +53,143 @@ class UserServiceImplTest {
         userService.recalculateCounters(7L);
 
         verify(userMapper).recalculateCounters(7L);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"profile", "preferences"})
+    void accountSettingsWritesDoNotRollBackConcurrentSecurityChanges(String operation) {
+        var live = new com.musealgo.oj.system.entity.User();
+        live.setId(12L);
+        live.setPassword("old-hash");
+        live.setCredentialVersion(4L);
+        live.setRole((byte) 2);
+        live.setIsBanned((byte) 0);
+        when(userMapper.selectById(12L)).thenAnswer(invocation -> {
+            var selected = new com.musealgo.oj.system.entity.User();
+            org.springframework.beans.BeanUtils.copyProperties(live, selected);
+            // Apply an administrator reset between the SELECT and settings write.
+            live.setPassword("administrator-reset-hash");
+            live.setCredentialVersion(5L);
+            live.setRole((byte) 1);
+            live.setIsBanned((byte) 1);
+            return selected;
+        });
+        when(userMapper.updateById(any(com.musealgo.oj.system.entity.User.class))).thenAnswer(invocation -> {
+            com.musealgo.oj.system.entity.User patch = invocation.getArgument(0);
+            // Model MyBatis' non-null field update at the repository boundary.
+            if (patch.getPassword() != null) live.setPassword(patch.getPassword());
+            if (patch.getCredentialVersion() != null) live.setCredentialVersion(patch.getCredentialVersion());
+            if (patch.getRole() != null) live.setRole(patch.getRole());
+            if (patch.getIsBanned() != null) live.setIsBanned(patch.getIsBanned());
+            if (patch.getNickname() != null) live.setNickname(patch.getNickname());
+            if (patch.getPreferences() != null) live.setPreferences(patch.getPreferences());
+            return 1;
+        });
+
+        if (operation.equals("profile")) {
+            var profile = new com.musealgo.oj.system.entity.User();
+            profile.setNickname("New display name");
+            org.junit.jupiter.api.Assertions.assertTrue(userService.updateProfile(12L, profile));
+            org.junit.jupiter.api.Assertions.assertEquals("New display name", live.getNickname());
+        } else {
+            org.junit.jupiter.api.Assertions.assertTrue(userService.updatePreferences(12L, "{\"language\":\"java\"}"));
+            org.junit.jupiter.api.Assertions.assertEquals("{\"language\":\"java\"}", live.getPreferences());
+        }
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> org.junit.jupiter.api.Assertions.assertEquals("administrator-reset-hash", live.getPassword()),
+                () -> org.junit.jupiter.api.Assertions.assertEquals(5L, live.getCredentialVersion()),
+                () -> org.junit.jupiter.api.Assertions.assertEquals((byte) 1, live.getRole()),
+                () -> org.junit.jupiter.api.Assertions.assertEquals((byte) 1, live.getIsBanned()));
+    }
+
+    @Test
+    void emptySettingsAreSuccessfulNoOpsWithoutRewritingTheAccount() {
+        when(userMapper.selectById(12L)).thenReturn(new com.musealgo.oj.system.entity.User());
+        org.junit.jupiter.api.Assertions.assertTrue(userService.updateProfile(12L,
+                new com.musealgo.oj.system.entity.User()));
+        org.junit.jupiter.api.Assertions.assertTrue(userService.updatePreferences(12L, null));
+        verify(userMapper, never()).updateById(any(com.musealgo.oj.system.entity.User.class));
+    }
+
+    @Test
+    void registrationCannotChooseThePrimaryKeyOrInventProgress() {
+        var request = new com.musealgo.oj.system.entity.User();
+        request.setId(999L);
+        request.setUsername("synthetic-user");
+        request.setNickname("Synthetic");
+        request.setPassword("synthetic-password");
+        request.setRole((byte) 3);
+        request.setRating(999999);
+        request.setAcceptedCount(999999);
+        when(passwordEncoder.encode("synthetic-password")).thenReturn("encoded-fixture");
+        when(userMapper.insert(any(com.musealgo.oj.system.entity.User.class))).thenAnswer(invocation -> {
+            com.musealgo.oj.system.entity.User row = invocation.getArgument(0);
+            org.junit.jupiter.api.Assertions.assertAll(
+                    () -> org.junit.jupiter.api.Assertions.assertNull(row.getId()),
+                    () -> org.junit.jupiter.api.Assertions.assertEquals((byte) 1, row.getRole()),
+                    () -> org.junit.jupiter.api.Assertions.assertNull(row.getRating()),
+                    () -> org.junit.jupiter.api.Assertions.assertNull(row.getAcceptedCount()),
+                    () -> org.junit.jupiter.api.Assertions.assertEquals("synthetic-user", row.getUsername()),
+                    () -> org.junit.jupiter.api.Assertions.assertEquals("encoded-fixture", row.getPassword()));
+            row.setId(42L);
+            return 1;
+        });
+        org.junit.jupiter.api.Assertions.assertTrue(userService.register(request));
+    }
+
+    @Test
+    void changePasswordAtomicallyUpdatesHashAndCredentialVersion() {
+        com.musealgo.oj.system.entity.User current = new com.musealgo.oj.system.entity.User();
+        current.setId(12L);
+        current.setPassword("old-hash");
+        current.setCredentialVersion(4L);
+        when(userMapper.selectById(12L)).thenReturn(current);
+        when(passwordEncoder.matches("old", "old-hash")).thenReturn(true);
+        when(passwordEncoder.encode("new-password")).thenReturn("new-hash");
+        when(userMapper.changePasswordIfUnchanged(12L, "old-hash", "new-hash")).thenReturn(1);
+
+        org.junit.jupiter.api.Assertions.assertTrue(userService.changePassword(12L, "old", "new-password"));
+
+        verify(userMapper).changePasswordIfUnchanged(12L, "old-hash", "new-hash");
+    }
+
+    @Test
+    void changePasswordRejectsWrongOldPasswordWithoutChangingCredentialVersion() {
+        com.musealgo.oj.system.entity.User current = new com.musealgo.oj.system.entity.User();
+        current.setId(12L);
+        current.setPassword("old-hash");
+        when(userMapper.selectById(12L)).thenReturn(current);
+        when(passwordEncoder.matches("wrong", "old-hash")).thenReturn(false);
+
+        org.junit.jupiter.api.Assertions.assertFalse(userService.changePassword(12L, "wrong", "new-password"));
+
+        verify(passwordEncoder, never()).encode(anyString());
+        verify(userMapper, never()).updatePasswordAndIncrementCredentialVersion(anyLong(), anyString());
+        verify(userMapper, never()).changePasswordIfUnchanged(anyLong(), anyString(), anyString());
+    }
+
+    @Test
+    void changePasswordDoesNotOverwriteConcurrentAdministratorReset() {
+        com.musealgo.oj.system.entity.User current = new com.musealgo.oj.system.entity.User();
+        current.setId(12L);
+        current.setPassword("old-hash");
+        when(userMapper.selectById(12L)).thenReturn(current);
+        when(passwordEncoder.matches("old", "old-hash")).thenReturn(true);
+        when(passwordEncoder.encode("new-password")).thenReturn("new-hash");
+        when(userMapper.changePasswordIfUnchanged(12L, "old-hash", "new-hash")).thenReturn(0);
+
+        org.junit.jupiter.api.Assertions.assertFalse(userService.changePassword(12L, "old", "new-password"));
+
+        verify(userMapper).changePasswordIfUnchanged(12L, "old-hash", "new-hash");
+    }
+
+    @Test
+    void updatePasswordDelegatesToAtomicMapperUpdate() {
+        when(userMapper.updatePasswordAndIncrementCredentialVersion(13L, "encoded-reset")).thenReturn(1);
+
+        org.junit.jupiter.api.Assertions.assertTrue(userService.updatePassword(13L, "encoded-reset"));
+
+        verify(userMapper).updatePasswordAndIncrementCredentialVersion(13L, "encoded-reset");
     }
 
     @Test

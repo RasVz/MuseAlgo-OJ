@@ -19,7 +19,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * JWT 注销黑名单服务单测：revoke 幂等/兜底 TTL、isRevoked 命中、fail-open 降级。
+ * JWT 注销黑名单服务单测：revoke 幂等/兜底 TTL、isRevoked 命中、Redis 故障时 fail-closed。
  */
 class JwtBlacklistServiceTest {
 
@@ -69,8 +69,11 @@ class JwtBlacklistServiceTest {
     }
 
     @Test
-    void isRevoked_redis异常failOpen放行() {
+    void isRevoked_redis异常failClosed拒绝授权() {
         when(stringRedisTemplate.hasKey(anyString())).thenThrow(new RuntimeException("redis down"));
-        assertFalse(service.isRevoked("jti-5")); // fail-open：不阻断请求
+        var error = org.junit.jupiter.api.Assertions.assertThrows(
+                com.musealgo.oj.common.exception.DependencyUnavailableException.class,
+                () -> service.isRevoked("jti-5"));
+        org.junit.jupiter.api.Assertions.assertEquals("AUTH_DEPENDENCY_UNAVAILABLE", error.getErrorCode().key());
     }
 }

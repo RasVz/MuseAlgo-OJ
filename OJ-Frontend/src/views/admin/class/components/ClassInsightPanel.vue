@@ -64,6 +64,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // 班级学情洞察面板：教师查看本班在指定时间窗内的提交趋势、题目与活跃度分布，
 // 并可一键让 AI 生成文字解读。
 //
@@ -242,7 +244,7 @@ const load = async () => {
     renderAllCharts()
   } catch (e) {
     console.error(e)
-    ElMessage.error('获取班级学情失败')
+    showApiError(e, '获取班级学情失败')
     stats.value = null
   } finally {
     loading.value = false
@@ -262,7 +264,7 @@ const runAi = async () => {
     aiOutput.value = unwrapResultData(res) || '（空）'
   } catch (e) {
     console.error(e)
-    ElMessage.error('解读生成失败，请稍后重试')
+    showApiError(e, '解读生成失败，请稍后重试')
   } finally {
     aiLoading.value = false
   }

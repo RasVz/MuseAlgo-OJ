@@ -1,5 +1,9 @@
 package com.musealgo.oj.problem.controller;
 
+import com.musealgo.oj.common.exception.ErrorResponses;
+import com.musealgo.oj.common.exception.CommonErrorCode;
+import com.musealgo.oj.problem.error.ProblemErrorCode;
+
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +31,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 @RequiredArgsConstructor
 @RequestMapping("/problem-list") // 统一使用短横线命名
 public class ProblemListController {
+    private final com.musealgo.oj.problem.application.ProblemListAccessService access;
+    private final com.musealgo.oj.api.teaching.ClassQuery classes;
     private final UserQuery userQuery;
     private final ProblemListService problemListService;
 
@@ -69,7 +75,7 @@ public class ProblemListController {
     @PostMapping("/update-sort")
     public Result<String> updateSort(@RequestBody ProblemListSortDTO sortDTO) {
         if (sortDTO.getType() == null || sortDTO.getIds() == null || sortDTO.getIds().isEmpty()) {
-            return Result.error("参数缺失：type 与 ids 必填");
+            return ErrorResponses.failure(ProblemErrorCode.PROBLEM_INPUT_INVALID, "参数缺失：type 与 ids 必填");
         }
         problemListService.updateSort(sortDTO.getType(), sortDTO.getIds());
         return Result.success("排序已保存");
@@ -80,22 +86,22 @@ public class ProblemListController {
     @PostMapping("/add")
     public Result<Long> add(@RequestBody ProblemList problemList) {
         Long userId = SecurityUtils.getUserId();
-        if (userId == null) return Result.error("未登录");
+        if (userId == null) return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "未登录");
 
         // 基础非空校验
         if (problemList.getTitle() == null || problemList.getTitle().trim().isEmpty()) {
-            return Result.error("标题不能为空");
+            return ErrorResponses.failure(ProblemErrorCode.PROBLEM_INPUT_INVALID, "标题不能为空");
         }
 
         // 官方题单(type=2)仅管理员可创建
         if (problemList.getType() != null && problemList.getType() == 2 && !SecurityUtils.isAdmin()) {
-            return Result.error("仅管理员可创建官方题单");
+            return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "仅管理员可创建官方题单");
         }
 
         // 班级作业(4)/班级题单(3)必须带 classId：这两类的可见性与鉴权都按班级收敛
         if (problemList.getType() != null && (problemList.getType() == 3 || problemList.getType() == 4)) {
             if (problemList.getClassId() == null) {
-                return Result.error("创建失败：班级作业/题单必须绑定班级ID (classId)");
+                return ErrorResponses.failure(ProblemErrorCode.PROBLEM_INPUT_INVALID, "创建失败：班级作业/题单必须绑定班级ID (classId)");
             }
         } else if (problemList.getType() == null) {
             // 如果前端未传 type，默认视为个人私有题单 (type=1)
@@ -106,12 +112,17 @@ public class ProblemListController {
         problemList.setCreateTime(LocalDateTime.now());
         problemList.setUpdateTime(LocalDateTime.now());
 
+        if (problemList.getType() == 3 || problemList.getType() == 4) {
+            var classroom = classes.findById(problemList.getClassId()).orElse(null);
+            if (classroom == null || !(SecurityUtils.isAdmin() || userId.equals(classroom.teacherId())))
+                throw new com.musealgo.oj.common.exception.ForbiddenException("仅班级教师可创建班级题单");
+        }
         // 默认初始化值防空指针
         if (problemList.getProblemCount() == null) problemList.setProblemCount(0);
         if (problemList.getFavoriteCount() == null) problemList.setFavoriteCount(0);
         if (problemList.getPrivacy() == null) problemList.setPrivacy(0);
 
-        problemListService.save(problemList);
+        if (!problemListService.save(problemList)) throw new IllegalStateException("题单保存失败");
 
         // 返回新增的题单 ID 给前端，解决页面跳转到 /创建成功/edit 的 Bug
         return Result.success("创建成功", problemList.getId());
@@ -122,15 +133,15 @@ public class ProblemListController {
     @PostMapping("/update")
     public Result<String> update(@RequestBody ProblemList problemList) {
         Long userId = SecurityUtils.getUserId();
-        if (userId == null) return Result.error("登录已过期");
+        if (userId == null) return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "登录已过期");
 
         // 校验权限：只能修改自己的题单
         ProblemList old = problemListService.getById(problemList.getId());
-        if (old == null) return Result.error("题单不存在");
+        if (old == null) return ErrorResponses.failure(ProblemErrorCode.PROBLEM_LIST_NOT_FOUND, "题单不存在");
         // 管理员可维护官方题单（含他人创建的）
         if (!old.getCreatorId().equals(userId)
                 && !(SecurityUtils.isAdmin() && old.getType() != null && old.getType() == 2)) {
-            return Result.error("无权修改");
+            return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "无权修改");
         }
 
         problemList.setUpdateTime(LocalDateTime.now());
@@ -142,7 +153,7 @@ public class ProblemListController {
         problemList.setClassId(null);
         problemList.setCreateTime(null);
 
-        problemListService.updateById(problemList);
+        if (!problemListService.updateById(problemList)) throw new IllegalStateException("题单更新失败");
         return Result.success("更新成功");
     }
 
@@ -151,21 +162,21 @@ public class ProblemListController {
     @PostMapping("/delete/{id}")
     public Result<String> delete(@PathVariable Long id) {
         Long userId = SecurityUtils.getUserId();
-        if (userId == null) return Result.error("登录已过期");
+        if (userId == null) return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "登录已过期");
 
         ProblemList old = problemListService.getById(id);
-        if (old != null && old.getCreatorId().equals(userId)) {
-            problemListService.removeById(id);
-            return Result.success("删除成功");
-        }
-        return Result.error("删除失败");
+        if (old == null) return ErrorResponses.failure(ProblemErrorCode.PROBLEM_LIST_NOT_FOUND);
+        if (!old.getCreatorId().equals(userId)) return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "无权删除该题单");
+        if (!problemListService.removeById(id)) return ErrorResponses.failure(ProblemErrorCode.PROBLEM_LIST_NOT_FOUND);
+        return Result.success("删除成功");
     }
 
     @Operation(summary = "题单详情")
     @GetMapping("/{id}")
     public Result<ProblemListVO> getDetail(@PathVariable Long id) {
+        access.requireReadable(id);
         ProblemList problemList = problemListService.getById(id);
-        if (problemList == null) return Result.error("题单/作业不存在");
+        if (problemList == null) return ErrorResponses.failure(ProblemErrorCode.PROBLEM_LIST_NOT_FOUND, "题单/作业不存在");
 
         ProblemListVO vo = new ProblemListVO();
         org.springframework.beans.BeanUtils.copyProperties(problemList, vo);
@@ -188,7 +199,7 @@ public class ProblemListController {
             @RequestParam(defaultValue = "10") Integer size
     ) {
         Long userId = SecurityUtils.getUserId();
-        if (userId == null) return Result.error("登录已过期");
+        if (userId == null) return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "登录已过期");
 
         return Result.success(problemListService.getStudentHomeworks(page, size, userId));
     }
@@ -196,6 +207,8 @@ public class ProblemListController {
     @Operation(summary = "待完成数量")
     @GetMapping("/todo-count")
     public Result<Long> getTodoCount(@RequestParam Long userId) {
+        if (!java.util.Objects.equals(userId, SecurityUtils.getUserId()) && !SecurityUtils.isAdmin())
+            throw new com.musealgo.oj.common.exception.ForbiddenException("无权查看他人的作业进度");
         return Result.success(problemListService.getUnfinishedCount(userId));
     }
 }

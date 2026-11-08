@@ -1,5 +1,8 @@
 package com.musealgo.oj.teaching;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.teaching.error.TeachingErrorCode;
+
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -55,8 +58,8 @@ public class SlidevBuilderService {
     public String buildPresentation(MultipartFile mdFile) throws Exception {
         com.musealgo.oj.common.utils.SecurityUtils.requireTeacherOrAdmin();
         if (mdFile.isEmpty() || mdFile.getSize() > 5L * 1024 * 1024)
-            throw new IllegalArgumentException("Markdown课件须为非空且不超过5MB");
-        if (!buildSlots.tryAcquire()) throw new IllegalStateException("课件构建繁忙，请稍后重试");
+            throw new BusinessException(TeachingErrorCode.TEACHING_INPUT_INVALID, "Markdown课件须为非空且不超过5MB");
+        if (!buildSlots.tryAcquire()) throw new BusinessException(TeachingErrorCode.COURSEWARE_BUILD_BUSY, "课件构建繁忙，请稍后重试");
         Path tempMd = null;
         Path buildLog = null;
         Process process = null;
@@ -76,10 +79,10 @@ public class SlidevBuilderService {
             builder.environment().put("CI", "true");
             process = builder.start();
             if (!process.waitFor(Math.max(1, buildTimeoutSeconds), java.util.concurrent.TimeUnit.SECONDS))
-                throw new IllegalStateException("课件构建超时");
+                throw new BusinessException(TeachingErrorCode.COURSEWARE_BUILD_TIMEOUT, "课件构建超时");
             if (process.exitValue() != 0) {
                 try (var lines = Files.lines(buildLog)) { lines.limit(200).forEach(line -> log.warn("[Slidev build] {}", line)); }
-                throw new IllegalStateException("Slidev编译失败，请检查课件内容");
+                throw new BusinessException(TeachingErrorCode.COURSEWARE_BUILD_INVALID, "Slidev编译失败，请检查课件内容");
             }
             return paths.presentationUrl(uuid);
         } catch (InterruptedException ex) {

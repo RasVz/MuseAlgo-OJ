@@ -1,5 +1,8 @@
 package com.musealgo.oj.community.controller;
 
+import com.musealgo.oj.common.exception.ErrorResponses;
+import com.musealgo.oj.common.exception.CommonErrorCode;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
@@ -45,12 +48,9 @@ public class CommentController {
     @Operation(summary = "发布评论")
     @PostMapping("/add")
     public Result<String> addComment(@RequestBody @Validated CommentDTO dto) {
-        try {
-            commentService.publishComment(dto);
-            return Result.success("评论成功");
-        } catch (IllegalArgumentException e) {
-            return Result.error(e.getMessage());
-        }
+        commentService.publishComment(dto);
+        return Result.success("评论成功");
+
     }
 
     // 2. 获取评论列表
@@ -59,11 +59,8 @@ public class CommentController {
     public Result<List<CommentVO>> getList(
             @RequestParam Long entityId,
             @RequestParam(defaultValue = "1") Integer entityType) {
-        try {
-            return Result.success(commentService.getCommentList(new CommentTarget(entityId, entityType)));
-        } catch (IllegalArgumentException e) {
-            return Result.error(e.getMessage());
-        }
+        return Result.success(commentService.getCommentList(new CommentTarget(entityId, entityType)));
+
     }
 
     // 3. 点赞/取消点赞接口
@@ -72,15 +69,12 @@ public class CommentController {
     @PostMapping("/like")
     public Result<String> toggleLike(@RequestParam Long commentId, @RequestParam(required = false) Boolean active) {
         Long userId = SecurityUtils.getUserId();
-        if (userId == null) return Result.error(401, "请先登录");
+        if (userId == null) return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "请先登录");
         InteractionCommand command = new InteractionCommand(userId, InteractionTargetType.COMMENT, commentId, InteractionAction.LIKE);
-        try {
-            boolean targetState = active != null ? active : !interactionService.isActive(command);
-            if (targetState) interactionService.activate(command);
-            else interactionService.deactivate(command);
-            return Result.success("操作成功");
-        } catch (IllegalArgumentException e) {
-            return Result.error(404, e.getMessage());
-        }
+        boolean targetState = active != null ? active : !interactionService.isActive(command);
+        if (targetState) interactionService.activate(command);
+        else interactionService.deactivate(command);
+        return Result.success("操作成功");
+
     }
 }

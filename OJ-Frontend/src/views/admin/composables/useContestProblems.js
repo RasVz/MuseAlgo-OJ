@@ -1,3 +1,5 @@
+
+import { showApiError } from '@/utils/errorFeedback'
 import { ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -96,7 +98,7 @@ export function useContestProblems(contestId) {
         problemOrder: idx + 1
       }))
     } catch (e) {
-      ElMessage.error(e?.message || '获取题目列表失败')
+      showApiError(e, e?.message || '获取题目列表失败')
     } finally {
       loadingProblems.value = false
     }
@@ -114,7 +116,7 @@ export function useContestProblems(contestId) {
     try {
       await addProblemsByIds(validIds)
     } catch (e) {
-      ElMessage.error(e?.message || '添加题目失败')
+      showApiError(e, e?.message || '添加题目失败')
     } finally {
       addingProblem.value = false
     }
@@ -212,7 +214,7 @@ export function useContestProblems(contestId) {
       }
       return true
     } catch (e) {
-      if (!silent) ElMessage.error(e?.message || '保存题目配置失败')
+      if (!silent) showApiError(e, e?.message || '保存题目配置失败')
       return false
     } finally {
       if (!silent) {
@@ -238,7 +240,7 @@ export function useContestProblems(contestId) {
       row.visible = targetVisible
       ElMessage.success(targetVisible === 1 ? '已设为可见' : '已设为隐藏')
     } catch (e) {
-      ElMessage.error(e?.message || '切换可见性失败')
+      showApiError(e, e?.message || '切换可见性失败')
     } finally {
       togglingProblemId.value = null
     }
@@ -274,7 +276,7 @@ export function useContestProblems(contestId) {
       await loadProblemList()
     } catch (e) {
       if (e !== 'cancel' && e !== 'close') {
-        ElMessage.error(e?.message || '移除题目失败')
+        showApiError(e, e?.message || '移除题目失败')
       }
     } finally {
       removingProblemRelationId.value = null
@@ -300,7 +302,7 @@ export function useContestProblems(contestId) {
       await loadProblemList()
     } catch (e) {
       problemList.value = backup
-      ElMessage.error(e?.message || '保存题目顺序失败')
+      showApiError(e, e?.message || '保存题目顺序失败')
     } finally {
       loadingProblems.value = false
     }

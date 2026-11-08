@@ -57,6 +57,14 @@ public class ContestServiceImpl extends ServiceImpl<ContestMapper, Contest> impl
         Page<Contest> page = new Page<>(currentPage, pageSize);
         QueryWrapper<Contest> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("class_id", classId);
+        if (!com.musealgo.oj.common.utils.SecurityUtils.isAdmin()) {
+            Long actor = com.musealgo.oj.common.utils.SecurityUtils.getUserId();
+            if (actor != null && com.musealgo.oj.common.utils.SecurityUtils.isTeacherOrAdmin()) {
+                queryWrapper.and(q -> q.eq("visible", 1).or().eq("author_id", actor));
+            } else {
+                queryWrapper.eq("visible", 1);
+            }
+        }
 
         if (keyword != null && !keyword.trim().isEmpty()) {
             // 用 like 而非 eq：搜索框的语义是「包含」；

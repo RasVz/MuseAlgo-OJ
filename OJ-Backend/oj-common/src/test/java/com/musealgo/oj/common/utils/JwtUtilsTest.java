@@ -43,6 +43,26 @@ class JwtUtilsTest {
     }
 
     @Test
+    void credentialVersionIsSignedAndLegacyTokensStartAtZero() throws Exception {
+        String versioned = jwt.generateAccessToken("student", 17L);
+        assertEquals(17L, jwt.extractCredentialVersion(versioned));
+        assertTrue(jwt.hasCurrentCredentialVersion(versioned, 17L));
+        assertFalse(jwt.hasCurrentCredentialVersion(versioned, 18L));
+
+        String header = encode("{\"alg\":\"HS256\"}".getBytes(StandardCharsets.UTF_8));
+        String payload = encode(("{\"sub\":\"legacy-user\",\"exp\":4102444800,\"type\":\"access\"}")
+                .getBytes(StandardCharsets.UTF_8));
+        String signingInput = header + "." + payload;
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(key);
+        String legacy = signingInput + "." + encode(mac.doFinal(signingInput.getBytes(StandardCharsets.UTF_8)));
+
+        assertEquals(0L, jwt.extractCredentialVersion(legacy));
+        assertTrue(jwt.hasCurrentCredentialVersion(legacy, 0L));
+        assertFalse(jwt.hasCurrentCredentialVersion(legacy, 1L));
+    }
+
+    @Test
     void refreshTokensKeepNormalAndRememberMeLifetimes() {
         assertRefreshLifetime(false, Duration.ofHours(6));
         assertRefreshLifetime(true, Duration.ofDays(7));

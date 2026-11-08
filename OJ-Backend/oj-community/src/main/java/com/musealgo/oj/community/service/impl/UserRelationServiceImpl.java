@@ -38,9 +38,7 @@ public class UserRelationServiceImpl implements UserRelationService {
      * <b>方法名是「toggle」但调用方不应依赖它：</b>内部是「先查后插/删」，
      * 并发下两个请求可能同时查到「无记录」而双双插入。
      * {@code user_relation} 上有 {@code (follower_id, followed_id)} 唯一约束兜底，
-     * 后到者会触发 {@link org.springframework.dao.DuplicateKeyException} 并回滚整个事务，
-     * 用户看到失败但数据没脏。若后续要支持客户端重试，
-     * 应把这一步改成捕获冲突后转为「已关注」，而不是去掉事务。
+     * 后到者返回状态冲突并回滚；计数只在本次关系插入成功后更新。
      * </p>
      * <p>
      * 返回英文状态串（{@code followed} / {@code unfollowed}）供前端提示，
@@ -49,7 +47,7 @@ public class UserRelationServiceImpl implements UserRelationService {
      * </p>
      *
      * @return {@code "followed"} 或 {@code "unfollowed"}
-     * @throws org.springframework.dao.DuplicateKeyException 并发关注同一用户时
+     * @throws com.musealgo.oj.common.exception.BusinessException 并发关注同一用户时
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -61,7 +59,8 @@ public class UserRelationServiceImpl implements UserRelationService {
         UserRelation relation = userRelationMapper.selectOne(wrapper);
 
         if (relation != null) {
-            userRelationMapper.deleteById(relation.getId());
+            // A concurrent unfollow may already have removed this relation.
+            if (userRelationMapper.deleteById(relation.getId()) == 0) return "unfollowed";
             userStatsCommand.incrementFollowerCount(targetUserId, -1);
             userStatsCommand.incrementFollowingCount(currentUserId, -1);
             return "unfollowed";
@@ -69,7 +68,12 @@ public class UserRelationServiceImpl implements UserRelationService {
             UserRelation newRelation = new UserRelation();
             newRelation.setFollowerId(currentUserId);
             newRelation.setFollowedId(targetUserId);
-            userRelationMapper.insert(newRelation);
+            try {
+                if (userRelationMapper.insert(newRelation) != 1) throw new IllegalStateException("关注关系保存失败");
+            } catch (org.springframework.dao.DuplicateKeyException conflict) {
+                throw new com.musealgo.oj.common.exception.BusinessException(
+                        com.musealgo.oj.common.exception.CommonErrorCode.STATE_CONFLICT, "关注状态已变化，请刷新后重试");
+            }
             userStatsCommand.incrementFollowerCount(targetUserId, 1);
             userStatsCommand.incrementFollowingCount(currentUserId, 1);
             return "followed";

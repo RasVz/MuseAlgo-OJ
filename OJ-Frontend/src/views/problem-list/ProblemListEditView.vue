@@ -115,6 +115,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // 题单编辑器：一个页面承担三种身份——个人题单、班级题单（作业）与官方题单，
 // 靠路由参数（id / query 的 classId、official、mode）区分，保存时走不同的接口。
 // 基本信息与题目增删排序拆成两个子组件，保存时统一由本页提交。
@@ -285,7 +287,7 @@ const handleSaveTitle = async () => {
     }
   } catch (err) {
     console.error(err)
-    ElMessage.error('操作异常，请稍后重试')
+    showApiError(err, '操作异常，请稍后重试')
   } finally {
     saving.value = false
   }
@@ -329,7 +331,7 @@ const handleSaveHomeworkSettings = async () => {
     }
   } catch (error) {
     console.error(error)
-    ElMessage.error('保存失败，请稍后重试')
+    showApiError(error, '保存失败，请稍后重试')
   } finally {
     savingHomework.value = false
   }
@@ -353,7 +355,7 @@ const handleDelete = () => {
       }
     } catch (error) {
       console.error(error)
-      ElMessage.error('网络请求失败')
+      showApiError(error, '网络请求失败')
     }
   }).catch(() => {})
 }

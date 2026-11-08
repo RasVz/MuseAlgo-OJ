@@ -79,6 +79,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // 比赛列表页：展示公开可见的比赛并支持报名。
 // 报名需要勾选竞赛诚信承诺，因此用弹窗而不是直接点一下就报名。
 import { ref, onMounted } from 'vue'
@@ -152,7 +154,7 @@ const confirmRegister = async () => {
     }
   } catch (err) {
     console.error(err)
-    ElMessage.error('网络或服务器异常，请稍后再试')
+    showApiError(err, err.message || '报名失败，请稍后重试')
   } finally {
     registering.value = false
   }

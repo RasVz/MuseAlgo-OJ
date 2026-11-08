@@ -52,6 +52,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // 文章编辑器（弹窗内嵌页，通常以新标签页打开）：写讨论贴 / 题解 / 博客文章。
 //
 // 核心机制是"本地草稿"：编辑内容防抖存 localStorage，关闭页面前自动存一次，
@@ -164,7 +166,7 @@ const uploadAndInsertImage = async ({ file }) => {
     postForm.value.content += `${postForm.value.content ? '\n\n' : ''}![${file.name}](${res.data})\n`
     ElMessage.success('图片已插入正文')
   } catch (error) {
-    ElMessage.error(error.message || '图片上传失败')
+    showApiError(error, error.message || '图片上传失败')
   } finally {
     uploading.value = false
   }
@@ -223,7 +225,7 @@ const loadPostDetail = async (id) => {
     }
   } catch (e) {
     console.error(e)
-    ElMessage.error('加载异常')
+    showApiError(e, '加载异常')
   }
 }
 
@@ -281,7 +283,7 @@ const handleSave = async () => {
     }
   } catch (e) {
     console.error(e)
-    ElMessage.error('网络请求异常，请稍后重试')
+    showApiError(e, '网络请求异常，请稍后重试')
   } finally {
     saving.value = false
   }

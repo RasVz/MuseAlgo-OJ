@@ -146,6 +146,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // 比赛编辑器：创建/编辑比赛的基本信息与题目配置，仅管理员（班级比赛为教师）可访问。
 //
 // 本组件只做编排：表单交给 useContestForm、题目管理交给 useContestProblems 与
@@ -258,7 +260,7 @@ async function handleRebuildRank() {
     ElMessage.success(getResultMessage(res, '重建排行榜成功'))
   } catch (e) {
     if (e !== 'cancel' && e !== 'close') {
-      ElMessage.error(e?.message || '重建排行榜失败')
+      showApiError(e, e?.message || '重建排行榜失败')
     }
   } finally {
     rebuildingRank.value = false
@@ -284,7 +286,7 @@ async function handleDeleteContest() {
     await router.push({ name: 'AdminContest' })
   } catch (e) {
     if (e !== 'cancel' && e !== 'close') {
-      ElMessage.error(e?.message || '删除比赛失败')
+      showApiError(e, e?.message || '删除比赛失败')
     }
   } finally {
     deleting.value = false

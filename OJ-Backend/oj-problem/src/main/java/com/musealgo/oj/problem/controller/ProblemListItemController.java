@@ -1,8 +1,16 @@
 package com.musealgo.oj.problem.controller;
 
+import com.musealgo.oj.common.utils.RequestValues;
+
+import com.musealgo.oj.common.exception.ErrorResponses;
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.common.exception.CommonErrorCode;
+import com.musealgo.oj.problem.error.ProblemErrorCode;
+
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper; // 【新增】引入 UpdateWrapper
 import lombok.RequiredArgsConstructor;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import com.musealgo.oj.common.api.Result;
 import com.musealgo.oj.common.utils.SecurityUtils;
@@ -39,6 +47,8 @@ public class ProblemListItemController {
 
     // 用于在题目增删后同步题单主表的题目计数
     private final ProblemListService problemListService;
+    private final com.musealgo.oj.problem.application.ProblemListAccessService access;
+    private final com.musealgo.oj.problem.application.ProblemReadAccessService readAccess;
 
     /** 获取指定题单内的所有题目 */
     @Operation(summary = "获取题单内题目列表")
@@ -46,6 +56,7 @@ public class ProblemListItemController {
     public Result<List<ProblemVO>> getListProblems(
             @RequestParam Long listId
     ) {
+        access.requireReadable(listId);
         Long userId = SecurityUtils.getUserId();
         List<ProblemVO> list = problemListItemService.selectProblemsWithStatus(listId, userId);
         return Result.success(list);
@@ -56,7 +67,7 @@ public class ProblemListItemController {
     @GetMapping("/contained")
     public Result<List<Long>> getContainedListIds(@RequestParam Long problemId) {
         Long userId = SecurityUtils.getUserId();
-        if (userId == null) return Result.error("未登录");
+        if (userId == null) return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "未登录");
         return Result.success(problemListItemService.selectContainedListIds(problemId, userId));
     }
 
@@ -66,12 +77,13 @@ public class ProblemListItemController {
      */
     @Operation(summary = "向题单添加题目")
     @PostMapping("/add")
+    @Transactional(rollbackFor = Exception.class)
     public Result<String> addProblem(@RequestBody Map<String, Object> params) {
         Object listIdObj = params.get("problemListId");
         Object displayIdObj = params.get("problemDisplayId");
 
         if (listIdObj == null || displayIdObj == null) {
-            return Result.error("参数缺失");
+            return ErrorResponses.failure(ProblemErrorCode.PROBLEM_INPUT_INVALID, "参数缺失");
         }
 
         Long listId;
@@ -82,22 +94,24 @@ public class ProblemListItemController {
             // 直接解析数字，不处理前缀
             problemId = Long.valueOf(displayIdObj.toString().trim());
         } catch (NumberFormatException e) {
-            return Result.error("题目ID格式错误，请输入纯数字ID");
+            return ErrorResponses.failure(ProblemErrorCode.PROBLEM_INPUT_INVALID, "题目ID格式错误，请输入纯数字ID");
         }
 
         // 0. 越权防护：只能向自己创建的题单加题（管理员维护官方题单除外）
         Long userId = SecurityUtils.getUserId();
-        if (userId == null) return Result.error("未登录");
+        if (userId == null) return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "未登录");
         if (!canOperateList(listId, userId)) {
-            return Result.error("无权操作该题单");
+            return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "无权操作该题单");
         }
 
         // 1. 查询题目是否存在
         Problem problem = problemService.getOne(new QueryWrapper<Problem>().eq("id", problemId));
 
         if (problem == null) {
-            return Result.error("题目不存在：" + problemId);
+            return ErrorResponses.failure(ProblemErrorCode.PROBLEM_NOT_FOUND, "题目不存在：" + problemId);
         }
+
+        readAccess.requireReadable(problemId);
 
         // 2. 检查是否已经存在于该题单
         long count = problemListItemService.count(new QueryWrapper<ProblemListItem>()
@@ -105,7 +119,7 @@ public class ProblemListItemController {
                 .eq("problem_id", problem.getId()));
 
         if (count > 0) {
-            return Result.error("该题目已在题单中");
+            return ErrorResponses.failure(ProblemErrorCode.PROBLEM_LIST_ITEM_ALREADY_EXISTS, "该题目已在题单中");
         }
 
         // 3. 添加关联
@@ -115,13 +129,14 @@ public class ProblemListItemController {
         item.setSort(0);
 
         boolean saved = problemListItemService.save(item);
+        if (!saved) throw new IllegalStateException("题单题目保存失败");
 
         // 【新增逻辑】如果保存成功，更新主表计数 +1
         if (saved) {
             UpdateWrapper<ProblemList> updateWrapper = new UpdateWrapper<>();
             updateWrapper.eq("id", listId)
                     .setSql("problem_count = problem_count + 1");
-            problemListService.update(updateWrapper);
+            if (!problemListService.update(updateWrapper)) throw new IllegalStateException("题单题目计数更新失败");
         }
 
         return Result.success("添加成功");
@@ -133,25 +148,26 @@ public class ProblemListItemController {
      */
     @Operation(summary = "从题单移除题目")
     @PostMapping("/remove")
+    @Transactional(rollbackFor = Exception.class)
     public Result<String> removeProblem(@RequestBody Map<String, Object> params) {
         if (params.get("problemListId") == null || params.get("problemId") == null) {
-            return Result.error("参数缺失");
+            return ErrorResponses.failure(ProblemErrorCode.PROBLEM_INPUT_INVALID, "参数缺失");
         }
 
         Long listId;
         Long problemId;
         try {
-            listId = Long.valueOf(params.get("problemListId").toString());
-            problemId = Long.valueOf(params.get("problemId").toString());
+            listId = RequestValues.longValue(params.get("problemListId"), "problemListId");
+            problemId = RequestValues.longValue(params.get("problemId"), "problemId");
         } catch (NumberFormatException e) {
-            return Result.error("参数格式错误");
+            return ErrorResponses.failure(ProblemErrorCode.PROBLEM_INPUT_INVALID, "参数格式错误");
         }
 
         // 越权防护：只能从自己创建的题单移除题目（管理员维护官方题单除外）
         Long userId = SecurityUtils.getUserId();
-        if (userId == null) return Result.error("未登录");
+        if (userId == null) return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "未登录");
         if (!canOperateList(listId, userId)) {
-            return Result.error("无权操作该题单");
+            return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "无权操作该题单");
         }
 
         boolean removed = problemListItemService.remove(new QueryWrapper<ProblemListItem>()
@@ -163,12 +179,12 @@ public class ProblemListItemController {
             UpdateWrapper<ProblemList> updateWrapper = new UpdateWrapper<>();
             updateWrapper.eq("id", listId)
                     .setSql("problem_count = problem_count - 1");
-            problemListService.update(updateWrapper);
+            if (!problemListService.update(updateWrapper)) throw new IllegalStateException("题单题目计数更新失败");
 
             return Result.success("移除成功");
         }
 
-        return Result.error("移除失败或题目不在题单中");
+        throw new BusinessException(ProblemErrorCode.PROBLEM_LIST_ITEM_NOT_FOUND);
     }
 
     /**

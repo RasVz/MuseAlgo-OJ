@@ -90,7 +90,8 @@ public class TagRatingService {
             int gain = calcGain(current, difficultyRating);
             int newRating = Math.min(current + gain, difficultyRating + CAP_MARGIN);
 
-            userTagRatingMapper.upsert(userId, tagId, newRating);
+            if (userTagRatingMapper.upsert(userId, tagId, newRating) <= 0)
+                throw new IllegalStateException("标签评分保存失败");
             log.debug("TagRating user={} tag={} {}→{} gain={}", userId, tagId, current, newRating, gain);
         }
     }
@@ -104,8 +105,8 @@ public class TagRatingService {
      * {@link #updateRating(Long, Long)}，才能得到与原始判题链路一致的终态。
      * </p>
      * <p>
-     * 仅由 T8 重判后处理（{@code RejudgePostProcessListener}）调用，不用于日常 AC 增量更新
-     * （日常增量走 MQ 的 updateRating）。整段在一个事务内：删除或重放中途失败时回滚到
+     * 日常持久事件、可选 MQ 通知及重判后处理均调用本方法；每次按权威历史重建，
+     * 重复投递不会重复累计。锁行先于历史快照读取；整段在一个事务内，失败时回滚到
      * 重建前的状态，由 T8-2 的重试/对账再次触发；不会留下「删了一半评分」的中间态。
      * </p>
      * <p>
@@ -122,6 +123,8 @@ public class TagRatingService {
         if (userId == null) {
             return;
         }
+        // Serialize duplicate deliveries and rejudge rebuilds before the first snapshot read.
+        userTagRatingMapper.lockUser(userId);
         // 先取数再删除：查询失败时不破坏现有评分；删除本身在事务内，后续重放失败会回滚
         List<SubmissionQuery.AcceptedSubmission> accepted =
                 submissionQuery.findAcceptedChronological(userId);

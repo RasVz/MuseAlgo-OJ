@@ -1,5 +1,11 @@
 package com.musealgo.oj.system.controller;
 
+import com.musealgo.oj.common.exception.ErrorResponses;
+import io.jsonwebtoken.JwtException;
+import org.springframework.security.authentication.AuthenticationServiceException;
+import com.musealgo.oj.common.exception.CommonErrorCode;
+import com.musealgo.oj.system.error.SystemErrorCode;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -20,6 +26,7 @@ import com.musealgo.oj.system.entity.User;
 import com.musealgo.oj.system.service.JwtBlacklistService;
 import com.musealgo.oj.system.service.LoginFailureGuard;
 import com.musealgo.oj.system.service.UserService;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 
 import java.util.HashMap;
 import java.time.LocalDateTime;
@@ -74,7 +81,13 @@ public class AuthController {
 
     @ExceptionHandler(AuthenticationException.class)
     public Result<String> handleAuthenticationFailure(AuthenticationException exception) {
-        return Result.fail(401, "用户名或密码错误");
+        return ErrorResponses.failure(CommonErrorCode.AUTH_INVALID_CREDENTIALS);
+    }
+
+    @ExceptionHandler(AuthenticationServiceException.class)
+    public Result<String> handleAuthenticationServiceFailure(AuthenticationServiceException exception) {
+        log.error("登录认证依赖失败", exception);
+        return ErrorResponses.failure(CommonErrorCode.AUTH_DEPENDENCY_UNAVAILABLE);
     }
 
     @Operation(summary = "刷新 Token")
@@ -82,32 +95,26 @@ public class AuthController {
     @PostMapping("/refresh")
     public Result<String> refreshToken(@RequestBody Map<String, String> body) {
         String refreshToken = body.get("refreshToken");
-
-        // 1. 校验 refreshToken 是否有效
-        // 需要处理异常，比如 Token 过期会抛异常
+        if (!StringUtils.hasText(refreshToken)) return ErrorResponses.failure(CommonErrorCode.AUTH_REFRESH_INVALID);
+        final String username;
         try {
-            if (jwtUtils.validateRefreshToken(refreshToken, jwtUtils.extractUsername(refreshToken))) {
-
-                // 1.5 注销检查：refresh jti 已在黑名单 → 拒绝刷新，要求重新登录
-                //（防"注销后拿旧 refresh 换新 access"绕过注销）
-                if (jwtBlacklistService.isRevoked(jwtUtils.extractJti(refreshToken))) {
-                    return Result.error(401, "登录已注销，请重新登录");
-                }
-
-                // 2. 获取用户名
-                String username = jwtUtils.extractUsername(refreshToken);
-
-                // 3. 生成新的 Access Token
-                String newAccessToken = jwtUtils.generateAccessToken(username);
-
-                // 4. 返回
-                return Result.success(newAccessToken);
+            username = jwtUtils.extractUsername(refreshToken);
+            if (!jwtUtils.validateRefreshToken(refreshToken, username)) {
+                return ErrorResponses.failure(CommonErrorCode.AUTH_REFRESH_INVALID);
             }
-        } catch (Exception e) {
-            return Result.error(401, "Refresh Token 失效，请重新登录");
+        } catch (JwtException | IllegalArgumentException invalid) {
+            return ErrorResponses.failure(CommonErrorCode.AUTH_REFRESH_INVALID);
         }
-
-        return Result.error(401, "无效的 Token");
+        // Dependency errors propagate as unavailable and still deny authorization.
+        if (jwtBlacklistService.isRevoked(jwtUtils.extractJti(refreshToken))) {
+            return ErrorResponses.failure(CommonErrorCode.AUTH_TOKEN_REVOKED);
+        }
+        User currentUser = userService.getOne(new LambdaQueryWrapper<User>().eq(User::getUsername, username));
+        if (currentUser == null || (currentUser.getIsBanned() != null && currentUser.getIsBanned() == 1)
+                || !jwtUtils.hasCurrentCredentialVersion(refreshToken, currentUser.getCredentialVersion())) {
+            return ErrorResponses.failure(CommonErrorCode.AUTH_REFRESH_INVALID);
+        }
+        return Result.success(jwtUtils.generateAccessToken(username, credentialVersion(currentUser)));
     }
 
     @Operation(summary = "注销登录（服务端拉黑 access + refresh，尽力而为）")
@@ -147,11 +154,11 @@ public class AuthController {
     @PostMapping("/register")
     public Result<String> register(@RequestBody User user) {
         Integer code = userService.registerCheck(user);
-        if (code == 1) return Result.error("用户名已被使用");
-        if (code == 2) return Result.error("邮箱已被使用");
+        if (code == 1) return ErrorResponses.failure(SystemErrorCode.AUTH_USERNAME_TAKEN, "用户名已被使用");
+        if (code == 2) return ErrorResponses.failure(SystemErrorCode.AUTH_EMAIL_TAKEN, "邮箱已被使用");
 
         boolean isSuccess = userService.register(user);
-        return isSuccess ? Result.success("注册成功") : Result.error("注册失败");
+        return isSuccess ? Result.success("注册成功") : ErrorResponses.failure(CommonErrorCode.INTERNAL_ERROR, "注册失败");
     }
 
     @Operation(summary = "用户登录")
@@ -160,11 +167,14 @@ public class AuthController {
             timeProperty = "oj.security.login.ip-window-seconds")
     @PostMapping("/login")
     public Result<Map<String, Object>> login(@RequestBody Map<String, Object> loginData) {
-        String username = (String) loginData.get("username");
-        String password = (String) loginData.get("password");
+        if (!(loginData.get("username") instanceof String username) || username.isBlank()
+                || !(loginData.get("password") instanceof String password) || password.isBlank()
+                || (loginData.get("rememberMe") != null && !(loginData.get("rememberMe") instanceof Boolean))) {
+            return ErrorResponses.failure(SystemErrorCode.SYSTEM_INPUT_INVALID, "请输入有效的用户名和密码");
+        }
 
         // 获取前端传来的【记住我】状态，默认为 false
-        boolean rememberMe = loginData.containsKey("rememberMe") && (boolean) loginData.get("rememberMe");
+        boolean rememberMe = Boolean.TRUE.equals(loginData.get("rememberMe"));
 
         log.debug("rememberMe: {}", rememberMe);
 
@@ -172,7 +182,7 @@ public class AuthController {
         //    与按 IP 的 @RateLimit 是两个口径：IP 额度防单机爆破，账号冷却防「换 IP 猜同一账号」。
         long cooling = loginFailureGuard.lockedSeconds(username);
         if (cooling > 0) {
-            return Result.error(429, "账号或密码错误次数过多，请 " + cooling + " 秒后再试");
+            return ErrorResponses.failure(CommonErrorCode.AUTH_LOGIN_COOLDOWN, "账号或密码错误次数过多，请 " + cooling + " 秒后再试", Map.of("retryAfterSeconds", cooling));
         }
 
         // 1. 认证
@@ -181,6 +191,8 @@ public class AuthController {
             authentication = authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(username, password)
             );
+        } catch (AuthenticationServiceException e) {
+            throw e;
         } catch (AuthenticationException e) {
             loginFailureGuard.recordFailure(username);
             throw e;
@@ -190,10 +202,11 @@ public class AuthController {
         User authenticatedUser = (User) authentication.getPrincipal();
 
         // 2. 生成 Token
-        String accessToken = jwtUtils.generateAccessToken(authenticatedUser.getUsername());
+        long credentialVersion = credentialVersion(authenticatedUser);
+        String accessToken = jwtUtils.generateAccessToken(authenticatedUser.getUsername(), credentialVersion);
 
         // rememberMe 决定了 RefreshToken 是 1 天还是 7 天
-        String refreshToken = jwtUtils.generateRefreshToken(authenticatedUser.getUsername(), rememberMe);
+        String refreshToken = jwtUtils.generateRefreshToken(authenticatedUser.getUsername(), rememberMe, credentialVersion);
 
         // 2.5 记录最后登录时间（管理端展示用）
         try {
@@ -215,5 +228,9 @@ public class AuthController {
         map.put("user", authenticatedUser);
 
         return Result.success("登录成功", map);
+    }
+
+    private long credentialVersion(User user) {
+        return user.getCredentialVersion() == null ? 0L : user.getCredentialVersion();
     }
 }

@@ -1,6 +1,7 @@
 package com.musealgo.oj.problem.service.impl;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -35,6 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.doAnswer;
 
@@ -70,10 +72,16 @@ class ExamPaperAttemptTest {
     @InjectMocks
     private ExamAttemptApplicationService attemptFlow;
 
+    @BeforeEach
+    void stubPublishedPaperForAttemptRequests() {
+        lenient().when(examPaperMapper.selectById(10L)).thenReturn(paper(90));
+    }
+
     private ExamPaper paper(int duration) {
         ExamPaper paper = new ExamPaper();
         paper.setId(10L);
         paper.setDurationMinutes(duration);
+        paper.setIsPublished(1);
         return paper;
     }
 
@@ -177,7 +185,7 @@ class ExamPaperAttemptTest {
         when(examAttemptMapper.selectOne(any())).thenReturn(null);
         ExamAnswerSubmitDTO submit = answerSubmit(1L, "A");
 
-        assertThrows(IllegalStateException.class, () -> attemptFlow.submitAnswers(10L, 1L, submit));
+        assertThrows(com.musealgo.oj.common.exception.BusinessException.class, () -> attemptFlow.submitAnswers(10L, 1L, submit));
     }
 
     @Test
@@ -209,7 +217,7 @@ class ExamPaperAttemptTest {
         when(examAnswerMapper.selectList(any())).thenReturn(List.of());
         when(examPaperProblemMapper.selectList(any())).thenReturn(List.of());
 
-        assertThrows(IllegalStateException.class,
+        assertThrows(com.musealgo.oj.problem.service.impl.AttemptExpiredException.class,
                 () -> attemptFlow.submitAnswers(10L, 1L, answerSubmit(1L, "A")));
         assertEquals(ExamAttempt.STATUS_TIMEOUT, expired.getStatus());
     }
@@ -291,5 +299,32 @@ class ExamPaperAttemptTest {
         assertEquals("\"a,b\"", ExamPaperStatsApplicationService.escapeCsv("a,b"));
         assertEquals("\"say \"\"hi\"\"\"", ExamPaperStatsApplicationService.escapeCsv("say \"hi\""));
         assertEquals("", ExamPaperStatsApplicationService.escapeCsv(null));
+    }
+    @Test
+    void timedOutAnswerRejectionCommitsThroughSpringTransactionBoundary() {
+        ExamAttempt expired = runningAttempt();
+        expired.setEndTime(LocalDateTime.now().minusSeconds(1));
+        when(examAttemptMapper.selectOne(any())).thenReturn(expired);
+        when(examAnswerMapper.selectList(any())).thenReturn(List.of());
+        when(examPaperProblemMapper.selectList(any())).thenReturn(List.of());
+        var transactionManager = org.mockito.Mockito.mock(org.springframework.transaction.PlatformTransactionManager.class);
+        var transaction = new org.springframework.transaction.support.SimpleTransactionStatus();
+        when(transactionManager.getTransaction(any())).thenReturn(transaction);
+        var advice = new org.springframework.transaction.interceptor.TransactionInterceptor();
+        advice.setTransactionManager(transactionManager);
+        advice.setTransactionAttributeSource(new org.springframework.transaction.annotation.AnnotationTransactionAttributeSource());
+        var proxyFactory = new org.springframework.aop.framework.ProxyFactory(attemptFlow);
+        proxyFactory.setProxyTargetClass(true);
+        proxyFactory.addAdvice(advice);
+        var transactional = (ExamAttemptApplicationService) proxyFactory.getProxy();
+
+        var rejected = assertThrows(AttemptExpiredException.class,
+                () -> transactional.submitAnswers(10L, 1L, answerSubmit(1L, "A")));
+
+        assertEquals("EXAM_ATTEMPT_EXPIRED", rejected.getErrorCode().key());
+        assertEquals(true, rejected.getDetails().get("autoSubmitted"));
+        assertEquals(ExamAttempt.STATUS_TIMEOUT, expired.getStatus());
+        verify(transactionManager).commit(transaction);
+        verify(transactionManager, org.mockito.Mockito.never()).rollback(transaction);
     }
 }

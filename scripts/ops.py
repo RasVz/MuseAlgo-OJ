@@ -328,6 +328,7 @@ class Operations:
             raise ValueError('业务服务状态不稳定，无法安全停写备份')
         running = [item['Service'] for item in state
                    if item['Service'] in writers and item.get('State') == 'running']
+        backup_error = None
         try:
             # All application writers stop before the SQL snapshot and filesystem archives.
             self.compose('stop', '--timeout', '60', *writers)
@@ -347,17 +348,25 @@ class Operations:
             for path in destination.iterdir():
                 path.chmod(0o600)
             return manifest
+        except Exception as failure:
+            backup_error = failure
+            raise
         finally:
             if running and resume:
-                self.compose('start', *running)
-                for _ in range(180):
-                    state = {item['Service']: item for item in self.state()}
-                    if all(state.get(name, {}).get('State')=='running' and
-                           state[name].get('Health') in ('',None,'healthy') for name in running):
-                        break
-                    time.sleep(1)
-                else:
-                    raise ValueError('Backup saved, but original services did not become ready after restart')
+                try:
+                    self.compose('start', *running)
+                    for _ in range(180):
+                        state = {item['Service']: item for item in self.state()}
+                        if all(state.get(name, {}).get('State') == 'running' and
+                               state[name].get('Health') in ('', None, 'healthy') for name in running):
+                            break
+                        time.sleep(1)
+                    else:
+                        raise ValueError('original services did not become ready after restart')
+                except Exception as recovery_error:
+                    if backup_error is not None:
+                        raise ValueError(f'备份失败（未确认完整备份）：{backup_error}；原服务恢复失败：{recovery_error}') from backup_error
+                    raise ValueError(f'备份文件已生成但尚未完成校验；原服务恢复失败：{recovery_error}') from recovery_error
 
     def verify(self, source):
         try:

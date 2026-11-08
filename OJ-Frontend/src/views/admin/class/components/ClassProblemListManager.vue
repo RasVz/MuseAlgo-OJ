@@ -130,6 +130,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // 班级题单管理：教师在班级范围内创建与修改题单（区别于官方题单与个人题单）。
 // 题单内的题目增删排序跳转到全局题单编辑器完成，这里只管题单本身。
 import { ref, reactive, onMounted } from 'vue'
@@ -213,7 +215,7 @@ const fetchData = async () => {
     }
   } catch (error) {
     console.error('获取题单列表失败:', error)
-    ElMessage.error('获取题单列表失败')
+    showApiError(error, '获取题单列表失败')
   } finally {
     loading.value = false
   }
@@ -259,7 +261,7 @@ const handleSubmit = async () => {
       }
     } catch (error) {
       console.error(formData.id ? '修改失败:' : '添加失败:', error)
-      ElMessage.error(formData.id ? '修改失败' : '添加失败')
+      showApiError(error, formData.id ? '修改失败' : '添加失败')
     } finally {
       submitLoading.value = false
     }

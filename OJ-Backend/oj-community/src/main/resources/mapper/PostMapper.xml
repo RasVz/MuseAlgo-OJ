@@ -60,6 +60,7 @@
             <if test="classId != null">
                 AND post.class_id = #{classId}
             </if>
+            <if test="classId == null">AND post.class_id IS NULL</if>
 
             <if test="contestId != null">
                 AND post.contest_id = #{contestId}
@@ -141,6 +142,7 @@
         JOIN post ON post.id = relation.post_id
         LEFT JOIN user ON post.author_id = user.id
         WHERE relation.problem_id = #{problemId}
+        AND post.class_id IS NULL
           AND post.privacy = 0
           AND post.is_deleted = 0
           AND post.type = 2

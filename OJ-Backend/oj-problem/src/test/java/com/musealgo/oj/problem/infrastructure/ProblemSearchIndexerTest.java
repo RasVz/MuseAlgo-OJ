@@ -6,6 +6,8 @@ import com.meilisearch.sdk.Index;
 import com.meilisearch.sdk.SearchRequest;
 import com.meilisearch.sdk.exceptions.MeilisearchException;
 import com.meilisearch.sdk.model.SearchResult;
+import com.meilisearch.sdk.model.SearchResultPaginated;
+import com.meilisearch.sdk.model.Pagination;
 import com.meilisearch.sdk.model.TaskInfo;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.junit.jupiter.api.BeforeEach;
@@ -55,6 +57,7 @@ class ProblemSearchIndexerTest {
         when(index.updateDocuments(anyString())).thenReturn(mock(TaskInfo.class));
         when(index.addDocuments(anyString())).thenReturn(mock(TaskInfo.class));
         when(index.deleteDocument(anyString())).thenReturn(mock(TaskInfo.class));
+        when(index.getPaginationSettings()).thenReturn(new Pagination(1000));
     }
 
     private Problem problem(long id) {
@@ -136,6 +139,29 @@ class ProblemSearchIndexerTest {
 
         assertThat(hits.ids()).containsExactly(9L, 10L);
         assertThat(indexer.failureCount()).isZero();
+    }
+
+    @Test
+    void pageBasedSdkResponseKeepsHitsAndExactTotal() throws Exception {
+        ProblemSearchIndexer indexer = newIndexer(true, 3, 30000);
+        SearchResultPaginated response = new ObjectMapper().readValue(
+                "{\"hits\":[{\"id\":9},{\"id\":10}],\"totalHits\":7,\"page\":2,\"hitsPerPage\":2,\"totalPages\":4}",
+                SearchResultPaginated.class);
+        when(index.search(any(SearchRequest.class))).thenReturn(response);
+        ProblemSearchIndexer.SearchHits hits = indexer.searchIds("sum", 2, 2, null, null, null);
+        assertThat(hits.ids()).containsExactly(9L, 10L);
+        assertThat(hits.total()).isEqualTo(7);
+    }
+
+    @Test
+    void reachingConfiguredServerCapMarksTheCandidateWindowIncomplete() throws Exception {
+        var response = new ObjectMapper().readValue(
+                "{\"hits\":[{\"id\":9}],\"totalHits\":1,\"page\":1,\"hitsPerPage\":1000,\"totalPages\":1}",
+                SearchResultPaginated.class);
+        when(index.search(any(SearchRequest.class))).thenReturn(response);
+        when(index.getPaginationSettings()).thenReturn(new Pagination(1));
+        var result = newIndexer(true, 3, 30000).searchIds("sum", 1, 1000, null, null, null);
+        assertThat(result.complete()).isFalse();
     }
 
     @Test

@@ -1,5 +1,8 @@
 package com.musealgo.oj.contest.application;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.contest.error.ContestErrorCode;
+
 import org.springframework.stereotype.Service;
 import com.musealgo.oj.common.utils.SecurityUtils;
 import com.musealgo.oj.contest.entity.Contest;
@@ -68,7 +71,7 @@ public class ContestManagementApplicationService {
         Contest contest = new Contest();
         applyEditableFields(contest, command);
         String mode=command.getMode()==null ? "ACM" : command.getMode().trim().toUpperCase(java.util.Locale.ROOT);
-        if(!java.util.Set.of("ACM","OI").contains(mode)) throw new IllegalArgumentException("比赛模式仅支持ACM或OI");
+        if(!java.util.Set.of("ACM","OI").contains(mode)) throw new BusinessException(ContestErrorCode.CONTEST_INPUT_INVALID, "比赛模式仅支持ACM或OI");
         contest.setMode(mode);
         applyEligibilityRules(contest, command, null);
         contest.setAuthorId(actorId);
@@ -89,20 +92,20 @@ public class ContestManagementApplicationService {
     @org.springframework.transaction.annotation.Transactional(rollbackFor=Exception.class)
     public void update(Contest command) {
         if (command.getId() == null) {
-            throw new IllegalArgumentException("ID不能为空");
+            throw new BusinessException(ContestErrorCode.CONTEST_INPUT_INVALID, "ID不能为空");
         }
         Contest existing = requireManagedContest(command.getId());
         validateTime(command);
         boolean rulesChanged = eligibilityRulesChanged(command, existing)
                 || !java.util.Objects.equals(command.getClassId(), existing.getClassId());
         if (existing.getRankFinalizedAt() != null && rulesChanged) {
-            throw new IllegalStateException("已固化比赛不能更改分类/等级/报名审核规则");
+            throw new BusinessException(ContestErrorCode.CONTEST_FINALIZED, "已固化比赛不能更改分类/等级/报名审核规则");
         }
         if(command.getMode()!=null && !command.getMode().equalsIgnoreCase(existing.getMode()))
-            throw new IllegalStateException("已创建比赛不能更改赛制");
+            throw new BusinessException(ContestErrorCode.CONTEST_MODE_LOCKED, "已创建比赛不能更改赛制");
         if(existing.getRankFinalizedAt()!=null && (!java.util.Objects.equals(existing.getStartTime(),command.getStartTime())
                 || !java.util.Objects.equals(existing.getEndTime(),command.getEndTime())))
-            throw new IllegalStateException("已固化比赛不能更改赛程");
+            throw new BusinessException(ContestErrorCode.CONTEST_FINALIZED, "已固化比赛不能更改赛程");
         applyEditableFields(existing, command);
         // 等级配置是创建/显式切换规则时的快照；普通编辑不能追溯改写资格。
         if (rulesChanged) applyEligibilityRules(existing, command, existing);
@@ -137,11 +140,12 @@ public class ContestManagementApplicationService {
      * @throws IllegalArgumentException 比赛不存在时抛出
      * @throws ForbiddenException 角色不符或非本人非管理员时抛出
      */
-    private Contest requireManagedContest(Long contestId) {
+    /** Shared contest ownership gate for other contest-owned write/query workflows. */
+    public Contest requireManagedContest(Long contestId) {
         SecurityUtils.requireTeacherOrAdmin();
         Contest contest = contestService.getByIdForUpdate(contestId);
         if (contest == null) {
-            throw new IllegalArgumentException("比赛不存在");
+            throw new BusinessException(ContestErrorCode.CONTEST_NOT_FOUND, "比赛不存在");
         }
         SecurityUtils.requireOwnerOrAdmin(contest.getAuthorId());
         return contest;
@@ -165,7 +169,7 @@ public class ContestManagementApplicationService {
                 ? command.getCategory().trim().toUpperCase(java.util.Locale.ROOT)
                 : (existing != null && existing.getCategory() != null ? existing.getCategory() : "FORMAL");
         if (!java.util.Set.of("FORMAL", "ENTERTAINMENT").contains(category)) {
-            throw new IllegalArgumentException("比赛分类仅支持 FORMAL 或 ENTERTAINMENT");
+            throw new BusinessException(ContestErrorCode.CONTEST_INPUT_INVALID, "比赛分类仅支持 FORMAL 或 ENTERTAINMENT");
         }
         target.setCategory(category);
         Integer review = command.getRegistrationReview() != null
@@ -190,7 +194,7 @@ public class ContestManagementApplicationService {
             return;
         }
         ContestLevel level = contestLevelService.findEnabledByCode(levelCode)
-                .orElseThrow(() -> new IllegalArgumentException("比赛等级不存在或已停用: " + levelCode));
+                .orElseThrow(() -> new BusinessException(ContestErrorCode.CONTEST_LEVEL_NOT_FOUND));
         target.setLevelCode(level.getCode());
         target.setRatingMin(level.getMinRating());
         target.setRatingMax(level.getMaxRating());
@@ -206,7 +210,7 @@ public class ContestManagementApplicationService {
     private void validateTime(Contest contest) {
         if (contest == null || contest.getStartTime() == null || contest.getEndTime() == null
                 || contest.getEndTime().isBefore(contest.getStartTime())) {
-            throw new IllegalArgumentException("比赛开始时间和结束时间不合法");
+            throw new BusinessException(ContestErrorCode.CONTEST_INPUT_INVALID, "比赛开始时间和结束时间不合法");
         }
     }
 

@@ -57,6 +57,9 @@
             p.tags,
             p.pass_count,
             p.total_count,
+            p.is_public,
+            p.is_deleted,
+            p.author_id,
             /* 计算用户状态 */
             CASE
                 WHEN (SELECT COUNT(*) FROM submission s WHERE s.problem_id = p.id AND s.user_id = #{userId} AND s.status = 1) > 0 THEN 1

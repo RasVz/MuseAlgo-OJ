@@ -1,3 +1,5 @@
+
+import { showApiError } from '@/utils/errorFeedback'
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -209,7 +211,7 @@ export function useContestForm() {
       const detail = unwrapResultData(res) || {}
       fillFormFromDetail(detail)
     } catch (e) {
-      ElMessage.error(e?.message || '获取比赛详情失败')
+      showApiError(e, e?.message || '获取比赛详情失败')
     } finally {
       loadingDetail.value = false
     }
@@ -348,7 +350,7 @@ export function useContestForm() {
       await loadContestDetail()
       return { ok: true }
     } catch (e) {
-      ElMessage.error(e?.message || '保存失败')
+      showApiError(e, e?.message || '保存失败')
       return { ok: false }
     } finally {
       saving.value = false

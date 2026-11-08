@@ -1,5 +1,8 @@
 package com.musealgo.oj.contest.infrastructure;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.contest.error.ContestErrorCode;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.springframework.stereotype.Service;
 import com.musealgo.oj.api.contest.ContestSubmissionContextResolver;
@@ -70,16 +73,16 @@ public class ContestSubmissionContextResolverAdapter implements ContestSubmissio
         ContestUser registration = contestUserService.findRegistration(contest.getId(), userId);
         if (registration == null) {
             if (Integer.valueOf(1).equals(contest.getRegistrationReview())) {
-                throw new IllegalStateException("请先报名并通过审核后再提交");
+                throw new BusinessException(ContestErrorCode.CONTEST_REGISTRATION_REQUIRED, "请先报名并通过审核后再提交");
             }
             contestUserService.registerContest(contest.getId(), userId);
             return;
         }
         if (ContestUserServiceImpl.STATUS_PENDING.equals(registration.getStatus())) {
-            throw new IllegalStateException("报名审核中，暂不能提交");
+            throw new BusinessException(ContestErrorCode.CONTEST_REGISTRATION_PENDING, "报名审核中，暂不能提交");
         }
         if (ContestUserServiceImpl.STATUS_REJECTED.equals(registration.getStatus())) {
-            throw new IllegalStateException("报名未通过审核，不能提交");
+            throw new BusinessException(ContestErrorCode.CONTEST_REGISTRATION_REJECTED, "报名未通过审核，不能提交");
         }
     }
 
@@ -102,10 +105,10 @@ public class ContestSubmissionContextResolverAdapter implements ContestSubmissio
     public SubmissionContext resolve(Long contestId, Long problemId, Long userId) {
         Contest contest = contestMapper.selectByIdForUpdate(contestId);
         if (contest == null) {
-            throw new IllegalArgumentException("比赛不存在");
+            throw new BusinessException(ContestErrorCode.CONTEST_NOT_FOUND, "比赛不存在");
         }
         if (problemContestMapper.countByContestAndProblem(contestId, problemId) == 0) {
-            throw new IllegalArgumentException("题目不属于该比赛");
+            throw new BusinessException(ContestErrorCode.CONTEST_PROBLEM_NOT_FOUND, "题目不属于该比赛");
         }
 
         if (!access.canReadContestProblem(contestId, problemId, userId))
@@ -135,7 +138,7 @@ public class ContestSubmissionContextResolverAdapter implements ContestSubmissio
                 // 应取当前活跃的那次。LIMIT 1 则用于兜住脏数据导致的多行，selectOne 不会因此抛异常
                 .last("LIMIT 1"));
         if (attempt == null) {
-            throw new IllegalStateException("当前不在比赛或虚拟赛作答时间内");
+            throw new BusinessException(ContestErrorCode.CONTEST_ATTEMPT_NOT_ACTIVE, "当前不在比赛或虚拟赛作答时间内");
         }
         return new SubmissionContext(contestId, attempt.getId());
     }

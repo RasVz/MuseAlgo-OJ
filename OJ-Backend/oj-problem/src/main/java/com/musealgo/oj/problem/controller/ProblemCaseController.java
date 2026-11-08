@@ -1,5 +1,8 @@
 package com.musealgo.oj.problem.controller;
 
+import com.musealgo.oj.common.exception.ErrorResponses;
+import com.musealgo.oj.problem.error.ProblemErrorCode;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -53,7 +56,7 @@ public class ProblemCaseController {
     public Result getProblemCases(@RequestParam("problemId") Long problemId) {
         // 参数校验
         if (problemId == null) {
-            return Result.error("题目ID不能为空");
+            return ErrorResponses.failure(ProblemErrorCode.PROBLEM_INPUT_INVALID, "题目ID不能为空");
         }
 
         List<ProblemCaseVO> list = problemManagementApplicationService.getPrivateCases(problemId);
@@ -75,7 +78,7 @@ public class ProblemCaseController {
     @PreAuthorize("hasAuthority('problem:manage')")
     public Result clearCases(@RequestBody Map<String, Long> body) {
         if (body == null || body.get("problemId") == null) {
-            return Result.error("题目ID不能为空");
+            return ErrorResponses.failure(ProblemErrorCode.PROBLEM_INPUT_INVALID, "题目ID不能为空");
         }
         problemManagementApplicationService.clearCases(body.get("problemId"));
         return Result.success("该题测试用例已全部清空");
@@ -94,10 +97,10 @@ public class ProblemCaseController {
     @PreAuthorize("hasAuthority('problem:manage')")
     public Result batchSaveCases(@RequestBody BatchCasesRequest request) {
         if (request == null || request.problemId() == null) {
-            return Result.error("题目ID不能为空");
+            return ErrorResponses.failure(ProblemErrorCode.PROBLEM_INPUT_INVALID, "题目ID不能为空");
         }
         if (request.cases() == null || request.cases().isEmpty()) {
-            return Result.error("测试用例不能为空");
+            return ErrorResponses.failure(ProblemErrorCode.PROBLEM_INPUT_INVALID, "测试用例不能为空");
         }
         List<FpsTestCase> items = request.cases().stream()
                 .map(c -> new FpsTestCase(c.input(), c.output()))
@@ -119,7 +122,7 @@ public class ProblemCaseController {
     @PreAuthorize("hasAuthority('problem:manage')")
     public Result generateAndVerify(@RequestBody GenerateVerifyRequest request) {
         if (request == null || request.problemId() == null) {
-            return Result.error("题目ID不能为空");
+            return ErrorResponses.failure(ProblemErrorCode.PROBLEM_INPUT_INVALID, "题目ID不能为空");
         }
         var result = testDataGenerationService.generateAndVerify(
                 request.problemId(), request.generatorCode());
@@ -138,10 +141,10 @@ public class ProblemCaseController {
     @PreAuthorize("hasAuthority('problem:manage')")
     public Result appendCases(@RequestBody AppendCasesRequest request) {
         if (request == null || request.problemId() == null) {
-            return Result.error("题目ID不能为空");
+            return ErrorResponses.failure(ProblemErrorCode.PROBLEM_INPUT_INVALID, "题目ID不能为空");
         }
         if (request.cases() == null || request.cases().isEmpty()) {
-            return Result.error("测试用例不能为空");
+            return ErrorResponses.failure(ProblemErrorCode.PROBLEM_INPUT_INVALID, "测试用例不能为空");
         }
         List<FpsTestCase> items = request.cases().stream()
                 .map(c -> new FpsTestCase(c.input(), c.output()))

@@ -31,6 +31,19 @@ ok()   { PASS=$((PASS+1)); printf "  [PASS] %s\n" "$1" | tee -a "$OUT/result.txt
 bad()  { FAIL=$((FAIL+1)); printf "  [FAIL] %s\n" "$1" | tee -a "$OUT/result.txt"; }
 info() { printf "  [INFO] %s\n" "$1" | tee -a "$OUT/result.txt"; }
 
+PROBE_FILE=""
+PROBE_NAME=""
+PROBE_CLEANED=0
+cleanup_probe() {
+  if [ "$PROBE_CLEANED" = "1" ]; then return; fi
+  PROBE_CLEANED=1
+  if [ -n "$PROBE_NAME" ]; then
+    docker run --rm -v "${PROJECT}_uploads-data:/d" alpine sh -c "rm -f /d/$PROBE_NAME" >> "$OUT/uploads-cleanup.txt" 2>&1 || bad "uploads 临时探针清理失败"
+  fi
+  if [ -n "$PROBE_FILE" ]; then rm -f -- "$PROBE_FILE" || bad "宿主临时探针清理失败"; fi
+}
+trap cleanup_probe EXIT
+
 printf "# smoke-release %s project=%s\n" "$(date -Is)" "$PROJECT" | tee -a "$OUT/result.txt"
 
 compose() { docker compose -f "$COMPOSE_FILE" -p "$PROJECT" --env-file "$ENV_FILE" "$@"; }
@@ -126,13 +139,19 @@ printf "%s\n" "$VOLS" > "$OUT/volumes.txt"
 VN=$(printf "%s\n" "$VOLS" | grep -c . || true)
 if [ "$VN" = "5" ]; then ok "5 个命名卷存在"; else bad "卷数 = $VN（期望 5）"; fi
 
-printf "musealgo rel02 smoke %s\n" "$(date -Is)" > /tmp/rel02-smoke.txt
-docker run --rm -v "${PROJECT}_uploads-data:/d" -v /tmp/rel02-smoke.txt:/src:ro alpine sh -c "cp /src /d/.rel02-smoke && ls -ln /d/.rel02-smoke" > "$OUT/uploads-write.txt" 2>&1 || true
+PROBE_FILE=$(mktemp "${TMPDIR:-/tmp}/musealgo-rel02.XXXXXX") || exit 1
+PROBE_NAME=".rel02-smoke-$(basename "$PROBE_FILE")"
+printf "musealgo rel02 smoke %s\n" "$(date -Is)" > "$PROBE_FILE"
+docker run --rm -v "${PROJECT}_uploads-data:/d" -v "$PROBE_FILE:/src:ro" alpine sh -c "cp /src /d/$PROBE_NAME && ls -ln /d/$PROBE_NAME" > "$OUT/uploads-write.txt" 2>&1 || true
 
-compose exec -T backend sh -c "cat /data/uploads/.rel02-smoke 2>/dev/null" > "$OUT/uploads-backend-read.txt" 2>&1 || true
+compose exec -T backend sh -c "cat /data/uploads/$PROBE_NAME 2>/dev/null" > "$OUT/uploads-backend-read.txt" 2>&1 || true
 if grep -q "musealgo rel02 smoke" "$OUT/uploads-backend-read.txt"; then ok "uploads 卷后端可读"; else bad "uploads 卷后端读取失败"; fi
 
-compose restart > "$OUT/restart.txt" 2>&1 || true
+if compose restart > "$OUT/restart.txt" 2>&1; then
+  ok "重启命令已执行"
+else
+  bad "重启命令失败（见 restart.txt）"
+fi
 sleep 25
 compose ps > "$OUT/restart-ps.txt" 2>&1 || true
 BH2=$(curl -fsS -m 15 "$BACKEND_URL/actuator/health" 2>/dev/null || echo "")
@@ -141,13 +160,15 @@ if printf "%s" "$BH2" | grep -q '"status":"UP"'; then ok "重启后后端仍 UP"
 R2=$(curl -s -m 10 -o /dev/null -w "%{http_code}" "$BASE_URL/healthz")
 if [ "$R2" = "200" ]; then ok "重启后前端 /healthz 200"; else bad "重启后前端 /healthz = $R2"; fi
 
-compose exec -T backend sh -c "cat /data/uploads/.rel02-smoke 2>/dev/null" > "$OUT/uploads-backend-read-after-restart.txt" 2>&1 || true
+compose exec -T backend sh -c "cat /data/uploads/$PROBE_NAME 2>/dev/null" > "$OUT/uploads-backend-read-after-restart.txt" 2>&1 || true
 if grep -q "musealgo rel02 smoke" "$OUT/uploads-backend-read-after-restart.txt"; then ok "重启后 uploads 数据仍在"; else bad "重启后 uploads 数据丢失"; fi
 
 # ---------- 5. 日志目录 ----------
 printf "## 5. 日志\n" | tee -a "$OUT/result.txt"
 compose exec -T backend sh -c "ls -ln /app/logs 2>/dev/null | head -10" > "$OUT/app-logs.txt" 2>&1 || true
 if grep -qE "oj-.*\.json\.log" "$OUT/app-logs.txt"; then ok "logback 已写入 /app/logs"; else info "未发现日志文件（可能尚未滚动，见 app-logs.txt）"; fi
+
+cleanup_probe
 
 # ---------- 汇总 ----------
 printf "\n" | tee -a "$OUT/result.txt"

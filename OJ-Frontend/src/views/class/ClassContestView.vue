@@ -87,6 +87,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // 学生视角的班级比赛列表：只看本班已发布的比赛，可进入题面或排行榜。
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -211,7 +213,7 @@ const fetchContests = async () => {
     total.value = extractTotal(res, list)
   } catch (error) {
     console.error(error)
-    ElMessage.error('网络或服务器异常，获取数据失败')
+    showApiError(error, '网络或服务器异常，获取数据失败')
   } finally {
     loading.value = false
   }

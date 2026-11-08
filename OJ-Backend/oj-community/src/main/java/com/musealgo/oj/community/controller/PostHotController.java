@@ -63,7 +63,7 @@ public class PostHotController {
         if (postIds == null || postIds.isEmpty()) {
             Map<String, Object> emptyData = new HashMap<>();
             emptyData.put("list", Collections.emptyList());
-            emptyData.put("total", 0L);
+            emptyData.put("total", postHotService.getHotPostTotal(query.getCategory()));
             result.setCode(200);
             result.setData(emptyData);
             result.setMessage("ok");
@@ -103,7 +103,7 @@ public class PostHotController {
             vo.setCreateTime(post.getCreateTime());
             Map<String, Integer> statsMap = postHotService.getPostStats(id);
             vo.setLikes(statsMap.getOrDefault("likes", post.getLikes() != null ? post.getLikes() : 0));
-            vo.setFavorites(statsMap.getOrDefault("favorites", post.getFavorites() != null ? post.getFavorites() : 0));
+            vo.setFavorites(post.getFavorites() != null ? post.getFavorites() : 0);
             vo.setComments(statsMap.getOrDefault("comments", post.getCommentCount() != null ? post.getCommentCount() : 0));
             vo.setViews(statsMap.getOrDefault("views", post.getViews() != null ? post.getViews() : 0));
             vo.setScore(post.getScore());
@@ -156,6 +156,11 @@ public class PostHotController {
                 continue;
             }
 
+            // 冷缓存复用本次已批查的数据库计数；已有实时统计保持不变。
+            postHotService.initializeStatsIfAbsent(post.getId(), Map.of(
+                    "views", statValue(post.getViews()), "likes", statValue(post.getLikes()),
+                    "dislikes", statValue(post.getDislikes()), "favorites", statValue(post.getFavorites()),
+                    "comments", statValue(post.getCommentCount())));
             postHotService.refreshRankingForPost(
                     post.getId(),
                     hotCategory,
@@ -173,19 +178,11 @@ public class PostHotController {
      * 非公开（{@code privacy=1}）、绑定班级（{@code classId} 非空，仅本班可见）、
      * {@code type} 超出 0~3 的已知取值范围、或关键字段缺失。
      * <p>
-     * 注意这里<b>不</b>判 {@code is_deleted}。软删除的动态仍会被
-     * {@code syncHotRankingSnapshot} 重新灌回排行（它只看 {@code update_time}，
-     * 而删除操作同样会更新该字段），也不会被移出——全仓唯一的移除调用点就在本类的兜底同步里，
-     * 且只在 {@link #shouldParticipateInHot} 判否时触发。
-     * 实际后果是：软删除的动态会占据热榜名额，但组装 VO 时因数据库查不到而返回 {@code null} 被过滤，
-     * 于是列表会出现「总数比实际条目多」的空位。
-     * 若要修复，应在 {@link #shouldParticipateInHot} 中加上软删除判定，
-     * 而不是在同步逻辑里另开分支。
-     * </p>
      */
     private boolean shouldParticipateInHot(Post post) {
         return post != null
                 && post.getId() != null
+                && !Integer.valueOf(1).equals(post.getIsDeleted())
                 && post.getClassId() == null
                 && (post.getPrivacy() == null || post.getPrivacy() == 0)
                 && post.getType() != null
@@ -202,6 +199,8 @@ public class PostHotController {
         }
         return post.getCategory();
     }
+
+    private int statValue(Integer value) { return value == null ? 0 : value; }
 
     private boolean resolveBooleanFlag(Integer value) {
         return value != null && value == 1;
@@ -252,17 +251,7 @@ public class PostHotController {
 
         Boolean isLike = body.getOrDefault("isLike", true);
 
-        try {
-            return Result.success(postInteractions.apply(userId, postId, InteractionAction.LIKE, isLike));
-        } catch (IllegalStateException e) {
-            result.setCode(409);
-            result.setMessage(e.getMessage());
-            return result;
-        } catch (IllegalArgumentException e) {
-            result.setCode(400);
-            result.setMessage("参数错误");
-            return result;
-        }
+        return Result.success(postInteractions.apply(userId, postId, InteractionAction.LIKE, isLike));
 
     }
 
@@ -281,17 +270,7 @@ public class PostHotController {
 
         Boolean isFavorite = body.getOrDefault("isFavorite", true);
 
-        try {
-            return Result.success(postInteractions.apply(userId, postId, InteractionAction.FAVORITE, isFavorite));
-        } catch (IllegalStateException e) {
-            result.setCode(409);
-            result.setMessage(e.getMessage());
-            return result;
-        } catch (IllegalArgumentException e) {
-            result.setCode(400);
-            result.setMessage("参数错误");
-            return result;
-        }
+        return Result.success(postInteractions.apply(userId, postId, InteractionAction.FAVORITE, isFavorite));
 
     }
 

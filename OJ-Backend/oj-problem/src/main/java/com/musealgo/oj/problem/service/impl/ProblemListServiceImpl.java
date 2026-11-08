@@ -33,6 +33,7 @@ import java.util.Map;
 public class ProblemListServiceImpl extends ServiceImpl<ProblemListMapper, ProblemList> implements ProblemListService {
 
     private final ProblemListItemMapper problemListItemMapper;
+    private final com.musealgo.oj.problem.application.ProblemListAccessService access;
 
     @Override
     public IPage<ProblemListVO> getStudentHomeworks(Integer page, Integer size, Long userId) {
@@ -129,6 +130,7 @@ public class ProblemListServiceImpl extends ServiceImpl<ProblemListMapper, Probl
             return;
         }
 
+        access.requireEditable(listId);
         // 循环更新每一道题的 sort 值
         // 性能说明：题单题目通常不超过 100 道，循环更新 SQL 开销完全可以接受 (几毫秒)
         for (int i = 0; i < problemIds.size(); i++) {
@@ -141,22 +143,27 @@ public class ProblemListServiceImpl extends ServiceImpl<ProblemListMapper, Probl
                     .eq("problem_id", problemId)
                     .set("sort", sort);
 
-            problemListItemMapper.update(null, updateWrapper);
+            if (problemListItemMapper.update(null, updateWrapper) == 0) {
+                throw new com.musealgo.oj.common.exception.BusinessException(
+                        com.musealgo.oj.problem.error.ProblemErrorCode.PROBLEM_LIST_ITEM_NOT_FOUND);
+            }
         }
     }
 
     @Override
     public IPage<ProblemListVO> selectVOList(Page<?> page, Integer type, Long classId,
                                              Long creatorId, String keyword, Integer privacy) {
-        return baseMapper.selectVOList(page, type, classId, creatorId, keyword, privacy);
+        return baseMapper.selectVOList(page, type, classId, creatorId, keyword, privacy, com.musealgo.oj.common.utils.SecurityUtils.getUserId(),
+                com.musealgo.oj.common.utils.SecurityUtils.isAdmin(), access.accessibleClassIds());
     }
 
     @Override
     public Map<String, Object> getStats(Integer type) {
         // 官方题单等类型数量有限，直接全量聚合，避免额外 SQL 聚合查询
-        List<ProblemList> lists = this.lambdaQuery()
-                .eq(type != null, ProblemList::getType, type)
-                .list();
+        var query = new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<ProblemList>()
+                .eq(type != null, ProblemList::getType, type);
+        access.restrict(query);
+        List<ProblemList> lists = this.list(query);
 
         long total = lists.size();
         long publicCount = lists.stream().filter(p -> p.getPrivacy() != null && p.getPrivacy() == 1).count();
@@ -187,20 +194,18 @@ public class ProblemListServiceImpl extends ServiceImpl<ProblemListMapper, Probl
                 .in(ProblemList::getId, distinctIds)
                 .count();
         if (belongCount != distinctIds.size()) {
-            return;
+            throw new com.musealgo.oj.common.exception.BusinessException(
+                    com.musealgo.oj.problem.error.ProblemErrorCode.PROBLEM_INPUT_INVALID, "排序包含不存在或类型不匹配的题单");
         }
 
-        // 该类型全部题单先重置为 0（未参与排序），再按传入顺序写 0..n-1
-        this.lambdaUpdate()
-                .eq(ProblemList::getType, type)
-                .set(ProblemList::getSortOrder, 0)
-                .update();
-
+        for (Long id : distinctIds) access.requireEditable(id);
+        // 只更新请求中的题单，保留未出现在当前页面或旧快照中的顺序。
         for (int i = 0; i < distinctIds.size(); i++) {
-            this.lambdaUpdate()
+            boolean updated = this.lambdaUpdate()
                     .eq(ProblemList::getId, distinctIds.get(i))
                     .set(ProblemList::getSortOrder, i)
                     .update();
+            if (!updated) throw new IllegalStateException("题单排序更新失败");
         }
     }
 }

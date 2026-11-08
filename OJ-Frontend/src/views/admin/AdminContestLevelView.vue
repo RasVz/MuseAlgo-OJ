@@ -80,6 +80,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // 比赛等级配置（仅管理员，T10-1）：维护「等级 → Rating 范围」映射。
 // 下限含、上限不含；任一侧留空表示不限。比赛创建时会把等级范围快照写入比赛行，
 // 因此这里修改配置只影响之后创建/更新的比赛，不追溯历史成绩。
@@ -148,7 +150,7 @@ async function fetchList() {
     const data = unwrapResultData(res)
     levels.value = Array.isArray(data) ? data : []
   } catch (e) {
-    if (e?.message) ElMessage.error(e.message)
+    if (e?.message) showApiError(e, e.message)
     levels.value = []
   } finally {
     loading.value = false
@@ -228,7 +230,7 @@ async function onSave() {
     dialogVisible.value = false
     fetchList()
   } catch (e) {
-    if (e?.message) ElMessage.error(e.message)
+    if (e?.message) showApiError(e, e.message)
   } finally {
     saving.value = false
   }

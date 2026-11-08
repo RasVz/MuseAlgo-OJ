@@ -48,6 +48,7 @@ class VpAttemptServiceImplTest {
         VpAttemptServiceImpl service = service(attemptMapper, contestService,
                 mock(ContestRankMapper.class), mock(ContestVpQuery.class), mock(ContestRankSsePublisher.class));
         Contest contest = new Contest();
+        contest.setVisible(1);
         contest.setId(1L);
         contest.setEndTime(LocalDateTime.now().minusHours(1));
         when(contestService.getByIdForUpdate(1L)).thenReturn(contest);
@@ -86,6 +87,7 @@ class VpAttemptServiceImplTest {
         attempt.setEndTime(start.plusHours(2));
         when(attemptMapper.selectOne(any())).thenReturn(attempt);
         Contest contest = new Contest();
+        contest.setVisible(1);
         contest.setMode("ACM");
         contest.setRankFinalizedAt(LocalDateTime.now().minusDays(1));
         when(contestService.getById(1L)).thenReturn(contest);
@@ -124,6 +126,7 @@ class VpAttemptServiceImplTest {
         attempt.setEndTime(start.plusHours(2));
         when(attemptMapper.selectOne(any())).thenReturn(attempt);
         Contest contest = new Contest();
+        contest.setVisible(1);
         contest.setId(1L);
         contest.setMode("ACM");
         contest.setRankFinalizedAt(LocalDateTime.now().minusDays(1));
@@ -162,6 +165,7 @@ class VpAttemptServiceImplTest {
         attempt.setEndTime(LocalDateTime.now().minusHours(1));
         when(attemptMapper.selectOne(any())).thenReturn(attempt);
         Contest contest = new Contest();
+        contest.setVisible(1);
         contest.setId(1L);
         contest.setMode("OI");
         contest.setRankFinalizedAt(LocalDateTime.now().minusDays(1));
@@ -190,6 +194,7 @@ class VpAttemptServiceImplTest {
         VpAttemptServiceImpl service = service(attemptMapper, contestService,
                 mock(ContestRankMapper.class), mock(ContestVpQuery.class), mock(ContestRankSsePublisher.class));
         Contest contest = new Contest();
+        contest.setVisible(1);
         contest.setId(1L);
         contest.setEndTime(LocalDateTime.now().minusDays(1));
         when(contestService.getByIdForUpdate(1L)).thenReturn(contest);
@@ -245,6 +250,7 @@ class VpAttemptServiceImplTest {
         attempt.setEndTime(LocalDateTime.now().minusMinutes(30));
         when(attemptMapper.selectById(9L)).thenReturn(attempt);
         Contest contest = new Contest();
+        contest.setVisible(1);
         contest.setId(1L);
         contest.setMode("ACM");
         contest.setRankFinalizedAt(LocalDateTime.now().minusDays(1));

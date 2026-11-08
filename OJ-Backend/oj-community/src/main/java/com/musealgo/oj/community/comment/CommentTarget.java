@@ -1,5 +1,8 @@
 package com.musealgo.oj.community.comment;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.community.error.CommunityErrorCode;
+
 /** Identifies the discussion space a comment belongs to. */
 /**
  * 评论所属的讨论区标识（对象 ID + 对象类型）。
@@ -21,7 +24,7 @@ public record CommentTarget(Long id, Integer type) {
      */
     public void validate() {
         if (id == null || type == null) {
-            throw new IllegalArgumentException("必须指定评论对象");
+            throw new BusinessException(CommunityErrorCode.COMMUNITY_INPUT_INVALID, "必须指定评论对象");
         }
     }
 }

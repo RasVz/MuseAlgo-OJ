@@ -1,10 +1,18 @@
 package com.musealgo.oj.contest.service.impl;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.contest.error.ContestErrorCode;
+
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
+import com.musealgo.oj.contest.application.ContestManagementApplicationService;
+import com.musealgo.oj.contest.application.ContestAccessPolicy;
 import com.musealgo.oj.contest.entity.ProblemContest;
 import com.musealgo.oj.contest.entity.vo.ContestProblemVO;
 import com.musealgo.oj.contest.mapper.ProblemContestMapper;
+import com.musealgo.oj.contest.entity.Contest;
+import com.musealgo.oj.contest.service.ContestService;
 import com.musealgo.oj.contest.service.ProblemContestService;
+import com.musealgo.oj.common.utils.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -13,13 +21,14 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * 比赛题目配置服务实现。
  * <p>
- * 各方法都很短，因为绝大部分过滤条件与联表逻辑都下沉到了 {@link ProblemContestMapper} 的
+ * 配置写入在这里完成题目默认值与比赛归属校验；查询的联表逻辑下沉到了 {@link ProblemContestMapper} 的
  * 定制 SQL 里——题目列表需要连problem 表带出标题与难度，用 QueryWrapper 拼多表连接既难读又易错，
- * 写在 XML 里更清晰。本类因此主要承担参数校验与默认值填充。
+ * 写在 XML 里更清晰。
  * </p>
  */
 @Slf4j
@@ -28,6 +37,9 @@ import java.util.List;
 public class ProblemContestServiceImpl
         extends ServiceImpl<ProblemContestMapper, ProblemContest>
         implements ProblemContestService {
+
+    private final ContestService contestService;
+    private final ContestManagementApplicationService contestManagementApplicationService;
 
     /**
      * 新增单题到比赛。
@@ -44,14 +56,18 @@ public class ProblemContestServiceImpl
     @Override
     @Transactional
     public Long addProblemToContest(ProblemContest problemContest) {
-        if (checkExist(problemContest.getContestId(), problemContest.getProblemId())) {
-            throw new RuntimeException("该题目已在竞赛中，请勿重复添加");
+        if (problemContest == null || problemContest.getContestId() == null || problemContest.getProblemId() == null) {
+            throw new BusinessException(ContestErrorCode.CONTEST_INPUT_INVALID, "比赛和题目不能为空");
+        }
+        requireManagedContest(problemContest.getContestId());
+        if (existsConfigured(problemContest.getContestId(), problemContest.getProblemId())) {
+            throw new BusinessException(ContestErrorCode.CONTEST_PROBLEM_ALREADY_ADDED, "该题目已在竞赛中，请勿重复添加");
         }
         if (problemContest.getScore() == null) problemContest.setScore(100);
         if (problemContest.getProblemOrder() == null) problemContest.setProblemOrder(0);
         if (problemContest.getVisible() == null) problemContest.setVisible(1);
         problemContest.setIsDeleted(0);
-        baseMapper.insert(problemContest);
+        if (baseMapper.insert(problemContest) != 1) throw new IllegalStateException("比赛题目保存失败");
         return problemContest.getId();
     }
 
@@ -73,13 +89,14 @@ public class ProblemContestServiceImpl
     @Transactional
     public boolean batchAddProblems(Long contestId, List<Long> problemIds) {
         if (problemIds == null || problemIds.isEmpty()) return false;
+        requireManagedContest(contestId);
 
         // 顺序续接而非从0 开始，保证多次批量添加不会产生重复序号
         int order = baseMapper.getMaxOrderByContestId(contestId);
         List<ProblemContest> batch = new ArrayList<>();
 
         for (Long problemId : problemIds) {
-            if (checkExist(contestId, problemId)) continue;
+            if (existsConfigured(contestId, problemId)) continue;
             ProblemContest pc = new ProblemContest();
             pc.setContestId(contestId);
             pc.setProblemId(problemId);
@@ -92,7 +109,7 @@ public class ProblemContestServiceImpl
         }
 
         if (!batch.isEmpty()) {
-            saveBatch(batch); // 一条 INSERT ... VALUES (...), (...), ... 替代逐条 insert
+            if (!saveBatch(batch)) throw new IllegalStateException("比赛题目批量保存失败");
         }
         return true;
     }
@@ -107,7 +124,8 @@ public class ProblemContestServiceImpl
     @Override
     @Transactional
     public boolean removeFromContest(Long id) {
-        return baseMapper.logicalDeleteById(id, LocalDateTime.now()) > 0;
+        ProblemContest relation = requireManagedRelation(id);
+        return baseMapper.logicalDeleteById(relation.getId(), LocalDateTime.now()) > 0;
     }
 
     /**
@@ -119,8 +137,21 @@ public class ProblemContestServiceImpl
     @Override
     @Transactional
     public boolean updateProblemConfig(ProblemContest problemContest) {
-        problemContest.setUpdateTime(LocalDateTime.now());
-        return baseMapper.updateById(problemContest) > 0;
+        if (problemContest == null || problemContest.getId() == null) {
+            throw new BusinessException(ContestErrorCode.CONTEST_INPUT_INVALID, "比赛题目关联 ID 不能为空");
+        }
+        ProblemContest existing = requireManagedRelation(problemContest.getId());
+        if (problemContest.getContestId() != null
+                && !Objects.equals(problemContest.getContestId(), existing.getContestId())) {
+            requireManagedContest(problemContest.getContestId());
+        }
+        ProblemContest patch = new ProblemContest();
+        patch.setId(existing.getId());
+        patch.setProblemOrder(problemContest.getProblemOrder());
+        patch.setScore(problemContest.getScore());
+        patch.setVisible(problemContest.getVisible());
+        patch.setUpdateTime(LocalDateTime.now());
+        return baseMapper.updateById(patch) > 0;
     }
 
     /**
@@ -133,7 +164,8 @@ public class ProblemContestServiceImpl
     @Override
     @Transactional
     public boolean toggleVisible(Long id, Integer visible) {
-        return baseMapper.updateVisible(id, visible) > 0;
+        ProblemContest relation = requireManagedRelation(id);
+        return baseMapper.updateVisible(relation.getId(), visible) > 0;
     }
 
     /**
@@ -144,18 +176,24 @@ public class ProblemContestServiceImpl
      */
     @Override
     public List<ProblemContest> getContestProblems(Long contestId, Integer visible) {
+        if (!Integer.valueOf(1).equals(visible)) {
+            requireManagedContest(contestId);
+        } else {
+            ContestAccessPolicy.requireReadable(requireExistingContest(contestId));
+        }
         return baseMapper.selectContestProblemsWithDetails(contestId, visible, 0);
     }
 
     /**
      * {@inheritDoc}
      * <p>
-     * 可见性传 {@code null} 表示「不按可见性过滤」，从而把隐藏题也一并返回。
-     * 注意本方法<b>没有任何权限校验</b>，安全性完全依赖调用方只把它暴露给管理端接口。
+     * 可见性传 {@code null} 表示「不按可见性过滤」，从而把隐藏题也一并返回；
+     * 此时要求当前教师拥有该比赛，或当前用户是管理员。
      * </p>
      */
     @Override
     public List<ProblemContest> getContestProblemsAdmin(Long contestId) {
+        requireManagedContest(contestId);
         return baseMapper.selectContestProblemsWithDetails(contestId, null, 0);
     }
 
@@ -169,7 +207,7 @@ public class ProblemContestServiceImpl
      */
     @Override
     public ProblemContest getById(Long id) {
-        return baseMapper.selectById(id);
+        return requireManagedRelation(id);
     }
 
     /**
@@ -177,7 +215,8 @@ public class ProblemContestServiceImpl
      */
     @Override
     public boolean checkExist(Long contestId, Long problemId) {
-        return baseMapper.countByContestAndProblem(contestId, problemId) > 0;
+        requireManagedContest(contestId);
+        return existsConfigured(contestId, problemId);
     }
 
     /**
@@ -185,6 +224,45 @@ public class ProblemContestServiceImpl
      */
     @Override
     public List<ContestProblemVO> selectContestProblemList(Long contestId, Integer visible, Long userId) {
+        // 选手视角固定只查 visible=1；null / 0 等未发布视图由比赛所属教师或管理员读取。
+        if (!Integer.valueOf(1).equals(visible)) {
+            requireManagedContest(contestId);
+        } else {
+            ContestAccessPolicy.requireReadable(requireExistingContest(contestId));
+        }
         return baseMapper.selectContestProblemList(contestId, visible, userId);
+    }
+
+    private ProblemContest requireManagedRelation(Long relationId) {
+        SecurityUtils.requireTeacherOrAdmin();
+        if (relationId == null) {
+            throw new BusinessException(ContestErrorCode.CONTEST_INPUT_INVALID, "比赛题目关联 ID 不能为空");
+        }
+        ProblemContest relation = baseMapper.selectById(relationId);
+        if (relation == null) {
+            throw new BusinessException(ContestErrorCode.CONTEST_PROBLEM_NOT_FOUND, "比赛题目关联不存在");
+        }
+        requireManagedContest(relation.getContestId());
+        return relation;
+    }
+
+    private Contest requireManagedContest(Long contestId) {
+        SecurityUtils.requireTeacherOrAdmin();
+        return contestManagementApplicationService.requireManagedContest(contestId);
+    }
+
+    private Contest requireExistingContest(Long contestId) {
+        if (contestId == null) {
+            throw new BusinessException(ContestErrorCode.CONTEST_INPUT_INVALID, "比赛 ID 不能为空");
+        }
+        Contest contest = contestService.getById(contestId);
+        if (contest == null) {
+            throw new BusinessException(ContestErrorCode.CONTEST_NOT_FOUND, "比赛不存在");
+        }
+        return contest;
+    }
+
+    private boolean existsConfigured(Long contestId, Long problemId) {
+        return baseMapper.countByContestAndProblem(contestId, problemId) > 0;
     }
 }

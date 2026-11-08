@@ -42,6 +42,13 @@ public class ContestScheduleQueryAdapter implements ContestScheduleQuery {
         this.vpAttemptMapper = vpAttemptMapper;
     }
 
+    @Override
+    public List<Long> findOwnedIds(Long teacherId) {
+        if (teacherId == null) return List.of();
+        return contestMapper.selectList(new LambdaQueryWrapper<Contest>().eq(Contest::getAuthorId, teacherId))
+                .stream().map(Contest::getId).toList();
+    }
+
     /**
      * {@inheritDoc}
      * <p>

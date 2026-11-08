@@ -73,6 +73,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // 我的内容：按「全部 / 知识文章 / 题解 / 讨论贴」分 Tab 展示我发布的帖子。
 // 分页与响应式状态复用 usePagedPostList，本页只负责 Tab 与操作。
 import { computed, ref, onMounted } from 'vue'
@@ -160,8 +162,8 @@ const handleDelete = (post) => {
       } else {
         ElMessage.error(res.message || '删除失败')
       }
-    } catch {
-      ElMessage.error('请求失败')
+    } catch (caughtError) {
+      showApiError(caughtError, '请求失败')
     }
   }).catch(() => {})
 }

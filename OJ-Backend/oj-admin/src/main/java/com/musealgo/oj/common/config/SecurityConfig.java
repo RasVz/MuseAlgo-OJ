@@ -21,6 +21,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import com.musealgo.oj.common.api.Result;
+import com.musealgo.oj.common.exception.CommonErrorCode;
+import com.musealgo.oj.common.exception.ErrorResponses;
 import com.musealgo.oj.common.filter.JwtAuthenticationTokenFilter;
 
 /**
@@ -87,10 +89,11 @@ public class SecurityConfig {
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint((request, response, authException) ->
                                 writeJson(response, HttpServletResponse.SC_UNAUTHORIZED,
-                                        Result.error(401, "请先登录")))
+                                        ErrorResponses.failure(request.getAttribute(JwtAuthenticationTokenFilter.AUTH_ERROR_ATTRIBUTE) instanceof CommonErrorCode code
+                                                ? code : CommonErrorCode.AUTH_REQUIRED)))
                         .accessDeniedHandler((request, response, accessDeniedException) ->
                                 writeJson(response, HttpServletResponse.SC_FORBIDDEN,
-                                        Result.error(403, "无权访问该资源")))
+                                        ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED)))
                 )
 
                 .authorizeHttpRequests(auth -> auth
@@ -115,6 +118,7 @@ public class SecurityConfig {
                         .requestMatchers("/comment/list").permitAll()
                         .requestMatchers("/problem-list/list").permitAll()
                         .requestMatchers("/problem/list").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/problem/search", "/problem/filter-options").permitAll()
                         .requestMatchers("/exam-paper/list").permitAll()
                         .requestMatchers("/contest/list").permitAll()
                         .requestMatchers("/contest/upcoming-count").permitAll()

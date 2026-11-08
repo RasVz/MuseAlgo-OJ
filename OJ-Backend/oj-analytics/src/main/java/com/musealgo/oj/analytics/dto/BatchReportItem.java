@@ -34,6 +34,14 @@ public class BatchReportItem {
     /** 是否已受理；受理不代表报告已生成。 */
     private boolean accepted;
 
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    private String errorCode;
+
+    public BatchReportItem(Long studentId, boolean success, String error, Long snapshotId, String html,
+                           Long jobId, String status, boolean accepted) {
+        this(studentId, success, error, snapshotId, html, jobId, status, accepted, null);
+    }
+
     /** Compatibility constructor retained for existing source callers. */
     public BatchReportItem(Long studentId, boolean success, String error, Long snapshotId, String html) {
         this(studentId, success, error, snapshotId, html, null, null, false);

@@ -18,6 +18,18 @@ import java.util.List;
  */
 public interface UserMapper extends BaseMapper<User> {
 
+    /** Atomically changes the password and invalidates all tokens issued at the previous version. */
+    @Update("UPDATE `user` SET password = #{encodedPassword}, credential_version = credential_version + 1 WHERE id = #{userId}")
+    int updatePasswordAndIncrementCredentialVersion(@Param("userId") Long userId,
+                                                    @Param("encodedPassword") String encodedPassword);
+
+    /** Prevents a self-service change authorized with an old password from overwriting a concurrent reset. */
+    @Update("UPDATE `user` SET password = #{encodedPassword}, credential_version = credential_version + 1 " +
+            "WHERE id = #{userId} AND password = #{expectedEncodedPassword}")
+    int changePasswordIfUnchanged(@Param("userId") Long userId,
+                                  @Param("expectedEncodedPassword") String expectedEncodedPassword,
+                                  @Param("encodedPassword") String encodedPassword);
+
     @Select("SELECT id FROM `user` WHERE role = 3 AND COALESCE(is_banned, 0) <> 1 ORDER BY id FOR UPDATE")
     List<Long> lockEnabledAdminIds();
 

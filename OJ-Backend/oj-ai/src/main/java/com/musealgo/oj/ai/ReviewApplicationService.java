@@ -86,24 +86,21 @@ public class ReviewApplicationService {
                                                boolean privileged,
                                                Consumer<String> onChunk) {
         SubmissionReviewData data = submissionReviewQuery.findById(submissionId).orElse(null);
-        if (data == null || data.code() == null || data.code().isBlank()) {
-            onChunk.accept(API_FAIL_FALLBACK);
-            return AiAskOutcome.fail("");
-        }
-
-        if (userId == null || !userId.equals(data.userId())) {
-            onChunk.accept(REVIEW_FORBIDDEN_NOTICE);
-            return AiAskOutcome.fail("");
-        }
+        if (data == null) throw new com.musealgo.oj.common.exception.BusinessException(
+                com.musealgo.oj.ai.error.AiErrorCode.AI_REVIEW_SUBMISSION_NOT_FOUND);
+        if (userId == null || !userId.equals(data.userId())) throw new com.musealgo.oj.common.exception.BusinessException(
+                com.musealgo.oj.common.exception.CommonErrorCode.ACCESS_DENIED);
+        if (data.code() == null || data.code().isBlank()) throw new com.musealgo.oj.common.exception.BusinessException(
+                com.musealgo.oj.ai.error.AiErrorCode.AI_STATE_CONFLICT, "该提交没有可复盘的代码");
 
         if (contestGuard.shouldBlock(data.problemId(), privileged)) {
             onChunk.accept(CONTEST_BLOCKED_NOTICE);
-            return AiAskOutcome.blocked(AiUsage.STATUS_CONTEST_BLOCKED, CONTEST_BLOCKED_NOTICE);
+            return AiAskOutcome.blocked(AiUsage.STATUS_CONTEST_BLOCKED, CONTEST_BLOCKED_NOTICE).withProblemId(data.problemId());
         }
 
         if (!quotaService.tryAcquire(userId, privileged)) {
             onChunk.accept(QUOTA_EXCEEDED_NOTICE);
-            return AiAskOutcome.blocked(AiUsage.STATUS_QUOTA_REJECTED, QUOTA_EXCEEDED_NOTICE);
+            return AiAskOutcome.blocked(AiUsage.STATUS_QUOTA_REJECTED, QUOTA_EXCEEDED_NOTICE).withProblemId(data.problemId());
         }
 
         JSONArray messages = new JSONArray();
@@ -116,9 +113,9 @@ public class ReviewApplicationService {
             if (result == null || !result.emitted()) {
                 onChunk.accept(API_FAIL_FALLBACK);
             }
-            return AiAskOutcome.fail(promptText, result == null ? null : result.source());
+            return AiAskOutcome.fail(promptText, result == null ? null : result.source(), result == null ? null : result.errorType()).withProblemId(data.problemId());
         }
-        return AiAskOutcome.success(result.content(), result.usage(), promptText, result.source());
+        return AiAskOutcome.success(result.content(), result.usage(), promptText, result.source()).withProblemId(data.problemId());
     }
 
     /** 组装复盘 user 消息：代码 + 评测特征（不含测试点原文） */

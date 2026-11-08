@@ -1,5 +1,8 @@
 package com.musealgo.oj.contest.service.impl;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.contest.error.ContestErrorCode;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -10,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.musealgo.oj.api.user.UserDisplayInfo;
 import com.musealgo.oj.api.user.UserQuery;
 import com.musealgo.oj.contest.entity.Contest;
+import com.musealgo.oj.contest.application.ContestAccessPolicy;
 import com.musealgo.oj.contest.entity.ContestUser;
 import com.musealgo.oj.contest.entity.vo.ContestRegistrationVO;
 import com.musealgo.oj.contest.mapper.ContestMapper;
@@ -42,13 +46,14 @@ public class ContestUserServiceImpl extends ServiceImpl<ContestUserMapper, Conte
     @Override
     @Transactional(rollbackFor = Exception.class)
     public ContestUser registerContest(Long contestId, Long userId) {
-        Contest contest = contestMapper.selectById(contestId);
+        Contest contest = contestMapper.selectByIdForUpdate(contestId);
         if (contest == null || Integer.valueOf(1).equals(contest.getIsDeleted())) {
-            throw new IllegalArgumentException("比赛不存在");
+            throw new BusinessException(ContestErrorCode.CONTEST_NOT_FOUND, "比赛不存在");
         }
+        ContestAccessPolicy.requireReadable(contest);
         ContestUser existing = findRegistration(contestId, userId);
         if (existing != null) {
-            throw new IllegalStateException("您已经报名过该比赛啦！");
+            throw new BusinessException(ContestErrorCode.CONTEST_ALREADY_REGISTERED, "您已经报名过该比赛啦！");
         }
         Integer rating = userQuery.findRating(userId);
         ContestUser record = new ContestUser();
@@ -58,10 +63,11 @@ public class ContestUserServiceImpl extends ServiceImpl<ContestUserMapper, Conte
         record.setEligible(eligibilityService.isEligible(contest, rating) ? 1 : 0);
         record.setStatus(Integer.valueOf(1).equals(contest.getRegistrationReview())
                 ? STATUS_PENDING : STATUS_AUTO_APPROVED);
-        this.save(record);
-        contestMapper.update(null, new LambdaUpdateWrapper<Contest>()
+        if (!this.save(record)) throw new IllegalStateException("报名记录保存失败");
+        int updated = contestMapper.update(null, new LambdaUpdateWrapper<Contest>()
                 .eq(Contest::getId, contestId)
                 .setSql("participant_count = participant_count + 1"));
+        if (updated != 1) throw new IllegalStateException("比赛报名计数更新失败");
         return record;
     }
 
@@ -100,15 +106,19 @@ public class ContestUserServiceImpl extends ServiceImpl<ContestUserMapper, Conte
     public void reviewRegistration(Long contestId, Long userId, boolean approve, String reason, Long reviewerId) {
         ContestUser registration = findRegistration(contestId, userId);
         if (registration == null) {
-            throw new IllegalArgumentException("报名记录不存在");
+            throw new BusinessException(ContestErrorCode.CONTEST_REGISTRATION_NOT_FOUND, "报名记录不存在");
         }
         if (!STATUS_PENDING.equals(registration.getStatus())) {
-            throw new IllegalStateException("仅待审核的报名可以审核");
+            throw new BusinessException(ContestErrorCode.CONTEST_REGISTRATION_NOT_PENDING, "仅待审核的报名可以审核");
         }
         registration.setStatus(approve ? STATUS_APPROVED : STATUS_REJECTED);
         registration.setReviewedBy(reviewerId);
         registration.setReviewTime(LocalDateTime.now());
         registration.setRejectReason(approve ? null : (reason == null ? null : reason.trim()));
-        this.updateById(registration);
+        if (!this.update(registration, new LambdaUpdateWrapper<ContestUser>()
+                .eq(ContestUser::getId, registration.getId())
+                .eq(ContestUser::getStatus, STATUS_PENDING))) {
+            throw new BusinessException(ContestErrorCode.CONTEST_REGISTRATION_NOT_PENDING, "报名状态已改变，请刷新后重试");
+        }
     }
 }

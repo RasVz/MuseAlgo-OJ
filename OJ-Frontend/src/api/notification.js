@@ -4,7 +4,7 @@
  */
 import request from '@/utils/request'
 
-export const getNotifications = (scope = 'all') => request({ url: '/notification/list', method: 'get', params: { scope } })
+export const getNotifications = (scope = 'all', options = {}) => request({ url: '/notification/list', method: 'get', params: { scope }, ...options })
 export const getUnreadNotificationCount = () => request({ url: '/notification/unread-count', method: 'get' })
 export const markNotificationRead = (id) => request({ url: `/notification/${id}/read`, method: 'post' })
 export const markAllNotificationsRead = () => request({ url: '/notification/read-all', method: 'post' })

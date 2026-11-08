@@ -1,5 +1,9 @@
 package com.musealgo.oj.controller;
 
+import com.musealgo.oj.common.exception.ErrorResponses;
+import com.musealgo.oj.common.exception.CommonErrorCode;
+import com.musealgo.oj.system.error.SystemErrorCode;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
@@ -136,24 +140,24 @@ public class AdminUserController {
     @Transactional(rollbackFor = Exception.class)
     public Result<String> updateRole(@PathVariable Long id, @RequestBody RoleRequest request) {
         if (request.getRole() == null || request.getRole() < 1 || request.getRole() > 3) {
-            return Result.error("角色取值 1=学生 2=老师 3=管理员");
+            return ErrorResponses.failure(SystemErrorCode.SYSTEM_INPUT_INVALID, "角色取值 1=学生 2=老师 3=管理员");
         }
         List<Long> enabledAdminIds = userService.lockEnabledAdminIds();
         User target = userService.getById(id);
         if (target == null) {
-            return Result.error("用户不存在");
+            return ErrorResponses.failure(SystemErrorCode.USER_NOT_FOUND, "用户不存在");
         }
         if (id.equals(SecurityUtils.getUserId()) && request.getRole() != 3) {
-            return Result.error("不能降低自己的管理员角色");
+            return ErrorResponses.failure(SystemErrorCode.ADMIN_SELF_DEMOTION_NOT_ALLOWED, "不能降低自己的管理员角色");
         }
         if (target.getRole() != null && target.getRole() == 3 && request.getRole() != 3
                 && enabledAdminIds.size() <= 1) {
-            return Result.error("系统必须保留至少一个管理员");
+            return ErrorResponses.failure(SystemErrorCode.ADMIN_LAST_ADMIN_REQUIRED, "系统必须保留至少一个管理员");
         }
         User user = new User();
         user.setId(id);
         user.setRole(request.getRole());
-        userService.updateById(user);
+        if (!userService.updateById(user)) throw new IllegalStateException("用户角色更新失败");
         // 规范化 RBAC 模式下 user.role 不再是授权来源，必须同步 sys_user_role，
         // 否则改角色不生效（旧关联继续生效），甚至形成本应撤权却仍保留权限的落差。
         if (normalizedRbacEnabled && !userService.syncNormalizedRole(id, request.getRole())) {
@@ -170,19 +174,19 @@ public class AdminUserController {
         List<Long> enabledAdminIds = userService.lockEnabledAdminIds();
         User target = userService.getById(id);
         if (target == null) {
-            return Result.error("用户不存在");
+            return ErrorResponses.failure(SystemErrorCode.USER_NOT_FOUND, "用户不存在");
         }
         boolean banning = Boolean.TRUE.equals(request.getBanned());
         if (banning && id.equals(SecurityUtils.getUserId())) {
-            return Result.error("不能禁用自己的账号");
+            return ErrorResponses.failure(SystemErrorCode.ADMIN_SELF_BAN_NOT_ALLOWED, "不能禁用自己的账号");
         }
         if (banning && target.getRole() != null && target.getRole() == 3 && enabledAdminIds.size() <= 1) {
-            return Result.error("不能禁用最后一个管理员");
+            return ErrorResponses.failure(SystemErrorCode.ADMIN_LAST_ADMIN_REQUIRED, "不能禁用最后一个管理员");
         }
         User user = new User();
         user.setId(id);
         user.setIsBanned(Boolean.TRUE.equals(request.getBanned()) ? (byte) 1 : (byte) 0);
-        userService.updateById(user);
+        if (!userService.updateById(user)) throw new IllegalStateException("用户启用状态更新失败");
         return Result.success(Boolean.TRUE.equals(request.getBanned()) ? "已禁用该账号" : "已启用该账号");
     }
 
@@ -192,17 +196,17 @@ public class AdminUserController {
     @Transactional(rollbackFor = Exception.class)
     public Result<String> createAccount(@RequestBody CreateAccountRequest request) {
         if (request == null || !StringUtils.hasText(request.getUsername())) {
-            return Result.error("用户名不能为空");
+            return ErrorResponses.failure(SystemErrorCode.SYSTEM_INPUT_INVALID, "用户名不能为空");
         }
         if (!StringUtils.hasText(request.getPassword()) || request.getPassword().length() < 6) {
-            return Result.error("密码至少 6 位");
+            return ErrorResponses.failure(SystemErrorCode.SYSTEM_INPUT_INVALID, "密码至少 6 位");
         }
         if (!StringUtils.hasText(request.getNickname())) {
-            return Result.error("昵称不能为空");
+            return ErrorResponses.failure(SystemErrorCode.SYSTEM_INPUT_INVALID, "昵称不能为空");
         }
         Integer role = request.getRole() == null ? 1 : request.getRole();
         if (role < 1 || role > 3) {
-            return Result.error("角色取值 1=学生 2=老师 3=管理员");
+            return ErrorResponses.failure(SystemErrorCode.SYSTEM_INPUT_INVALID, "角色取值 1=学生 2=老师 3=管理员");
         }
         User user = new User();
         user.setUsername(request.getUsername().trim());
@@ -221,14 +225,14 @@ public class AdminUserController {
         }
         Integer check = userService.registerCheck(user);
         if (check == 1) {
-            return Result.error("用户名已被使用");
+            return ErrorResponses.failure(SystemErrorCode.AUTH_USERNAME_TAKEN, "用户名已被使用");
         }
         if (check == 2) {
-            return Result.error("邮箱已被使用");
+            return ErrorResponses.failure(SystemErrorCode.AUTH_EMAIL_TAKEN, "邮箱已被使用");
         }
         // 注意：不能用 userService.register()——它会强制把角色改成学生(1)，管理员代建教师/管理员账号会被静默降级
         if (!userService.save(user)) {
-            return Result.error("账号创建失败");
+            return ErrorResponses.failure(CommonErrorCode.INTERNAL_ERROR, "账号创建失败");
         }
         // 规范化 RBAC 模式下新账号必须有 sys_user_role 关联，否则 fail-closed 判为无权限。
         if (normalizedRbacEnabled && !userService.syncNormalizedRole(user.getId(), user.getRole())) {
@@ -243,19 +247,18 @@ public class AdminUserController {
     @Transactional(rollbackFor = Exception.class)
     public Result<String> resetPassword(@PathVariable Long id, @RequestBody ResetPasswordRequest request) {
         if (request == null || !StringUtils.hasText(request.getNewPassword())) {
-            return Result.error("新密码不能为空");
+            return ErrorResponses.failure(SystemErrorCode.SYSTEM_INPUT_INVALID, "新密码不能为空");
         }
         if (request.getNewPassword().length() < 6) {
-            return Result.error("新密码至少 6 位");
+            return ErrorResponses.failure(SystemErrorCode.SYSTEM_INPUT_INVALID, "新密码至少 6 位");
         }
         User target = userService.getById(id);
         if (target == null) {
-            return Result.error("用户不存在");
+            return ErrorResponses.failure(SystemErrorCode.USER_NOT_FOUND, "用户不存在");
         }
-        User user = new User();
-        user.setId(id);
-        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
-        userService.updateById(user);
+        if (!userService.updatePassword(id, passwordEncoder.encode(request.getNewPassword()))) {
+            return ErrorResponses.failure(CommonErrorCode.INTERNAL_ERROR, "密码重置失败");
+        }
         return Result.success("密码已重置");
     }
 

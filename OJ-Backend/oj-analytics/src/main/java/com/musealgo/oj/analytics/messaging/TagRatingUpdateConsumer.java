@@ -24,7 +24,7 @@ public class TagRatingUpdateConsumer {
     private final TagRatingService tagRatingService;
     private final ObjectMapper objectMapper;
 
-    @RabbitListener(queues = "oj.rating.update")
+    @RabbitListener(queues = "oj.rating.update", containerFactory = "tagRatingListenerFactory")
     public void handle(String payload) {
         SubmissionJudgedEvent event = null;
         try {
@@ -37,11 +37,12 @@ public class TagRatingUpdateConsumer {
             if (context.status() != 1) {
                 return;
             }
-            tagRatingService.updateRating(context.userId(), context.problemId());
+            tagRatingService.rebuildForUser(context.userId());
             log.info("TagRating 更新完成 submissionId={} userId={} problemId={}",
                     event.submissionId(), context.userId(), context.problemId());
         } catch (Exception e) {
-            log.error("TagRating 更新失败 submissionId={}: {}", event.submissionId(), e.getMessage(), e);
+            log.error("TagRating 提示处理失败 submissionId={}", event == null ? null : event.submissionId(), e);
+            throw new IllegalStateException("标签评分提示处理失败", e);
         }
     }
 }

@@ -1,5 +1,8 @@
 package com.musealgo.oj.teaching.service.impl;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.teaching.error.TeachingErrorCode;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -82,7 +85,7 @@ public class ClassCoursewareServiceImpl
             ncw.setTitle(title); ncw.setUrl(url);
             ncw.setProblemListId(problemListId); ncw.setDescription(description);
             ncw.setTeacherId(com.musealgo.oj.common.utils.SecurityUtils.getUserId());
-            coursewareService.save(ncw);
+            if (!coursewareService.save(ncw)) throw new IllegalStateException("课件保存失败");
             coursewareId = ncw.getId();
         }
 
@@ -90,7 +93,7 @@ public class ClassCoursewareServiceImpl
         long count = this.count(new LambdaQueryWrapper<ClassCourseware>()
                 .eq(ClassCourseware::getClassId, classId)
                 .eq(ClassCourseware::getCoursewareId, coursewareId));
-        if (count > 0) throw new IllegalStateException("该课件已添加到班级");
+        if (count > 0) throw new BusinessException(TeachingErrorCode.CLASS_COURSEWARE_ALREADY_ADDED, "该课件已添加到班级");
 
         // 3. 计算排序号
         ClassCourseware last = this.getOne(new LambdaQueryWrapper<ClassCourseware>()
@@ -102,6 +105,6 @@ public class ClassCoursewareServiceImpl
         ClassCourseware rel = new ClassCourseware();
         rel.setClassId(classId); rel.setCoursewareId(coursewareId);
         rel.setSort(sort); rel.setIsVisible(true);
-        this.save(rel);
+        if (!this.save(rel)) throw new IllegalStateException("班级课件关联保存失败");
     }
 }

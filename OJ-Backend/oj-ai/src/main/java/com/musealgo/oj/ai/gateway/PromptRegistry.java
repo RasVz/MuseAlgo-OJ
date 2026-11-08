@@ -1,5 +1,8 @@
 package com.musealgo.oj.ai.gateway;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.ai.error.AiErrorCode;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -120,7 +123,7 @@ public class PromptRegistry {
     public void activateVersion(Long id) {
         PromptTemplate target = promptTemplateMapper.selectById(id);
         if (target == null) {
-            throw new IllegalArgumentException("模板不存在: " + id);
+            throw new BusinessException(AiErrorCode.AI_PROMPT_NOT_FOUND, "模板不存在: " + id);
         }
         promptTemplateMapper.lockPromptKey(target.getPromptKey());
         List<PromptTemplate> versions = promptTemplateMapper

@@ -53,25 +53,9 @@ public class RankController {
     @Operation(summary = "我的当前排名")
     @GetMapping("/my")
     public Result<Long> getMyRank() {
-        try {
-            // 1. 获取当前登录用户 ID
-            Long userId = SecurityUtils.getUserId();
-
-            // 2. 如果没登录，返回 -1
-            if (userId == null) {
-                return Result.success(-1L);
-            }
-
-            // 3. 查询数据库当前名次
-            Long rank = rankService.getMyRank(userId);
-            return Result.success(rank);
-
-        } catch (Exception e) {
-            // 应对 SecurityUtils 在未登录时可能抛异常的情况
-            // 未登录返回 -1 而非 4xx：这个入口是首页侧栏的展示位，
-            // 未登录时也要正常渲染页面，抛错会让整个首页报错；
-            // -1 表示「未上榜」，前端据此隐藏名次展示即可
-            return Result.success(-1L);
-        }
+        Long userId = SecurityUtils.getUserId();
+        // 首页匿名展示仍使用 -1；真实查询故障交给统一异常处理。
+        if (userId == null) return Result.success(-1L);
+        return Result.success(rankService.getMyRank(userId));
     }
 }

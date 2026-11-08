@@ -220,7 +220,7 @@ class ProblemCaseApplicationServiceTest {
         when(problemCaseService.getProblemCases(PROBLEM_ID)).thenReturn(existing);
 
         assertThatThrownBy(() -> service.appendCases(PROBLEM_ID, List.of(new FpsTestCase("x", "y"))))
-                .isInstanceOf(IllegalArgumentException.class)
+                .isInstanceOf(com.musealgo.oj.common.exception.BusinessException.class)
                 .hasMessageContaining("上限");
 
         verify(problemCaseService, never()).save(any());
@@ -235,7 +235,7 @@ class ProblemCaseApplicationServiceTest {
                 .toList();
 
         assertThatThrownBy(() -> service.saveCases(PROBLEM_ID, tooMany))
-                .isInstanceOf(IllegalArgumentException.class)
+                .isInstanceOf(com.musealgo.oj.common.exception.BusinessException.class)
                 .hasMessageContaining("上限");
 
         verify(problemCaseService, never()).remove(any());

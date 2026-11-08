@@ -46,6 +46,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // AI 题目工具弹窗：生成标准答案（std）或测试数据生成器，两种模式共用一个弹窗。
 //
 // 强依赖：生成测试数据的前提是该题已有 std——没有标准答案就无法验证生成的用例，
@@ -139,7 +141,7 @@ const open = async () => {
     }
   } catch (e) {
     console.error(e)
-    ElMessage.error('加载题目失败，请稍后重试')
+    showApiError(e, '加载题目失败，请稍后重试')
   } finally {
     loading.value = false
   }
@@ -180,7 +182,7 @@ const generate = async (mode) => {
     }
   } catch (e) {
     console.error(e)
-    ElMessage.error('生成失败，请稍后重试')
+    showApiError(e, '生成失败，请稍后重试')
   } finally {
     generating.value = false
   }
@@ -203,7 +205,7 @@ const saveStd = async () => {
     emit('saved')
   } catch (e) {
     console.error(e)
-    ElMessage.error('保存失败，请稍后重试')
+    showApiError(e, '保存失败，请稍后重试')
   } finally {
     savingStd.value = false
   }
@@ -238,7 +240,7 @@ const clearStd = async () => {
     emit('saved')
   } catch (e) {
     console.error(e)
-    ElMessage.error('清除失败，请稍后重试')
+    showApiError(e, '清除失败，请稍后重试')
   } finally {
     clearingStd.value = false
   }
@@ -266,7 +268,7 @@ const verifyGenerated = async () => {
     }
   } catch (e) {
     console.error(e)
-    ElMessage.error('生成并验证失败，请稍后重试')
+    showApiError(e, '生成并验证失败，请稍后重试')
   } finally {
     verifying.value = false
   }
@@ -302,7 +304,7 @@ const saveCases = async () => {
     emit('saved')
   } catch (e) {
     console.error(e)
-    ElMessage.error('保存失败，请稍后重试')
+    showApiError(e, '保存失败，请稍后重试')
   } finally {
     saving.value = false
   }

@@ -16,6 +16,12 @@ public interface ClassQuery {
     /** 按 ID 查询班级基础信息（不存在返回空）。 */
     Optional<ClassInfo> findById(Long classId);
 
+    /** 当前由该教师负责的班级 ID（用于跨模块访问范围过滤）。 */
+    List<Long> findOwnedIds(Long teacherId);
+
+    /** 用户负责或加入的班级 ID（当前关系）。 */
+    List<Long> findAccessibleIds(Long userId);
+
     /** 查询班级全部学生 ID（去重）。 */
     List<Long> findStudentIds(Long classId);
 

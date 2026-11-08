@@ -1,5 +1,8 @@
 package com.musealgo.oj.analytics.application;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.common.exception.CommonErrorCode;
+
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -90,7 +93,7 @@ public class ProfileApplicationService {
     public StudentProfile buildMyProfile(LocalDate from, LocalDate to) {
         Long userId = com.musealgo.oj.common.utils.SecurityUtils.getUserId();
         if (userId == null) {
-            throw new IllegalStateException("请先登录");
+            throw new BusinessException(CommonErrorCode.AUTH_REQUIRED, "请先登录");
         }
         return buildProfile(userId, null, from, to, true);
     }
@@ -119,6 +122,7 @@ public class ProfileApplicationService {
         // 1. 时间窗：默认最近 30 天
         LocalDate end = to != null ? to : LocalDate.now();
         LocalDate start = from != null ? from : end.minusDays(30);
+        if (start.isAfter(end)) throw new BusinessException(CommonErrorCode.INVALID_ARGUMENT, "开始日期不能晚于结束日期");
         LocalDateTime fromTs = start.atStartOfDay();
         LocalDateTime toTs = end.plusDays(1).atStartOfDay();
 

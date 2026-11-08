@@ -8,6 +8,7 @@ import com.meilisearch.sdk.Config;
 import com.meilisearch.sdk.Index;
 import com.meilisearch.sdk.SearchRequest;
 import com.meilisearch.sdk.model.SearchResult;
+import com.meilisearch.sdk.model.SearchResultPaginated;
 import com.meilisearch.sdk.model.Searchable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -207,19 +208,31 @@ public class ProblemSearchIndexer {
         try {
             SearchRequest request = new SearchRequest(keyword == null ? "" : keyword.trim())
                     .setPage(Math.max(1, page))
-                    .setHitsPerPage(Math.max(1, size));
+                    .setHitsPerPage(Math.max(1, size))
+                    .setAttributesToRetrieve(new String[]{"id"});
             request.setFilter(new String[]{"isPublic = true AND " + difficultyFilter(difficulty, minDifficulty, maxDifficulty)});
             Searchable searchable = meili().index(INDEX_UID).search(request);
-            if (!(searchable instanceof SearchResult result)) {
-                return new SearchHits(List.of(), 0);
+            List<? extends Map<String, Object>> hits;
+            long total;
+            if (searchable instanceof SearchResultPaginated result) {
+                hits = result.getHits();
+                total = result.getTotalHits();
+            } else if (searchable instanceof SearchResult result) {
+                hits = result.getHits();
+                total = result.getEstimatedTotalHits();
+            } else {
+                throw new IllegalStateException("unsupported meilisearch response");
             }
-            List<Long> ids = result.getHits().stream()
+            List<Long> ids = hits.stream()
                     .map(hit -> hit.get("id"))
                     .filter(Objects::nonNull)
-                    .map(value -> Long.valueOf(value.toString()))
+                    .map(value -> value instanceof Number number ? number.longValue() : Long.valueOf(value.toString()))
                     .toList();
+            // totalHits can itself be capped. Equality with the configured cap is ambiguous,
+            // so let the caller fall back rather than count a possibly truncated candidate set.
+            int serverLimit = meili().index(INDEX_UID).getPaginationSettings().getMaxTotalHits();
             resetFailures();
-            return new SearchHits(ids, result.getEstimatedTotalHits());
+            return new SearchHits(ids, total, total < serverLimit);
         } catch (Exception e) {
             onFailure("搜索索引查询失败 keyword={}", keyword, e);
             throw new IllegalStateException("meilisearch query failed", e);
@@ -395,8 +408,11 @@ public class ProblemSearchIndexer {
         return value == null ? "" : value;
     }
 
-    /** 搜索召回结果：命中 id（按相关性排序）+ 估算总量 */
-    public record SearchHits(List<Long> ids, long total) {
+    /** 搜索召回结果；complete=false表示可能达到服务端分页上限，不能据此计算可见总数。 */
+    public record SearchHits(List<Long> ids, long total, boolean complete) {
+        public SearchHits(List<Long> ids, long total) {
+            this(ids, total, true);
+        }
     }
 
     /** 全量重建结果统计 */

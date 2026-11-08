@@ -70,10 +70,16 @@ def run_suite(output, extended=True):
             # judge_task，会与重判 IT 的“领取→完成/失败”模拟竞争（重判 IT 需要人工领取）。
             # 仅在这一步禁用 Worker；后续真实后端进程启动前恢复，避免影响 API smoke 真实判题。
             env['OJ_JUDGE_WORKER_ENABLED'] = 'false'
+            env['OJ_MESSAGING_OUTBOX_INITIAL_DELAY_MS'] = '86400000'
+            env.update(OJ_RABBIT_HOST='127.0.0.1', OJ_RABBIT_PORT=env['OJ_CI_MQ_PORT'],
+                       OJ_RABBIT_USER='ci', OJ_RABBIT_PASS=env['OJ_CI_MQ_PASSWORD'])
             try:
-                run('backend-integration',['./mvnw','-B','package','-Pintegration'],ROOT/'OJ-Backend')
+                run('backend-integration',['./mvnw','-B','package','-Pintegration',
+                    '-Dmusealgo.review.synthetic=true',
+                    '-Dmusealgo.review.expected-db-port='+env['OJ_CI_MYSQL_PORT']],ROOT/'OJ-Backend')
             finally:
                 env.pop('OJ_JUDGE_WORKER_ENABLED', None)
+                env.pop('OJ_MESSAGING_OUTBOX_INITIAL_DELAY_MS', None)
             run('frontend-install',['npm','ci','--no-audit','--no-fund'],ROOT/'OJ-Frontend')
             run('frontend-unit',['npm','run','test:unit'],ROOT/'OJ-Frontend')
             run('frontend-lint',['npm','run','lint:ci'],ROOT/'OJ-Frontend')

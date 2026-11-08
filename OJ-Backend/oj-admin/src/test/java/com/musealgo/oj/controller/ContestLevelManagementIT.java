@@ -35,7 +35,7 @@ class ContestLevelManagementIT {
         var updated = levels.update(levelId, command);
         assertNull(updated.getMinRating()); assertNull(updated.getMaxRating());
         assertNotEquals(command.getCreateTime(), updated.getCreateTime());
-        assertThrows(IllegalArgumentException.class, () -> levels.update(Long.MAX_VALUE, command));
+        assertThrows(com.musealgo.oj.common.exception.BusinessException.class, () -> levels.update(Long.MAX_VALUE, command));
     }
     @Test void clearingContestLevelPersistsUnboundedSnapshot() {
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(

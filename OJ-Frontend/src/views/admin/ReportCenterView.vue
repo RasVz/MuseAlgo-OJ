@@ -419,6 +419,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // 教师 / 管理员的「学习周报」报告中心（T9-3）。
 //
 // 后端为 enqueue-only：POST 只受理/复用任务并立即返回 PENDING，报告由后台 worker 生成。
@@ -743,7 +745,7 @@ async function loadMembers() {
   } catch (e) {
     if (Number(selectedClassId.value) === classId) {
       members.value = []
-      ElMessage.error(errorMessage(e, '班级成员加载失败'))
+      showApiError(e, errorMessage(e, '班级成员加载失败'))
     }
   } finally {
     if (Number(selectedClassId.value) === classId) membersLoading.value = false
@@ -1172,8 +1174,8 @@ function handlePrint() {
   }
   try {
     printWindow.postMessage({ kind: 'muse-report-request', action: 'print' }, '*')
-  } catch {
-    ElMessage.error('打印失败，请改用「另存为 HTML」')
+  } catch (caughtError) {
+    showApiError(caughtError, '打印失败，请改用「另存为 HTML」')
   }
 }
 

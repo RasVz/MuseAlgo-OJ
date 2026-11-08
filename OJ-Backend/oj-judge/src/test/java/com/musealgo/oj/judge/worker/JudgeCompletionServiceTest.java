@@ -55,6 +55,7 @@ class JudgeCompletionServiceTest {
         var t = task();
         var s = acceptedSubmission();
         when(tasks.complete(t)).thenReturn(true);
+        when(events.insert(any(OutboxEvent.class))).thenReturn(1);
         when(submissions.updateById(s)).thenReturn(1);
         when(rejudgeItems.selectOpenBySubmissionId(10L)).thenReturn(null);
         when(submissions.selectCount(any())).thenReturn(0L);
@@ -72,6 +73,7 @@ class JudgeCompletionServiceTest {
         var t = task();
         var s = acceptedSubmission();
         when(tasks.complete(t)).thenReturn(true);
+        when(events.insert(any(OutboxEvent.class))).thenReturn(1);
         when(submissions.updateById(s)).thenReturn(1);
         when(rejudgeItems.selectOpenBySubmissionId(10L)).thenReturn(null);
         when(submissions.selectCount(any())).thenReturn(1L);
@@ -86,6 +88,7 @@ class JudgeCompletionServiceTest {
         var t = task();
         var s = acceptedSubmission();
         when(tasks.complete(t)).thenReturn(true);
+        when(events.insert(any(OutboxEvent.class))).thenReturn(1);
         when(submissions.updateById(s)).thenReturn(1);
         RejudgeItem item = new RejudgeItem();
         item.setId(5L);
@@ -98,7 +101,9 @@ class JudgeCompletionServiceTest {
         op.setTotalItems(1);
         op.setSucceededItems(0);
         op.setFailedItems(0);
-        when(rejudgeOperations.selectById(9L)).thenReturn(op);
+        when(rejudgeOperations.selectForUpdate(9L)).thenReturn(op);
+        when(rejudgeOperations.updateById(op)).thenReturn(1);
+        when(rejudgeItems.updateById(any(RejudgeItem.class))).thenReturn(1);
 
         service.completeWithOutbox(t, s, false);
 

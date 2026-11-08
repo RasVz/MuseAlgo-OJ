@@ -77,7 +77,7 @@ class ProblemStdApplicationServiceTest {
     @Test
     void blankCodeIsRejectedBeforeTakingAnyLock() {
         assertThatThrownBy(() -> service.saveStdTested(PROBLEM_ID, "  ", "", "fp-1"))
-                .isInstanceOf(IllegalArgumentException.class);
+                .isInstanceOf(com.musealgo.oj.common.exception.BusinessException.class);
 
         verifyNoInteractions(caseApplicationService);
         verifyNoInteractions(problemService);

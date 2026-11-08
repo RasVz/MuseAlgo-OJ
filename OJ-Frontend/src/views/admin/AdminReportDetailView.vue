@@ -37,6 +37,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // 举报详情处理页（仅管理员）：处理单条内容举报，可选「限制查看」或「忽略举报」。
 // 从社区治理列表以新标签页打开，处理完成后若有 opener 就直接关掉标签页退回列表，
 // 否则（直接访问该 URL）退回治理列表。
@@ -95,8 +97,8 @@ onMounted(async () => {
       return
     }
     report.value = unwrapResultData(res)
-  } catch {
-    ElMessage.error('加载举报详情失败')
+  } catch (caughtError) {
+    showApiError(caughtError, '加载举报详情失败')
   } finally {
     loading.value = false
   }

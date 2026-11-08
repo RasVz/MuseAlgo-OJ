@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.io.Serializable;
 import java.time.LocalDateTime;
 import io.swagger.annotations.ApiModel;
@@ -39,6 +40,11 @@ public class User implements Serializable, AuthenticatedUser {
     @ApiModelProperty("密码")
     @TableField("password")
     private String password;
+
+    /** Monotonically increases whenever the account password changes. */
+    @JsonIgnore
+    @TableField("credential_version")
+    private Long credentialVersion;
 
     @ApiModelProperty("昵称")
     @TableField("nickname")

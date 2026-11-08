@@ -101,12 +101,14 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // 提交详情页：展示判题结果、源码与错误信息，并对判题中的提交自动轮询。
 //
 // 轮询用递归 setTimeout 而不是 setInterval：每次请求返回后才安排下一次，
 // 请求慢时不会堆积，也不会有"上一轮还没回来下一轮已发出"的竞态。
 // 一旦拿到终态（status != 0）或判题服务异常（judgePhase=FAILED）就停止轮询。
-import { computed, ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { computed, ref, watch, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getSubmissionDetail } from '@/api/submission' 
 import { ElMessage } from 'element-plus'
@@ -125,6 +127,7 @@ const loading = ref(false)
 const detail = ref(null)
 const codeBlock = ref(null)
 let pollTimer
+let loadGeneration = 0
 
 // AI 复盘弹窗（逻辑已迁入 AiReviewDialog）
 const reviewDialogVisible = ref(false)
@@ -137,9 +140,11 @@ const canReview = computed(() => [2, 3, 4, 5].includes(Number(detail.value?.stat
 const loadData = async () => {
   const id = route.params.id
   if (!id) return
+  const generation = ++loadGeneration
   loading.value = true
   try {
     const res = await getSubmissionDetail(id)
+    if (generation !== loadGeneration || id !== route.params.id) return
     if (res.code === 200) {
       detail.value = res.data
       if (isInProgress.value) schedulePoll()
@@ -154,15 +159,16 @@ const loadData = async () => {
       ElMessage.error(res.message || '获取详情失败')
     }
   } catch (e) {
+    if (generation !== loadGeneration || id !== route.params.id) return
     if (e?.response?.data?.code === 403) {
       // 无权限查看（如他人的提交源码）：拦截器已提示原因，直接回到提交记录页
       router.replace({ name: 'Submission' })
     } else {
       console.error(e)
-      ElMessage.error('网络错误')
+      showApiError(e, e.message || '获取详情失败')
     }
   } finally {
-    loading.value = false
+    if (generation === loadGeneration) loading.value = false
   }
 }
 
@@ -214,9 +220,14 @@ const getLanguageClass = (lang) => {
 
 const formatTime = (t) => t ? t.replace('T', ' ').substring(0, 19) : '-'
 
-onMounted(() => loadData())
+watch(() => route.params.id, () => {
+  clearTimeout(pollTimer)
+  detail.value = null
+  reviewDialogVisible.value = false
+  loadData()
+}, { immediate: true })
 // 卸载时必须清掉待执行的轮询定时器，否则组件已销毁仍会发请求并写状态。
-onUnmounted(() => clearTimeout(pollTimer))
+onUnmounted(() => { loadGeneration++; clearTimeout(pollTimer) })
 </script>
 
 <style scoped>

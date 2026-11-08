@@ -68,14 +68,14 @@ public class FpsImportService {
         try {
             parsedItems = parseUpload(file);
         } catch (IOException e) {
-            throw new IllegalArgumentException("无法读取 FPS 文件: " + e.getMessage(), e);
+            throw new IllegalArgumentException("无法读取 FPS 文件，请重试", e);
         }
 
         List<FpsImportItemResult> items = new ArrayList<>(parsedItems.size());
         int succeeded = 0;
         for (FpsParsedItem parsedItem : parsedItems) {
             if (!parsedItem.success()) {
-                items.add(FpsImportItemResult.failure(parsedItem.position(), parsedItem.title(), parsedItem.error()));
+                items.add(FpsImportItemResult.failure(parsedItem.position(), parsedItem.title(), parsedItem.error(), "PROBLEM_IMPORT_INVALID"));
                 continue;
             }
             FpsProblem problem = parsedItem.problem();
@@ -88,7 +88,7 @@ public class FpsImportService {
                         problem.testCases().size(), message));
                 succeeded++;
             } catch (Exception e) {
-                items.add(FpsImportItemResult.failure(parsedItem.position(), problem.title(), rootMessage(e)));
+                items.add(FpsImportItemResult.failure(parsedItem.position(), problem.title(), rootMessage(e), publicErrorCode(e)));
             }
         }
         return new FpsImportResult(parsedItems.size(), succeeded, parsedItems.size() - succeeded, List.copyOf(items));
@@ -119,6 +119,7 @@ public class FpsImportService {
      * <b>防解压炸弹：</b>同时限制条目数、单条目解压后大小、以及所有条目解压总量。
      * 非 FPS 条目也要读出来计费（{@link #discardLimited}）——只统计目标文件的话，
      * 一个塞满无关大文件的压缩包可以绕过总量限制。
+     * 目录条目只允许为空；ZIP 流关闭条目时会自动排空未读数据，故必须先检查其载荷。
      * </p>
      */
     private List<FpsParsedItem> parseZip(InputStream input) throws IOException {
@@ -133,6 +134,9 @@ public class FpsImportService {
                     throw new IllegalArgumentException("ZIP 中最多支持 " + MAX_ZIP_ENTRIES + " 个条目");
                 }
                 if (entry.isDirectory()) {
+                    if (zip.read() != -1) {
+                        throw new IllegalArgumentException("ZIP 目录条目不能包含数据");
+                    }
                     zip.closeEntry();
                     continue;
                 }
@@ -234,11 +238,16 @@ public class FpsImportService {
      * 展示给用户没有诊断价值。
      * </p>
      */
+    private String publicErrorCode(Exception exception) {
+        return exception instanceof com.musealgo.oj.common.exception.BusinessException business
+                ? business.getErrorCode().key() : "INTERNAL_ERROR";
+    }
+
     private String rootMessage(Exception exception) {
-        Throwable root = exception;
-        while (root.getCause() != null) {
-            root = root.getCause();
+        if (exception instanceof com.musealgo.oj.common.exception.BusinessException business) {
+            return business.getMessage();
         }
-        return root.getMessage() == null || root.getMessage().isBlank() ? "导入失败" : root.getMessage();
+        org.slf4j.LoggerFactory.getLogger(getClass()).error("批处理单项失败", exception);
+        return "处理失败，请稍后重试或联系管理员";
     }
 }

@@ -1,5 +1,8 @@
 package com.musealgo.oj.contest.controller;
 
+import com.musealgo.oj.common.exception.ErrorResponses;
+import com.musealgo.oj.common.exception.CommonErrorCode;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletResponse;
@@ -15,6 +18,7 @@ import com.musealgo.oj.common.api.Result;
 import com.musealgo.oj.common.annotation.AuditLog;
 import com.musealgo.oj.common.utils.SecurityUtils;
 import com.musealgo.oj.contest.entity.Contest;
+import com.musealgo.oj.contest.application.ContestAccessPolicy;
 import com.musealgo.oj.contest.entity.ContestRank;
 import com.musealgo.oj.contest.entity.vo.ContestRankVO;
 import com.musealgo.oj.contest.service.ContestRankService;
@@ -52,8 +56,9 @@ public class ContestRankController {
             @RequestParam(defaultValue = "50") Integer limit
     ) {
         Contest contest = contestService.getById(contestId);
+        ContestAccessPolicy.requireReadable(contest);
         if (isOiContestInProgress(contest) && !SecurityUtils.isTeacherOrAdmin()) {
-            return Result.error(403, "OI 比赛进行中，暂不公布实时排名");
+            return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "OI 比赛进行中，暂不公布实时排名");
         }
         return Result.success(contestRankService.getRealtimeTopN(contestId, limit));
     }
@@ -66,11 +71,12 @@ public class ContestRankController {
     public Result<Long> getMyRealtimeRank(@PathVariable Long contestId) {
         Long userId = SecurityUtils.getUserId();
         if (userId == null) {
-            return Result.error(401, "请先登录");
+            return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "请先登录");
         }
         Contest contest = contestService.getById(contestId);
+        ContestAccessPolicy.requireReadable(contest);
         if (isOiContestInProgress(contest) && !SecurityUtils.isTeacherOrAdmin()) {
-            return Result.error(403, "OI 比赛进行中，暂不公布实时排名");
+            return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "OI 比赛进行中，暂不公布实时排名");
         }
         Long rank = contestRankService.getRealtimeUserRank(contestId, userId);
         return Result.success(rank);
@@ -83,8 +89,9 @@ public class ContestRankController {
     @GetMapping("/{contestId}/rank/final")
     public Result<List<ContestRank>> getFinalRankList(@PathVariable Long contestId) {
         Contest contest = contestService.getById(contestId);
+        ContestAccessPolicy.requireReadable(contest);
         if (isOiContestInProgress(contest) && !SecurityUtils.isTeacherOrAdmin()) {
-            return Result.error(403, "OI 比赛进行中，暂不公布排名");
+            return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "OI 比赛进行中，暂不公布排名");
         }
         return Result.success(contestRankService.getFinalRankList(contestId));
     }
@@ -93,8 +100,9 @@ public class ContestRankController {
     @GetMapping("/{contestId}/rank/global/list")
     public Result<List<ContestRankVO>> getGlobalRankList(@PathVariable Long contestId) {
         Contest contest = contestService.getById(contestId);
+        ContestAccessPolicy.requireReadable(contest);
         if (isOiContestInProgress(contest) && !SecurityUtils.isTeacherOrAdmin()) {
-            return Result.error(403, "OI 比赛进行中，暂不公布排名");
+            return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "OI 比赛进行中，暂不公布排名");
         }
         return Result.success(contestRankService.getGlobalRankList(contestId));
     }

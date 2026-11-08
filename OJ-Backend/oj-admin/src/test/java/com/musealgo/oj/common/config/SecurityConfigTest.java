@@ -85,4 +85,14 @@ class SecurityConfigTest {
         mockMvc.perform(get("/actuator/env").with(user("student").roles("STUDENT")))
                 .andExpect(status().isForbidden());
     }
+
+    @Test
+    void publicProblemSearchDoesNotRequireLoginOrOpenIndexManagement() throws Exception {
+        mockMvc.perform(get("/problem/search").param("keyword", "sum"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/problem/filter-options"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/problem/admin/search/reindex"))
+                .andExpect(status().isUnauthorized());
+    }
 }

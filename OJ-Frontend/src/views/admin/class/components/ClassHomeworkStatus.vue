@@ -70,6 +70,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // 作业完成情况面板：概览卡片 + 提交柱状图 + 学生×题目热力图 + 提交明细表。
 //
 // 概览接口只给汇总数字，逐题逐人的明细（students/problems/stats）单独拉一次，
@@ -184,7 +186,7 @@ const fetchDetails = async (page = 1) => {
     }
   } catch (e) {
     console.error(e)
-    ElMessage.error('获取提交记录失败')
+    showApiError(e, '获取提交记录失败')
   } finally { detailLoading.value = false }
 }
 

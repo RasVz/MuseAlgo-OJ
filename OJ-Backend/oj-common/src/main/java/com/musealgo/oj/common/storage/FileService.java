@@ -96,7 +96,7 @@ public class FileService {
         }
 
         COSClient cosClient = buildClient();
-
+        File localFile = null;
         try {
             // 获取原始文件名并生成唯一的新文件名，防止同名文件覆盖
             String originalFilename = file.getOriginalFilename();
@@ -104,23 +104,27 @@ public class FileService {
             String newFileName = "post-images/" + UUID.randomUUID().toString().replace("-", "") + ext;
 
             // 创建临时文件用于上传
-            File localFile = File.createTempFile("temp", null);
+            localFile = File.createTempFile("temp", null);
             file.transferTo(localFile);
 
             // 4. 执行上传请求
             PutObjectRequest putObjectRequest = new PutObjectRequest(bucketName, newFileName, localFile);
             cosClient.putObject(putObjectRequest);
 
-            // 5. 删除临时文件并关闭客户端
-            localFile.delete();
-            cosClient.shutdown();
-
-            // 6. 返回可供公网访问的图片完整 URL
+            // 返回可供公网访问的图片完整 URL
             return baseUrl + "/" + newFileName;
 
         } catch (IOException e) {
             log.error("文件上传失败", e);
-            throw new RuntimeException("文件上传失败");
+            throw new RuntimeException("文件上传失败", e);
+        } finally {
+            try {
+                cosClient.shutdown();
+            } finally {
+                if (localFile != null && localFile.exists() && !localFile.delete()) {
+                    log.warn("临时上传文件未能删除");
+                }
+            }
         }
     }
 
@@ -148,7 +152,7 @@ public class FileService {
             return baseUrl + "/" + newFileName;
         } catch (IOException e) {
             log.error("字节流上传失败 dir={}", dir, e);
-            throw new RuntimeException("文件上传失败");
+            throw new RuntimeException("文件上传失败", e);
         } finally {
             cosClient.shutdown();
             if (localFile != null && localFile.exists() && !localFile.delete()) {
@@ -176,7 +180,7 @@ public class FileService {
             return publicBaseUrl + "/uploads/" + relativePath;
         } catch (IOException e) {
             log.error("本地文件上传失败", e);
-            throw new RuntimeException("文件上传失败");
+            throw new RuntimeException("文件上传失败", e);
         }
     }
 
@@ -189,7 +193,7 @@ public class FileService {
             return publicBaseUrl + "/uploads/" + relativePath;
         } catch (IOException e) {
             log.error("本地文件写入失败 dir={}", dir, e);
-            throw new RuntimeException("文件上传失败");
+            throw new RuntimeException("文件上传失败", e);
         }
     }
 
@@ -220,32 +224,32 @@ public class FileService {
      */
     private void validateImageFile(MultipartFile file) {
         if (file == null || file.isEmpty()) {
-            throw new IllegalArgumentException("上传文件不能为空");
+            throw new com.musealgo.oj.common.exception.BusinessException(com.musealgo.oj.common.exception.CommonErrorCode.INVALID_ARGUMENT, "上传文件不能为空");
         }
         long maxBytes = maxUploadMb * 1024L * 1024L;
         if (file.getSize() > maxBytes) {
-            throw new IllegalArgumentException("文件大小不能超过 " + maxUploadMb + "MB");
+            throw new com.musealgo.oj.common.exception.BusinessException(com.musealgo.oj.common.exception.CommonErrorCode.UPLOAD_TOO_LARGE, "文件大小不能超过 " + maxUploadMb + "MB");
         }
 
         String filename = file.getOriginalFilename();
         String ext = filename == null ? "" : filename.substring(filename.lastIndexOf('.') + 1).toLowerCase();
         if (!ALLOWED_IMAGE_EXTENSIONS.contains(ext)) {
-            throw new IllegalArgumentException("仅支持上传 jpg/jpeg/png/gif/webp/bmp 格式的图片");
+            throw new com.musealgo.oj.common.exception.BusinessException(com.musealgo.oj.common.exception.CommonErrorCode.INVALID_ARGUMENT, "仅支持上传 jpg/jpeg/png/gif/webp/bmp 格式的图片");
         }
 
         String contentType = file.getContentType();
         if (contentType == null || !contentType.toLowerCase().startsWith("image/")) {
-            throw new IllegalArgumentException("文件内容类型不合法，仅允许图片");
+            throw new com.musealgo.oj.common.exception.BusinessException(com.musealgo.oj.common.exception.CommonErrorCode.INVALID_ARGUMENT, "文件内容类型不合法，仅允许图片");
         }
 
         byte[] header;
         try {
             header = file.getBytes();
         } catch (IOException e) {
-            throw new IllegalArgumentException("文件读取失败，请重试");
+            throw new com.musealgo.oj.common.exception.BusinessException(com.musealgo.oj.common.exception.CommonErrorCode.INVALID_ARGUMENT, "文件读取失败，请重试");
         }
         if (!matchesMagic(header, ext)) {
-            throw new IllegalArgumentException("文件内容与扩展名不符，已拒绝上传");
+            throw new com.musealgo.oj.common.exception.BusinessException(com.musealgo.oj.common.exception.CommonErrorCode.INVALID_ARGUMENT, "文件内容与扩展名不符，已拒绝上传");
         }
     }
 

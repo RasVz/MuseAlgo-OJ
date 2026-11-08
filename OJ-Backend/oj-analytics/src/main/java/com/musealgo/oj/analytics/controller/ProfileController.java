@@ -1,5 +1,8 @@
 package com.musealgo.oj.analytics.controller;
 
+import com.musealgo.oj.common.exception.ErrorResponses;
+import com.musealgo.oj.common.exception.CommonErrorCode;
+
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -137,6 +140,7 @@ public class ProfileController {
     ) {
         reportAccessService.requireClassTeacher(request.getClassId());
         request.getStudentIds().forEach(id -> reportAccessService.requireStudentInClass(request.getClassId(), id));
+        reportJobService.validatePeriod(periodStart, periodEnd);
         List<BatchReportItem> results = new java.util.ArrayList<>();
         for (Long studentId : request.getStudentIds()) {
             try {
@@ -145,12 +149,16 @@ public class ProfileController {
                 boolean generated = "GENERATED".equals(job.status());
                 boolean accepted = !"FAILED".equals(job.status());
                 String error = generated || accepted ? null : job.lastErrorCode();
-                results.add(new BatchReportItem(studentId, generated, error,
-                        generated ? job.snapshotId() : null, null, job.id(), job.status(), accepted));
-            } catch (Exception e) {
-                log.warn("Batch report request rejected classId={}", request.getClassId());
-                results.add(new BatchReportItem(studentId, false, "REQUEST_REJECTED", null,
-                        null, null, null, false));
+                BatchReportItem item = new BatchReportItem(studentId, generated, error,
+                        generated ? job.snapshotId() : null, null, job.id(), job.status(), accepted);
+                item.setErrorCode(error);
+                results.add(item);
+            } catch (com.musealgo.oj.common.exception.BusinessException rejected) {
+                if (rejected.getErrorCode().status() >= 500) throw rejected;
+                BatchReportItem item = new BatchReportItem(studentId, false, rejected.getErrorCode().key(), null,
+                        null, null, null, false);
+                item.setErrorCode(rejected.getErrorCode().key());
+                results.add(item);
             }
         }
         return Result.success(results);
@@ -178,9 +186,9 @@ public class ProfileController {
             return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(html);
         } catch (ReportPreviewException e) {
             return ResponseEntity.status(e.httpStatus())
-                    .body(Result.error(e.httpStatus(), e.errorCode()));
+                    .body(ErrorResponses.failure(e.getErrorCode(), e.errorCode()));
         } catch (ForbiddenException e) {
-            return ResponseEntity.status(403).body(Result.error(403, "FORBIDDEN"));
+            return ResponseEntity.status(403).body(ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "FORBIDDEN"));
         }
     }
 
@@ -225,7 +233,7 @@ public class ProfileController {
         try {
             return Result.success(reportJobService.retryReport(jobId));
         } catch (ReportJobException e) {
-            return Result.error(409, e.errorCode());
+            return ErrorResponses.failure(e.getErrorCode(), e.errorCode());
         }
     }
 

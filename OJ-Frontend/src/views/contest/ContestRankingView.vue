@@ -62,6 +62,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // 比赛排行榜页：正式榜 / 全局榜双榜切换（T10-3）。
 //
 // 正式榜：未结束时从权威提交快照读取，结束后读取最终榜；只包含正式选手。
@@ -70,7 +72,6 @@
 // 两类 SSE 都只发分榜 invalidation；实际行始终来自匹配的权威 GET。
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
 import dayjs from 'dayjs'
 import {
   getContestRankList,
@@ -275,7 +276,7 @@ async function reloadCurrentView() {
     const message = err?.message || '获取比赛详情失败'
     if (boardType === 'global') errorGlobal.value = message
     else errorOfficial.value = message
-    ElMessage.error(message)
+    showApiError(err, message)
     return
   }
 
@@ -389,7 +390,7 @@ async function loadOfficialRankList(cid, boardType, epoch) {
         : err?.message || '获取正式榜失败'
     errorOfficial.value = message
     officialRankList.value = []
-    ElMessage.error(message)
+    showApiError(err, message)
   } finally {
     if (isCurrentRequest(cid, boardType, epoch, serial)) loadingOfficial.value = false
   }
@@ -430,7 +431,7 @@ async function loadGlobalRankList(cid, boardType, epoch) {
         : err?.message || '获取全局榜失败'
     errorGlobal.value = message
     globalRankList.value = []
-    ElMessage.error(message)
+    showApiError(err, message)
   } finally {
     if (isCurrentRequest(cid, boardType, epoch, serial)) loadingGlobal.value = false
   }
@@ -551,7 +552,7 @@ async function handleExportGlobal() {
   try {
     await exportContestGlobalRank(contestId.value)
   } catch (err) {
-    ElMessage.error(err?.message || '导出全局榜失败')
+    showApiError(err, err?.message || '导出全局榜失败')
   } finally {
     exporting.value = false
   }

@@ -52,6 +52,7 @@ const recentAC = ref([])
 const ratingHistory = ref([])
 const loading = ref(true)
 const profileHidden = ref(false)
+let loadGeneration = 0
 
 // Rating 直方图按 100 分一档分桶：原始 Rating 是逐次提交的快照，
 // 逐条画会得到几千根柱子，完全看不出分布。
@@ -70,10 +71,15 @@ const ratingBuckets = computed(() => {
 const fetchData = async () => {
   const targetId = route.params.id 
   if (!targetId) return
+  const generation = ++loadGeneration
+  loading.value = true
   profileHidden.value = false
-  
+  radarData.value = []; recentAC.value = []; ratingHistory.value = []
+  stats.value = { submissions: 0, accepted: 0, rating: null, likes: 0 }
+  try {
   try {
     const res = await getUserInfo(targetId)
+    if (generation !== loadGeneration) return
     if (res.code === 200) {
       const backendData = res.data
       
@@ -86,6 +92,7 @@ const fetchData = async () => {
       }
     }
   } catch (error) {
+    if (generation !== loadGeneration) return
     // 用户选择「不公开资料」时接口返回 403：切到隐藏态而不是报错页，
 // 否则会让人误以为账号不存在。
     if (error?.response?.data?.code === 403) {
@@ -97,6 +104,7 @@ const fetchData = async () => {
 
   try {
     const res = await getUserRadar(targetId)
+    if (generation !== loadGeneration) return
     if (res.code === 200 && res.data) {
       // 雷达图把后端的原始 Rating 线性映射到 0~100：
 // 雷达图各维度共用一套刻度，不归一的话不同维度间无法比较。
@@ -106,20 +114,25 @@ const fetchData = async () => {
       }))
     }
   } catch (err) {
+    if (generation !== loadGeneration) return
     console.error("获取雷达图失败", err)
   }
 
   try {
     const res = await getRecentAC(targetId)
+    if (generation !== loadGeneration) return
     if (res.code === 200) recentAC.value = res.data || []
-  } catch (err) { console.error("获取最近AC失败", err) }
+  } catch (err) { if (generation !== loadGeneration) return; console.error("获取最近AC失败", err) }
 
   try {
     const res = await getUserRatingHistory(targetId)
+    if (generation !== loadGeneration) return
     if (res.code === 200) ratingHistory.value = res.data || []
-  } catch (err) { console.error("获取Rating历史失败", err) }
+  } catch (err) { if (generation !== loadGeneration) return; console.error("获取Rating历史失败", err) }
 
-  loading.value = false
+  } finally {
+    if (generation === loadGeneration) loading.value = false
+  }
 }
 
 // 四组数据分四个 try/catch 串行拉取：任一失败只降级对应的那块图表，

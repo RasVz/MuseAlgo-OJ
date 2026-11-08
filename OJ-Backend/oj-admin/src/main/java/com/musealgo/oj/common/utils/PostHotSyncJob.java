@@ -100,13 +100,14 @@ public class PostHotSyncJob {
 
         // 如果Redis没有（冷数据），从MySQL补录
         if (redisStats.isEmpty()) {
-            redisTemplate.opsForHash().putAll(statKey, Map.of(
+            redisStats = new HashMap<>(Map.of(
                     "views", String.valueOf(post.getViews()),
                     "likes", String.valueOf(post.getLikes()),
                     "dislikes", String.valueOf(post.getDislikes()),
                     "favorites", String.valueOf(post.getFavorites()),
                     "comments", String.valueOf(post.getCommentCount())
             ));
+            redisTemplate.opsForHash().putAll(statKey, redisStats);
         }
 
         // 重新计算分数（带入当前时间，实现时间衰减）

@@ -148,6 +148,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // 题库管理：教师与管理员共用，按角色走不同的数据源。
 // 管理员（role >= 3）可见全站题目，教师只能看到自己创建的题目。
 // 除了常规增删改查，这里还挂了两条批处理链路：FPS 题集文件导入（useFpsImport）
@@ -247,8 +249,8 @@ async function fetchData() {
     } else {
       ElMessage.error(res.message || '获取题目列表失败')
     }
-  } catch {
-    ElMessage.error('获取题目列表失败')
+  } catch (caughtError) {
+    showApiError(caughtError, '获取题目列表失败')
   } finally {
     loading.value = false
   }

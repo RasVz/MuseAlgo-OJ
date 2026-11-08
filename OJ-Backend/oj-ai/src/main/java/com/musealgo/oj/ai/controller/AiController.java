@@ -1,5 +1,8 @@
 package com.musealgo.oj.ai.controller;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.common.exception.CommonErrorCode;
+
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,6 +24,12 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 import java.io.IOException;
+import com.musealgo.oj.common.exception.ErrorResponses;
+import com.musealgo.oj.ai.error.AiErrorCode;
+import com.musealgo.oj.common.exception.ErrorCode;
+import org.springframework.http.MediaType;
+import org.slf4j.MDC;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -79,7 +88,7 @@ public class AiController {
     public Result<Integer> hintLevel(@RequestParam Long problemId) {
         Long userId = SecurityUtils.getUserId();
         if (userId == null) {
-            throw new ForbiddenException("请先登录后再使用 AI 教练");
+            throw new BusinessException(CommonErrorCode.AUTH_REQUIRED, "请先登录后再使用 AI 教练");
         }
         return Result.success(chatSessionService.getHintLevel(userId, problemId));
     }
@@ -89,7 +98,7 @@ public class AiController {
     public SseEmitter askAiStream(@Valid @RequestBody AiAskRequest request) {
         Long userId = SecurityUtils.getUserId();
         if (userId == null) {
-            throw new ForbiddenException("请先登录后再使用 AI 教练");
+            throw new BusinessException(CommonErrorCode.AUTH_REQUIRED, "请先登录后再使用 AI 教练");
         }
         // 角色判定必须在请求线程完成：异步线程池中 SecurityContext 不传播
         boolean privileged = SecurityUtils.isTeacherOrAdmin();
@@ -104,7 +113,7 @@ public class AiController {
         emitter.onCompletion(() ->
                 log.debug("【AI流式】SSE 完成 userId={}, problemId={}", userId, request.getProblemId()));
 
-        aiStreamExecutor.execute(() -> {
+        dispatch(() -> {
             long startMs = System.currentTimeMillis();
             AiAskOutcome outcome = null;
             try {
@@ -134,14 +143,14 @@ public class AiController {
                 if (clientGone.get()) {
                     return;
                 }
-                emitter.send(SseEmitter.event().name("done").data(""));
-                emitter.complete();
+                finishStream(emitter, outcome);
             } catch (ClientGoneException e) {
                 log.info("【AI流式】客户端断开，停止推送 userId={}", userId);
                 safeComplete(emitter);
             } catch (Exception e) {
-                log.warn("AI 流式请求中断或失败: {}", e.getMessage());
-                safeComplete(emitter);
+                log.error("AI 流式请求失败", e);
+                failStream(emitter, e instanceof BusinessException business
+                        ? business.getErrorCode() : AiErrorCode.AI_STREAM_FAILED);
             } finally {
                 recordUsage(userId, request.getProblemId(), startMs, outcome, privileged, "ASK");
             }
@@ -154,7 +163,7 @@ public class AiController {
     public SseEmitter reviewSubmission(@Valid @RequestBody AiReviewRequest request) {
         Long userId = SecurityUtils.getUserId();
         if (userId == null) {
-            throw new ForbiddenException("请先登录后再使用 AI 教练");
+            throw new BusinessException(CommonErrorCode.AUTH_REQUIRED, "请先登录后再使用 AI 教练");
         }
         boolean privileged = SecurityUtils.isTeacherOrAdmin();
 
@@ -169,7 +178,7 @@ public class AiController {
                 log.debug("【AI复盘】SSE 完成 userId={}, submissionId={}",
                         userId, request.getSubmissionId()));
 
-        aiStreamExecutor.execute(() -> {
+        dispatch(() -> {
             long startMs = System.currentTimeMillis();
             AiAskOutcome outcome = null;
             try {
@@ -192,19 +201,61 @@ public class AiController {
                 if (clientGone.get()) {
                     return;
                 }
-                emitter.send(SseEmitter.event().name("done").data(""));
-                emitter.complete();
+                finishStream(emitter, outcome);
             } catch (ClientGoneException e) {
                 log.info("【AI复盘】客户端断开，停止推送 userId={}", userId);
                 safeComplete(emitter);
             } catch (Exception e) {
-                log.warn("AI 复盘流式中断或失败: {}", e.getMessage());
-                safeComplete(emitter);
+                log.error("AI 复盘流式请求失败", e);
+                failStream(emitter, e instanceof BusinessException business
+                        ? business.getErrorCode() : AiErrorCode.AI_STREAM_FAILED);
             } finally {
-                recordUsage(userId, request.getProblemId(), startMs, outcome, privileged, "REVIEW");
+                recordUsage(userId, outcome == null ? null : outcome.problemId(), startMs, outcome, privileged, "REVIEW");
             }
         });
         return emitter;
+    }
+
+    private void dispatch(Runnable work) {
+        String traceId = MDC.get("traceId");
+        try {
+            aiStreamExecutor.execute(() -> {
+                String previous = MDC.get("traceId");
+                if (traceId == null) MDC.remove("traceId"); else MDC.put("traceId", traceId);
+                try { work.run(); }
+                finally {
+                    if (previous == null) MDC.remove("traceId"); else MDC.put("traceId", previous);
+                }
+            });
+        } catch (RejectedExecutionException busy) {
+            throw new BusinessException(AiErrorCode.AI_STREAM_BUSY);
+        }
+    }
+
+    private void finishStream(SseEmitter emitter, AiAskOutcome outcome) throws IOException {
+        if (outcome != null && "SUCCESS".equals(outcome.status())) {
+            emitter.send(SseEmitter.event().name("done").data(""));
+            emitter.complete();
+            return;
+        }
+        ErrorCode code = outcome != null && "TIMEOUT".equals(outcome.errorType())
+                ? CommonErrorCode.UPSTREAM_TIMEOUT
+                : outcome != null && "QUOTA_REJECTED".equals(outcome.status())
+                ? AiErrorCode.AI_QUOTA_EXCEEDED
+                : outcome != null && "CONTEST_BLOCKED".equals(outcome.status())
+                    ? AiErrorCode.AI_CONTEST_BLOCKED : AiErrorCode.AI_UPSTREAM_FAILED;
+        failStream(emitter, code);
+    }
+
+    private void failStream(SseEmitter emitter, ErrorCode code) {
+        try {
+            emitter.send(SseEmitter.event().name("app-error")
+                    .data(ErrorResponses.failure(code), MediaType.APPLICATION_JSON));
+        } catch (IOException | IllegalStateException disconnected) {
+            log.debug("错误事件未送达，流已关闭");
+        } finally {
+            safeComplete(emitter);
+        }
     }
 
     /** 客户端断连信号（控制流用，不进入全局异常处理） */

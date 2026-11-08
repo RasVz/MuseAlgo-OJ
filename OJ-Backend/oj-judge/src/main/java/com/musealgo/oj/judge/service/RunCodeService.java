@@ -1,5 +1,8 @@
 package com.musealgo.oj.judge.service;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.judge.error.JudgeErrorCode;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import com.musealgo.oj.api.judge.JudgeGateway;
@@ -74,7 +77,7 @@ public class RunCodeService {
             case "py":
                 return "python";
             default:
-                throw new IllegalArgumentException("当前仅支持 C++ / Java / Python 运行");
+                throw new BusinessException(JudgeErrorCode.LANGUAGE_UNSUPPORTED, "当前仅支持 C++ / Java / Python 运行");
         }
     }
 

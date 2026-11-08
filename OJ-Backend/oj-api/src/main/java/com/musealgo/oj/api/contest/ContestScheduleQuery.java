@@ -20,6 +20,9 @@ public interface ContestScheduleQuery {
      */
     Optional<ContestSchedule> findById(Long contestId);
 
+    /** 该教师创建的未删除比赛 ID（用于跨模块访问范围过滤）。 */
+    java.util.List<Long> findOwnedIds(Long teacherId);
+
     /**
      * 查询当前正在进行的 OI 模式比赛 ID 集合。
      *

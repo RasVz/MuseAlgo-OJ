@@ -107,6 +107,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // 题单基本设置编辑：标题、可见性、简介的独立保存入口。
 // 只更新这三个字段，不碰题目与顺序——题目管理由另一个子组件负责，
 // 分开保存避免"改了简介顺手把题目顺序也提交一遍"。
@@ -146,8 +148,8 @@ const initData = async () => {
       privacy: res.data.privacy
     }
     emit('update-title', res.data.title)
-  } catch {
-    ElMessage.error('加载题单信息失败')
+  } catch (caughtError) {
+    showApiError(caughtError, '加载题单信息失败')
   }
 }
 
@@ -164,8 +166,8 @@ const saveInfo = async () => {
         })
         ElMessage.success('保存成功')
         emit('update-title', formData.value.title)
-      } catch {
-        ElMessage.error('保存失败')
+      } catch (caughtError) {
+        showApiError(caughtError, '保存失败')
       } finally {
         saving.value = false
       }

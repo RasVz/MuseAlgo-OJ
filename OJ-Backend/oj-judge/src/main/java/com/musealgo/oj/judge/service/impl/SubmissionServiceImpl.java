@@ -1,5 +1,8 @@
 package com.musealgo.oj.judge.service.impl;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.judge.error.JudgeErrorCode;
+
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
@@ -62,11 +65,11 @@ public class SubmissionServiceImpl extends ServiceImpl<SubmissionMapper, Submiss
         // 这里再兜一层，避免内部调用绕开校验后写出没有源码的提交（submission_code 的 code 为 NOT NULL，
         // 旧实现遇到 null 会静默跳过插入，留下判题时无代码可跑的记录）。
         if (submission.getCode() == null || submission.getCode().isBlank()) {
-            throw new IllegalArgumentException("提交源码不能为空");
+            throw new BusinessException(JudgeErrorCode.SUBMISSION_CODE_REQUIRED, "提交源码不能为空");
         }
         // 查测试用例（走 oj-api 只读契约，不直访 oj-problem Mapper）
         if (problemQuery.findTestCases(submission.getProblemId()).isEmpty()) {
-            throw new IllegalStateException("题目没有可用测试用例，无法评测");
+            throw new BusinessException(JudgeErrorCode.SUBMISSION_NO_TEST_CASES, "题目没有可用测试用例，无法评测");
         }
 
         submission.setStatus(SubmissionStatus.PENDING.code());
@@ -76,7 +79,7 @@ public class SubmissionServiceImpl extends ServiceImpl<SubmissionMapper, Submiss
         submission.setRunTime(0);
         submission.setRunMemory(0);
         submission.setScore(0);
-        this.save(submission);
+        if (!this.save(submission)) throw new IllegalStateException("提交记录保存失败");
         // 冗余计数：每落一条提交就 +1（含待判/失败），与 V55 的回填口径保持一致。
         // 放在同一事务内，提交回滚时计数也回滚，不会凭空多计。
         userStatsCommand.incrementSubmissionCount(submission.getUserId());
@@ -85,7 +88,7 @@ public class SubmissionServiceImpl extends ServiceImpl<SubmissionMapper, Submiss
         SubmissionCode codeRecord = new SubmissionCode();
         codeRecord.setSubmissionId(submission.getId());
         codeRecord.setCode(submission.getCode());
-        submissionCodeMapper.insert(codeRecord);
+        if (submissionCodeMapper.insert(codeRecord) != 1) throw new IllegalStateException("提交源码保存失败");
 
         judgeTaskService.submit(submission.getId());
         // MQ 唤醒 Worker（毫秒级响应）；失败时 DB 轮询兜底，不影响提交结果

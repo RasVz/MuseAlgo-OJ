@@ -178,6 +178,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import dayjs from 'dayjs'
@@ -254,7 +256,7 @@ async function submitSingle() {
     activeTab.value = 'operations'
     loadOperations()
   } catch (e) {
-    ElMessage.error(e.message || '重判失败')
+    showApiError(e, e.message || '重判失败')
   } finally {
     singleLoading.value = false
   }
@@ -295,7 +297,7 @@ async function handlePreview() {
     previewData.value = assertOk(await previewRejudgeBatch(payload))
     if (!previewData.value.eligible) ElMessage.warning('没有可重判的提交，请调整范围')
   } catch (e) {
-    ElMessage.error(e.message || '预览失败')
+    showApiError(e, e.message || '预览失败')
   } finally {
     previewLoading.value = false
   }
@@ -316,7 +318,7 @@ async function handleExecuteBatch() {
     activeTab.value = 'operations'
     loadOperations()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error(e.message || '执行失败')
+    if (e !== 'cancel') showApiError(e, e.message || '执行失败')
   } finally {
     executeLoading.value = false
   }
@@ -329,7 +331,7 @@ async function loadOperations() {
     operations.value = data?.records || []
     operationTotal.value = Number(data?.total || 0)
   } catch (e) {
-    ElMessage.error(e.message || '获取操作记录失败')
+    showApiError(e, e.message || '获取操作记录失败')
   } finally {
     operationsLoading.value = false
   }
@@ -345,7 +347,7 @@ async function openOperation(id) {
     operationDetail.value = assertOk(await getRejudgeOperation(id))
     detailVisible.value = true
   } catch (e) {
-    ElMessage.error(e.message || '获取操作详情失败')
+    showApiError(e, e.message || '获取操作详情失败')
   }
 }
 

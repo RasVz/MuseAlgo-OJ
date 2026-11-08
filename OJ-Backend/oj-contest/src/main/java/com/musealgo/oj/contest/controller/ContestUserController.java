@@ -1,11 +1,16 @@
 package com.musealgo.oj.contest.controller;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.common.exception.ErrorResponses;
+import com.musealgo.oj.contest.error.ContestErrorCode;
+
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import com.musealgo.oj.common.api.Result;
+import com.musealgo.oj.common.exception.ForbiddenException;
 import com.musealgo.oj.common.utils.SecurityUtils;
 import com.musealgo.oj.contest.entity.Contest;
 import com.musealgo.oj.contest.entity.ContestUser;
@@ -35,9 +40,10 @@ public class ContestUserController {
             String message = ContestUserServiceImpl.STATUS_PENDING.equals(record.getStatus())
                     ? "报名已提交，等待审核" : "报名成功！";
             return Result.success(message);
-        } catch (Exception e) {
-            return Result.error(e.getMessage());
+        } catch (ForbiddenException denied) {
+            return ErrorResponses.failure(denied.getErrorCode(), denied.getMessage());
         }
+
     }
 
     @Operation(summary = "报名列表（比赛作者/管理员）")
@@ -66,7 +72,7 @@ public class ContestUserController {
     private void requireManage(Long contestId) {
         Contest contest = contestService.getById(contestId);
         if (contest == null) {
-            throw new IllegalArgumentException("比赛不存在");
+            throw new BusinessException(ContestErrorCode.CONTEST_NOT_FOUND, "比赛不存在");
         }
         Long currentUserId = SecurityUtils.getUserId();
         if (!SecurityUtils.isAdmin() && (currentUserId == null || !currentUserId.equals(contest.getAuthorId()))) {

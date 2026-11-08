@@ -49,6 +49,11 @@ class TagRatingServiceTest {
     @InjectMocks
     private TagRatingService service;
 
+    @org.junit.jupiter.api.BeforeEach
+    void successfulWrites() {
+        org.mockito.Mockito.lenient().when(userTagRatingMapper.upsert(any(), any(), anyInt())).thenReturn(1);
+    }
+
     @Test
     void equalDifficultyYieldsHalfK() {
         // D=R → 期望 0.5 → gain = 25

@@ -1,5 +1,9 @@
 package com.musealgo.oj.contest.controller;
 
+import com.musealgo.oj.common.exception.ErrorResponses;
+import com.musealgo.oj.common.exception.CommonErrorCode;
+import com.musealgo.oj.contest.error.ContestErrorCode;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +19,7 @@ import com.musealgo.oj.common.api.Result;
 import com.musealgo.oj.common.annotation.AuditLog;
 import com.musealgo.oj.common.utils.SecurityUtils;
 import com.musealgo.oj.contest.application.ContestManagementApplicationService;
+import com.musealgo.oj.contest.application.ContestAccessPolicy;
 import com.musealgo.oj.contest.entity.Contest;
 import com.musealgo.oj.contest.entity.ContestUser;
 import com.musealgo.oj.api.user.UserDisplayInfo;
@@ -81,8 +86,26 @@ public class ContestController {
         Page<Contest> pageParam = new Page<>(currentPage, pageSize);
         LambdaQueryWrapper<Contest> wrapper = new LambdaQueryWrapper<>();
 
-        if (visible != null) {
-            wrapper.eq(Contest::getVisible, visible);
+        if (visible != null && visible != 0 && visible != 1) {
+            return ErrorResponses.failure(ContestErrorCode.CONTEST_INPUT_INVALID, "可见性参数无效");
+        }
+        Long actorId = SecurityUtils.getUserId();
+        if (SecurityUtils.isAdmin()) {
+            if (visible != null) wrapper.eq(Contest::getVisible, visible);
+        } else if (SecurityUtils.isTeacherOrAdmin() && actorId != null) {
+            if (visible == null) {
+                // The management page shares this endpoint with the public page.
+                wrapper.and(query -> query.eq(Contest::getVisible, 1)
+                        .or().eq(Contest::getAuthorId, actorId));
+            } else {
+                wrapper.eq(Contest::getVisible, visible);
+                if (visible == 0) wrapper.eq(Contest::getAuthorId, actorId);
+            }
+        } else {
+            if (Integer.valueOf(0).equals(visible)) {
+                return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "无权查看未公开比赛");
+            }
+            wrapper.eq(Contest::getVisible, 1);
         }
 
         if (StringUtils.hasText(keyword)) {
@@ -141,8 +164,9 @@ public class ContestController {
     public Result<Contest> getDetail(@PathVariable Long id) {
         Contest contest = contestService.getById(id);
         if (contest == null) {
-            return Result.error("比赛不存在");
+            return ErrorResponses.failure(ContestErrorCode.CONTEST_NOT_FOUND, "比赛不存在");
         }
+        ContestAccessPolicy.requireReadable(contest);
         return Result.success(contest);
     }
 
@@ -154,7 +178,7 @@ public class ContestController {
     public Result<Contest> add(@RequestBody Contest contest) {
         Long authorId = SecurityUtils.getUserId();
         if (authorId == null) {
-            return Result.error("请先登录");
+            return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "请先登录");
         }
 
         return Result.success("创建成功", contestManagementApplicationService.create(contest, authorId));
@@ -210,9 +234,10 @@ public class ContestController {
     ) {
         Contest contest = contestService.getById(contestId);
         if (contest == null) {
-            return Result.error("比赛不存在");
+            return ErrorResponses.failure(ContestErrorCode.CONTEST_NOT_FOUND, "比赛不存在");
         }
 
+        ContestAccessPolicy.requireReadable(contest);
         Long currentUserId = SecurityUtils.getUserId();
         // OI 比赛进行中：其他人可以看到「谁提交了这题」（提交行为本身不敏感），
         // 但看不到判题结论——否则等于实时告知全场谁做出来了，构成泄题。
@@ -221,7 +246,7 @@ public class ContestController {
 
         // 匿名用户请求「只看我的」必然无结果，直接拒绝比返回空列表更明确
         if (Boolean.TRUE.equals(mineOnly) && currentUserId == null) {
-            return Result.error(401, "请先登录后查看自己的提交记录");
+            return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "请先登录后查看自己的提交记录");
         }
 
         PageResult<ContestSubmission> page = contestSubmissionQuery.findPage(new ContestSubmissionPageRequest(

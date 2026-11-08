@@ -1,5 +1,8 @@
 package com.musealgo.oj.community.favorite;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.community.error.CommunityErrorCode;
+
 import java.util.Locale;
 
 /** Types persisted by the user_favorite table. */
@@ -22,7 +25,7 @@ public enum FavoriteTargetType {
     public String responseKey() { return responseKey; }
 
     public static FavoriteTargetType from(Object raw) {
-        if (raw == null) throw new IllegalArgumentException("必须指定收藏对象类型");
+        if (raw == null) throw new BusinessException(CommunityErrorCode.COMMUNITY_INPUT_INVALID, "必须指定收藏对象类型");
         if (raw instanceof Number number) return fromValue(number.intValue());
         String value = raw.toString().trim().toLowerCase(Locale.ROOT);
         return switch (value) {
@@ -32,7 +35,7 @@ public enum FavoriteTargetType {
             case "post" -> POST;
             default -> {
                 try { yield fromValue(Integer.parseInt(value)); }
-                catch (NumberFormatException e) { throw new IllegalArgumentException("不支持的收藏对象类型"); }
+                catch (NumberFormatException e) { throw new BusinessException(CommunityErrorCode.COMMUNITY_INPUT_INVALID, "不支持的收藏对象类型"); }
             }
         };
     }
@@ -41,6 +44,6 @@ public enum FavoriteTargetType {
         for (FavoriteTargetType type : values()) {
             if (type.databaseValue == value) return type;
         }
-        throw new IllegalArgumentException("不支持的收藏对象类型");
+        throw new BusinessException(CommunityErrorCode.COMMUNITY_INPUT_INVALID, "不支持的收藏对象类型");
     }
 }

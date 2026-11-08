@@ -131,6 +131,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // 比赛报名审核页（比赛作者/管理员，T10-1）：
 // 分页查看看某场比赛的全部报名记录，展示报名时 Rating 与是否超限（eligible=0 → 打星号），
 // 并对待审核（PENDING）记录执行通过/拒绝；拒绝必须填写原因。
@@ -240,7 +242,7 @@ async function fetchList() {
     errorText.value = e?.message || '获取报名列表失败'
     registrations.value = []
     total.value = 0
-    ElMessage.error(errorText.value)
+    showApiError(e, errorText.value)
   } finally {
     loading.value = false
   }
@@ -263,7 +265,7 @@ async function submitReview(userId, approve, reason = '') {
     await fetchList()
     return true
   } catch (e) {
-    ElMessage.error(e?.message || '审核失败')
+    showApiError(e, e?.message || '审核失败')
     return false
   } finally {
     reviewingId.value = null

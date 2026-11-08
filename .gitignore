@@ -6,6 +6,8 @@
 OJ-Frontend/dist-baseline/
 # Slidev 课件运行时产物（oj.slidev.output-dir，按 uuid 生成，勿入库）
 OJ-Coursewares/
+# Slidev 临时输入文件（保留作者维护的 slides.md）
+/OJ-Slidev/????????????????????????????????.md
 
 # JavaScript dependencies and caches
 **/node_modules/
@@ -73,3 +75,36 @@ release.properties
 # Browser acceptance evidence (kept outside the public source tree)
 OJ-Frontend/test-results/
 OJ-Frontend/playwright-report/
+
+# Repository-root runtime paths (when the backend is launched from the repo root)
+/data/
+/uploads/
+/outputs/
+/backups/
+
+# Verification configuration and reports can contain credentials or auth tokens
+/deploy/verify/env.verify
+/rel02-evidence/
+/musealgo-rel02-evidence/
+**/accounts.private.json
+**/qa02-auth-cache.json
+**/sessions.json
+
+# Private key / keystore material; publish placeholder configuration instead
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+
+# Local backups and editor recovery files
+*.bak
+*.orig
+*.rej
+*~
+.*.swp

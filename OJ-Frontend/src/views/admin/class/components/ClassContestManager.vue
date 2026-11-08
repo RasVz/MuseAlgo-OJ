@@ -51,6 +51,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // 班级比赛列表：只读展示本班的比赛，实际的创建/编辑复用全局 ContestEditorView
 // （带上 classId 参数即进入班级模式），因此本组件不含任何写操作。
 import { ref, reactive, onMounted, watch } from 'vue'
@@ -148,8 +150,8 @@ const fetchData = async () => {
     const list = extractListData(res).map(item => normalizeContest(item))
     tableData.value = list
     total.value = extractTotal(res, list)
-  } catch {
-    ElMessage.error('获取比赛列表失败')
+  } catch (caughtError) {
+    showApiError(caughtError, '获取比赛列表失败')
   } finally {
     loading.value = false
   }

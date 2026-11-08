@@ -51,11 +51,11 @@ class PostInteractionFacadeImpl implements PostInteractionFacade {
 
     @Override
     public PostStatsVO snapshot(Long userId, Long postId) {
-        postTargets.requireExisting(postId);
+        var post = postTargets.requireExisting(postId);
         Map<String, Integer> values = postHotService.getPostStats(postId);
         PostStatsVO stats = new PostStatsVO();
         stats.setLikes(values.getOrDefault("likes", 0));
-        stats.setFavorites(values.getOrDefault("favorites", 0));
+        stats.setFavorites(post.getFavorites() == null ? 0 : post.getFavorites());
         stats.setComments(values.getOrDefault("comments", 0));
         stats.setViews(values.getOrDefault("views", 0));
         stats.setUserLiked(userId != null && postHotService.hasLiked(postId, userId));

@@ -1,11 +1,12 @@
 import request from '@/utils/request'
 
 // 1. 获取题单列表 (广场/我的题单)
-export function getProblemLists(params) {
+export function getProblemLists(params, options = {}) {
   return request({
     url: '/problem-list/list',
     method: 'get',
-    params
+    params,
+    ...options
   })
 }
 
@@ -84,11 +85,12 @@ export function removeProblemFromList(data) {
 
 // 8. 获取题单内的题目列表
 // params: { listId }
-export function getListProblems(params) {
+export function getListProblems(params, options = {}) {
   return request({
     url: '/problem-list-item/list',
     method: 'get',
-    params
+    params,
+    ...options
   })
 }
 

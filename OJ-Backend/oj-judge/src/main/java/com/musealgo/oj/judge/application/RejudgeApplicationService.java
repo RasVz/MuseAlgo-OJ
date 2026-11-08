@@ -1,5 +1,8 @@
 package com.musealgo.oj.judge.application;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.judge.error.JudgeErrorCode;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -94,7 +97,7 @@ public class RejudgeApplicationService {
                                                       Long operatorId, String operatorName) {
         validateReason(reason);
         if (submissionId == null) {
-            throw new IllegalArgumentException("提交 ID 不能为空");
+            throw new BusinessException(JudgeErrorCode.JUDGE_INPUT_INVALID, "提交 ID 不能为空");
         }
 
         // 幂等：同一提交已有未结束重判 → 返回既有操作，不重复入队。
@@ -108,29 +111,29 @@ public class RejudgeApplicationService {
                 .eq(Submission::getId, submissionId)
                 .last("FOR UPDATE"));
         if (submission == null) {
-            throw new IllegalArgumentException("提交不存在");
+            throw new BusinessException(JudgeErrorCode.SUBMISSION_NOT_FOUND, "提交不存在");
         }
         if (submission.getStatus() != null && submission.getStatus() == 0) {
-            throw new IllegalStateException("提交正在判题中，不能重判");
+            throw new BusinessException(JudgeErrorCode.REJUDGE_SUBMISSION_PENDING, "提交正在判题中，不能重判");
         }
         if (submission.getJudgePhase() != null && BUSY_JUDGE_PHASES.contains(submission.getJudgePhase())) {
-            throw new IllegalStateException("提交正在判题中（" + submission.getJudgePhase() + "），不能重判");
+            throw new BusinessException(JudgeErrorCode.REJUDGE_SUBMISSION_PENDING, "提交正在判题中（" + submission.getJudgePhase() + "），不能重判");
         }
         if (submission.getVpAttemptId() != null) {
             // T8-2b：VP 不影响正式榜/Rating，只要求会话已交卷冻结；重判完成后由 contest 监听器重算 VP 成绩。
             if (!contestScheduleQuery.isVpAttemptFinished(submission.getVpAttemptId())) {
-                throw new IllegalStateException("VP 会话尚未结束（RUNNING/SETTLING），不能重判");
+                throw new BusinessException(JudgeErrorCode.REJUDGE_VP_ACTIVE, "VP 会话尚未结束（RUNNING/SETTLING），不能重判");
             }
         } else {
             String contestBlock = checkContest(submission.getContestId());
             if (contestBlock != null) {
-                throw new IllegalStateException(contestBlock);
+                throw new BusinessException(JudgeErrorCode.REJUDGE_CONTEST_BLOCKED, contestBlock);
             }
         }
 
         List<TestCaseView> testCases = problemQuery.findTestCases(submission.getProblemId());
         if (testCases == null || testCases.isEmpty()) {
-            throw new IllegalStateException("题目没有可用测试用例，无法重判");
+            throw new BusinessException(JudgeErrorCode.REJUDGE_NO_TEST_CASES, "题目没有可用测试用例，无法重判");
         }
         String digest = testCaseDigest(testCases);
         // DATETIME(0) 会四舍五入纳秒：截断到秒，避免 scheduled_at 落到未来导致领取不到任务。
@@ -139,10 +142,10 @@ public class RejudgeApplicationService {
         RejudgeOperation operation = newOperation(operatorId, operatorName, reason,
                 RejudgeOperation.SCOPE_SINGLE_SUBMISSION, "{\"submissionId\":" + submissionId + "}",
                 1, now);
-        operationMapper.insert(operation);
+        if (operationMapper.insert(operation) != 1) throw new IllegalStateException("重判操作保存失败");
 
         RejudgeItem item = newItem(operation.getId(), submission, digest, now);
-        itemMapper.insert(item);
+        if (itemMapper.insert(item) != 1) throw new IllegalStateException("重判条目保存失败");
 
         resetSubmission(submission.getId(), now);
         resetJudgeTask(submission.getId(), now);
@@ -189,16 +192,16 @@ public class RejudgeApplicationService {
         validateReason(reason);
         BatchEvaluation evaluation = evaluate(scope);
         if (evaluation.matched() == 0) {
-            throw new IllegalArgumentException("该范围没有匹配的提交");
+            throw new BusinessException(JudgeErrorCode.JUDGE_INPUT_INVALID, "该范围没有匹配的提交");
         }
         if (evaluation.truncated()) {
-            throw new IllegalStateException("匹配提交超过扫描上限 " + MAX_SCAN + "，请缩小范围");
+            throw new BusinessException(JudgeErrorCode.REJUDGE_SCOPE_TOO_LARGE, "匹配提交超过扫描上限 " + MAX_SCAN + "，请缩小范围");
         }
         if (evaluation.eligible().isEmpty()) {
-            throw new IllegalStateException("没有可重判的提交：" + evaluation.blockedSummary());
+            throw new BusinessException(JudgeErrorCode.REJUDGE_NO_ELIGIBLE_SUBMISSIONS, "没有可重判的提交：" + evaluation.blockedSummary());
         }
         if (evaluation.eligible().size() > MAX_BATCH_ITEMS) {
-            throw new IllegalStateException("可重判提交 " + evaluation.eligible().size()
+            throw new BusinessException(JudgeErrorCode.REJUDGE_SCOPE_TOO_LARGE, "可重判提交 " + evaluation.eligible().size()
                     + " 条，超过单批上限 " + MAX_BATCH_ITEMS + "，请缩小范围；可先用 preview 预览");
         }
 
@@ -207,12 +210,12 @@ public class RejudgeApplicationService {
         RejudgeOperation operation = newOperation(operatorId, operatorName, reason,
                 "BATCH_" + evaluation.scopeType(), scopeJson(scope, evaluation.scopeType()),
                 evaluation.eligible().size(), now);
-        operationMapper.insert(operation);
+        if (operationMapper.insert(operation) != 1) throw new IllegalStateException("重判操作保存失败");
 
         for (Submission submission : evaluation.eligible()) {
             String digest = evaluation.digestByProblem().get(submission.getProblemId());
             RejudgeItem item = newItem(operation.getId(), submission, digest, now);
-            itemMapper.insert(item);
+            if (itemMapper.insert(item) != 1) throw new IllegalStateException("重判条目保存失败");
             resetSubmission(submission.getId(), now);
             resetJudgeTask(submission.getId(), now);
         }
@@ -341,28 +344,28 @@ public class RejudgeApplicationService {
 
     private String normalizeScope(RejudgeBatchScope scope) {
         if (scope == null || scope.scopeType() == null) {
-            throw new IllegalArgumentException("scopeType 不能为空");
+            throw new BusinessException(JudgeErrorCode.JUDGE_INPUT_INVALID, "scopeType 不能为空");
         }
         String type = scope.scopeType().trim().toUpperCase();
         switch (type) {
             case SCOPE_PROBLEM -> {
-                if (scope.problemId() == null) throw new IllegalArgumentException("PROBLEM 范围必须提供 problemId");
+                if (scope.problemId() == null) throw new BusinessException(JudgeErrorCode.JUDGE_INPUT_INVALID, "PROBLEM 范围必须提供 problemId");
             }
             case SCOPE_ENDED_CONTEST -> {
-                if (scope.contestId() == null) throw new IllegalArgumentException("ENDED_CONTEST 范围必须提供 contestId");
+                if (scope.contestId() == null) throw new BusinessException(JudgeErrorCode.JUDGE_INPUT_INVALID, "ENDED_CONTEST 范围必须提供 contestId");
             }
             case SCOPE_TIME_RANGE -> {
                 if (scope.from() == null || scope.to() == null) {
-                    throw new IllegalArgumentException("TIME_RANGE 范围必须提供 from/to");
+                    throw new BusinessException(JudgeErrorCode.JUDGE_INPUT_INVALID, "TIME_RANGE 范围必须提供 from/to");
                 }
                 if (!scope.from().isBefore(scope.to())) {
-                    throw new IllegalArgumentException("from 必须早于 to");
+                    throw new BusinessException(JudgeErrorCode.JUDGE_INPUT_INVALID, "from 必须早于 to");
                 }
             }
             case SCOPE_FAILED -> {
                 // FAILED 可叠加 problemId/contestId/from/to 过滤，均为可选。
             }
-            default -> throw new IllegalArgumentException("scopeType 仅支持 PROBLEM/FAILED/ENDED_CONTEST/TIME_RANGE");
+            default -> throw new BusinessException(JudgeErrorCode.JUDGE_INPUT_INVALID, "scopeType 仅支持 PROBLEM/FAILED/ENDED_CONTEST/TIME_RANGE");
         }
         return type;
     }
@@ -375,7 +378,7 @@ public class RejudgeApplicationService {
             case SCOPE_ENDED_CONTEST -> wrapper.eq(Submission::getContestId, scope.contestId());
             case SCOPE_TIME_RANGE -> wrapper.ge(Submission::getCreateTime, scope.from())
                     .lt(Submission::getCreateTime, scope.to());
-            default -> throw new IllegalArgumentException("未知范围");
+            default -> throw new BusinessException(JudgeErrorCode.JUDGE_INPUT_INVALID, "未知范围");
         }
         // 非主过滤条件也允许叠加（FAILED 常用；其余范围提供时同样生效）。
         if (!SCOPE_PROBLEM.equals(type) && scope.problemId() != null) {
@@ -433,10 +436,10 @@ public class RejudgeApplicationService {
 
     private void validateReason(String reason) {
         if (reason == null || reason.isBlank()) {
-            throw new IllegalArgumentException("重判原因不能为空");
+            throw new BusinessException(JudgeErrorCode.JUDGE_INPUT_INVALID, "重判原因不能为空");
         }
         if (reason.length() > 500) {
-            throw new IllegalArgumentException("重判原因不能超过 500 字");
+            throw new BusinessException(JudgeErrorCode.JUDGE_INPUT_INVALID, "重判原因不能超过 500 字");
         }
     }
 
@@ -503,7 +506,7 @@ public class RejudgeApplicationService {
             task.setScheduledAt(now);
             task.setCreatedAt(now);
             task.setUpdatedAt(now);
-            judgeTaskMapper.insert(task);
+            if (judgeTaskMapper.insert(task) != 1) throw new IllegalStateException("重判任务保存失败");
             return;
         }
         int updated = judgeTaskMapper.update(null, new LambdaUpdateWrapper<JudgeTask>()
@@ -528,7 +531,7 @@ public class RejudgeApplicationService {
     private RejudgeOperationVO loadOperation(Long operationId) {
         RejudgeOperation operation = operationMapper.selectById(operationId);
         if (operation == null) {
-            throw new IllegalArgumentException("重判操作不存在");
+            throw new BusinessException(JudgeErrorCode.REJUDGE_OPERATION_NOT_FOUND, "重判操作不存在");
         }
         List<RejudgeItem> items = itemMapper.selectList(new LambdaQueryWrapper<RejudgeItem>()
                 .eq(RejudgeItem::getOperationId, operationId)

@@ -74,6 +74,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // 班级作业管理：作业在数据模型上就是「班级题单」（problem_list 的 type=4 且绑定 classId），
 // 因此这里直接复用题单接口按 type=4 过滤，作业的增删改跳转到题单编辑器完成。
 import { ref, watch } from 'vue'
@@ -120,7 +122,7 @@ const fetchData = async () => {
     }
   } catch (error) {
     console.error(error)
-    ElMessage.error('获取作业列表失败')
+    showApiError(error, '获取作业列表失败')
   } finally {
     loading.value = false
   }

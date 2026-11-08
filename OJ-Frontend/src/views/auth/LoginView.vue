@@ -50,6 +50,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 import { ref, reactive } from 'vue'
 import { loginApi } from '@/api/auth'
 import { useRouter, useRoute } from 'vue-router'
@@ -101,7 +103,7 @@ const handleLogin = async () => {
     }
   } catch (error) {
     console.error('登录失败', error)
-    ElMessage.error(error.message || '登录请求异常')
+    showApiError(error, error.message || '登录请求异常')
   } finally {
     loading.value = false
   }

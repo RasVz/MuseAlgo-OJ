@@ -1,11 +1,16 @@
 package com.musealgo.oj.problem.application;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.problem.error.ProblemErrorCode;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.musealgo.oj.api.submission.SubmissionAttemptQuery;
+import com.musealgo.oj.common.exception.ForbiddenException;
+import com.musealgo.oj.common.utils.SecurityUtils;
 import com.musealgo.oj.problem.domain.ObjectiveJudge;
 import com.musealgo.oj.problem.entity.ExamAnswer;
 import com.musealgo.oj.problem.entity.ExamAttempt;
@@ -55,12 +60,13 @@ public class ExamAttemptApplicationService {
     @Transactional(rollbackFor = Exception.class, noRollbackFor = AttemptExpiredException.class)
     public List<ExamPaperVO.ExamQuestionResultVO> submitAnswers(
             Long paperId, Long userId, ExamAnswerSubmitDTO submit) {
+        requirePublishedOrAdmin(requireExistingPaper(paperId));
         if (submit.getAnswers() == null || submit.getAnswers().isEmpty()) {
             return Collections.emptyList();
         }
         ExamAttempt running = findRunningAttempt(paperId, userId);
         if (running == null) {
-            throw new IllegalStateException("请先开始作答，或当前试卷已交卷");
+            throw new BusinessException(ProblemErrorCode.EXAM_ATTEMPT_NOT_ACTIVE, "请先开始作答，或当前试卷已交卷");
         }
         LocalDateTime now = LocalDateTime.now();
         if (!running.getEndTime().isAfter(now)) {
@@ -124,8 +130,9 @@ public class ExamAttemptApplicationService {
     public ExamAttemptVO startAttempt(Long paperId, Long userId) {
         ExamPaper paper = examPaperMapper.selectByIdForUpdate(paperId);
         if (paper == null) {
-            throw new IllegalArgumentException("试卷不存在: " + paperId);
+            throw new BusinessException(ProblemErrorCode.EXAM_PAPER_NOT_FOUND, "试卷不存在: " + paperId);
         }
+        requirePublishedOrAdmin(paper);
         ExamAttempt running = findRunningAttempt(paperId, userId);
         if (running != null) {
             if (running.getEndTime().isBefore(LocalDateTime.now())) {
@@ -156,6 +163,7 @@ public class ExamAttemptApplicationService {
     /** 读取当前会话（无进行中会话返回最近一次已交卷记录）。 */
     @Transactional(rollbackFor = Exception.class)
     public ExamAttemptVO getAttempt(Long paperId, Long userId) {
+        requirePublishedOrAdmin(requireExistingPaper(paperId));
         ExamAttempt running = findRunningAttempt(paperId, userId);
         if (running != null) {
             if (running.getEndTime().isBefore(LocalDateTime.now())) {
@@ -169,6 +177,7 @@ public class ExamAttemptApplicationService {
     /** 主动交卷（过期会话标记为超时交卷）。 */
     @Transactional(rollbackFor = Exception.class)
     public ExamAttemptVO finishAttempt(Long paperId, Long userId) {
+        requirePublishedOrAdmin(requireExistingPaper(paperId));
         ExamAttempt running = findRunningAttempt(paperId, userId);
         if (running == null) {
             return toAttemptVO(latestAttempt(paperId, userId));
@@ -202,6 +211,20 @@ public class ExamAttemptApplicationService {
                         .eq(ExamAttempt::getUserId, userId)
                         .eq(ExamAttempt::getStatus, ExamAttempt.STATUS_RUNNING)
                         .last("LIMIT 1"));
+    }
+
+    private ExamPaper requireExistingPaper(Long paperId) {
+        ExamPaper paper = examPaperMapper.selectById(paperId);
+        if (paper == null) {
+            throw new BusinessException(ProblemErrorCode.EXAM_PAPER_NOT_FOUND, "试卷不存在: " + paperId);
+        }
+        return paper;
+    }
+
+    private void requirePublishedOrAdmin(ExamPaper paper) {
+        if (!Integer.valueOf(1).equals(paper.getIsPublished()) && !SecurityUtils.isAdmin()) {
+            throw new ForbiddenException("试卷尚未发布");
+        }
     }
 
     private ExamAttempt latestAttempt(Long paperId, Long userId) {

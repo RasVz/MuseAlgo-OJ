@@ -1,5 +1,9 @@
 package com.musealgo.oj.controller;
 
+import com.musealgo.oj.common.exception.ErrorResponses;
+import com.musealgo.oj.common.exception.CommonErrorCode;
+import com.musealgo.oj.system.error.SystemErrorCode;
+
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.annotations.Operation;
@@ -127,7 +131,8 @@ public class UserController {
         preferences.put("notifications", Map.of(
                 "interactions", true,
                 "homework", true,
-                "contest", true));
+                "contest", true,
+                "reports", true));
         return preferences;
     }
 
@@ -163,7 +168,8 @@ public class UserController {
         Map<String, Object> defaults = Map.of(
                 "interactions", true,
                 "homework", true,
-                "contest", true);
+                "contest", true,
+                "reports", true);
         if (!(value instanceof Map<?, ?> source)) {
             return defaults;
         }
@@ -171,6 +177,7 @@ public class UserController {
         notifications.put("interactions", parseBoolean(source.get("interactions"), true));
         notifications.put("homework", parseBoolean(source.get("homework"), true));
         notifications.put("contest", parseBoolean(source.get("contest"), true));
+        notifications.put("reports", parseBoolean(source.get("reports"), true));
         return notifications;
     }
 
@@ -203,12 +210,12 @@ public class UserController {
     @GetMapping("/info/{id}")
     public Result<UserVO> getUserInfo(@PathVariable Long id) {
         if (!canViewProfile(id)) {
-            return Result.error(403, "该用户未公开主页，登录后可查看");
+            return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "该用户未公开主页，登录后可查看");
         }
         // 1. 查询基本信息
         User user = userService.getById(id);
         if (user == null) {
-            return Result.error("用户不存在");
+            return ErrorResponses.failure(SystemErrorCode.USER_NOT_FOUND, "用户不存在");
         }
 
         // 2. 转换 VO
@@ -254,11 +261,11 @@ public class UserController {
     public Result<User> updateProfile(@RequestBody User profile) {
         Long currentUserId = getCurrentUserId();
         if (currentUserId == null) {
-            return Result.fail("未登录或登录状态已失效");
+            return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "未登录或登录状态已失效");
         }
 
         if (profile == null) {
-            return Result.fail("请求参数不能为空");
+            return ErrorResponses.failure(SystemErrorCode.SYSTEM_INPUT_INVALID, "请求参数不能为空");
         }
 
         // 邮箱绑定壳子：先做唯一性校验（暂不发送验证邮件）
@@ -269,18 +276,18 @@ public class UserController {
                     .ne(User::getId, currentUserId)
                     .exists();
             if (taken) {
-                return Result.fail("该邮箱已被其他账号使用");
+                return ErrorResponses.failure(SystemErrorCode.AUTH_EMAIL_TAKEN, "该邮箱已被其他账号使用");
             }
         }
 
         boolean success = userService.updateProfile(currentUserId, profile);
         if (!success) {
-            return Result.fail("个人资料更新失败");
+            return ErrorResponses.failure(CommonErrorCode.INTERNAL_ERROR, "个人资料更新失败");
         }
 
         User updatedUser = userService.getById(currentUserId);
         if (updatedUser == null) {
-            return Result.fail("用户不存在");
+            return ErrorResponses.failure(SystemErrorCode.USER_NOT_FOUND, "用户不存在");
         }
         updatedUser.setPassword(null);
 
@@ -292,7 +299,7 @@ public class UserController {
     public Result<String> changePassword(@RequestBody Map<String, String> body) {
         Long currentUserId = getCurrentUserId();
         if (currentUserId == null) {
-            return Result.fail("未登录或登录状态已失效");
+            return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "未登录或登录状态已失效");
         }
 
         String oldPassword = body.get("oldPassword");
@@ -300,21 +307,21 @@ public class UserController {
         String confirmPassword = body.get("confirmPassword");
 
         if (oldPassword == null || oldPassword.trim().isEmpty()) {
-            return Result.fail("当前密码不能为空");
+            return ErrorResponses.failure(SystemErrorCode.SYSTEM_INPUT_INVALID, "当前密码不能为空");
         }
         if (newPassword == null || newPassword.trim().isEmpty()) {
-            return Result.fail("新密码不能为空");
+            return ErrorResponses.failure(SystemErrorCode.SYSTEM_INPUT_INVALID, "新密码不能为空");
         }
         if (newPassword.length() < 6) {
-            return Result.fail("新密码长度不能少于6位");
+            return ErrorResponses.failure(SystemErrorCode.SYSTEM_INPUT_INVALID, "新密码长度不能少于6位");
         }
         if (confirmPassword == null || !newPassword.equals(confirmPassword)) {
-            return Result.fail("两次输入的新密码不一致");
+            return ErrorResponses.failure(SystemErrorCode.SYSTEM_INPUT_INVALID, "两次输入的新密码不一致");
         }
 
         boolean success = userService.changePassword(currentUserId, oldPassword, newPassword);
         if (!success) {
-            return Result.fail("当前密码错误");
+            return ErrorResponses.failure(SystemErrorCode.AUTH_CURRENT_PASSWORD_INCORRECT, "当前密码错误");
         }
 
         return Result.success("密码修改成功");
@@ -324,7 +331,7 @@ public class UserController {
     public Result<Map<String, Object>> getPreferences() {
         Long currentUserId = getCurrentUserId();
         if (currentUserId == null) {
-            return Result.fail("未登录或登录状态已失效");
+            return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "未登录或登录状态已失效");
         }
 
         Map<String, Object> preferences = buildDefaultPreferences();
@@ -349,7 +356,7 @@ public class UserController {
     public Result<Map<String, Object>> updatePreferences(@RequestBody(required = false) Map<String, Object> body) {
         Long currentUserId = getCurrentUserId();
         if (currentUserId == null) {
-            return Result.fail("未登录或登录状态已失效");
+            return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "未登录或登录状态已失效");
         }
 
         Map<String, Object> preferences = normalizePreferences(body);
@@ -358,10 +365,10 @@ public class UserController {
             String preferencesJson = objectMapper.writeValueAsString(preferences);
             boolean success = userService.updatePreferences(currentUserId, preferencesJson);
             if (!success) {
-                return Result.fail("偏好设置保存失败");
+                return ErrorResponses.failure(CommonErrorCode.INTERNAL_ERROR, "偏好设置保存失败");
             }
-        } catch (Exception e) {
-            return Result.fail("偏好设置保存失败");
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            return ErrorResponses.failure(CommonErrorCode.INTERNAL_ERROR, "偏好设置保存失败");
         }
 
         return Result.success("偏好设置保存成功", preferences);
@@ -417,11 +424,11 @@ public class UserController {
     @GetMapping("/activity/heatmap/{id}")
     public Result<Map<String, Object>> getUserActivityHeatmap(@PathVariable Long id) {
         if (!canViewProfile(id)) {
-            return Result.error(403, "该用户未公开主页，登录后可查看");
+            return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "该用户未公开主页，登录后可查看");
         }
         User user = userService.getById(id);
         if (user == null) {
-            return Result.error("用户不存在");
+            return ErrorResponses.failure(SystemErrorCode.USER_NOT_FOUND, "用户不存在");
         }
 
         LocalDate endDate = LocalDate.now();
@@ -463,7 +470,7 @@ public class UserController {
     @GetMapping("/radar/{userId}")
     public Result<List<Map<String, Object>>> radar(@PathVariable Long userId) {
         if (!canViewProfile(userId)) {
-            return Result.error(403, "该用户未公开主页，登录后可查看");
+            return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "该用户未公开主页，登录后可查看");
         }
         // 1. 获取所有知识域（六维）
         List<Tag> dimensions = tagRatingService.selectDimensions();
@@ -518,7 +525,7 @@ public class UserController {
     @GetMapping("/recent-ac/{userId}")
     public Result<List<Map<String, Object>>> recentAC(@PathVariable Long userId) {
         if (!canViewProfile(userId)) {
-            return Result.error(403, "该用户未公开主页，登录后可查看");
+            return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "该用户未公开主页，登录后可查看");
         }
         var subs = submissionApplicationService.findRecentAccepted(userId, 5);
         var problemIds = subs.stream().map(com.musealgo.oj.judge.entity.Submission::getProblemId).distinct().toList();
@@ -538,7 +545,7 @@ public class UserController {
     @GetMapping("/recommend/{userId}")
     public Result<List<Map<String, Object>>> recommend(@PathVariable Long userId) {
         if (!canViewProfile(userId)) {
-            return Result.error(403, "该用户未公开主页，登录后可查看");
+            return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "该用户未公开主页，登录后可查看");
         }
         // 1. 找 rating 最低的 3 个标签
         var all = tagRatingService.selectRatingsAll(userId);
@@ -592,10 +599,10 @@ public class UserController {
     @GetMapping("/learning-plan/{userId}")
     public Result<List<Map<String, Object>>> learningPlan(@PathVariable Long userId) {
         if (!canViewProfile(userId)) {
-            return Result.error(403, "该用户未公开主页，登录后可查看");
+            return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "该用户未公开主页，登录后可查看");
         }
         User user = userService.getById(userId);
-        if (user == null) return Result.error("用户不存在");
+        if (user == null) return ErrorResponses.failure(SystemErrorCode.USER_NOT_FOUND, "用户不存在");
 
         List<Map<String, Object>> plan = new ArrayList<>();
         List<UserTagRating> ratings = tagRatingService.selectRatingsAll(userId);
@@ -636,7 +643,7 @@ public class UserController {
 
         if (plan.isEmpty()) {
             List<Map<String, Object>> beginners = jdbcTemplate.queryForList(
-                    "SELECT id, title, difficulty FROM problem WHERE (is_deleted = 0 OR is_deleted IS NULL) "
+                    "SELECT id, title, difficulty FROM problem WHERE (is_deleted = 0 OR is_deleted IS NULL) AND is_public = 1 "
                             + "ORDER BY difficulty ASC LIMIT 3");
             beginners.forEach(item -> plan.add(planItem("problem", ((Number) item.get("id")).longValue(),
                     String.valueOf(item.get("title")), "先建立稳定的提交节奏，从基础题开始", (Integer) item.get("difficulty"))));
@@ -648,7 +655,7 @@ public class UserController {
     @GetMapping("/review-book")
     public Result<List<Map<String, Object>>> reviewBook(@RequestParam(defaultValue = "today") String scope) {
         Long userId = SecurityUtils.getUserId();
-        if (userId == null) return Result.error(401, "请先登录");
+        if (userId == null) return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "请先登录");
         collectReviewProblems(userId);
         String limit = "today".equals(scope) ? " LIMIT 5" : " LIMIT 50";
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
@@ -664,10 +671,10 @@ public class UserController {
     @PostMapping("/review-book/{problemId}/mastered")
     public Result<Void> markReviewMastered(@PathVariable Long problemId, @RequestParam boolean mastered) {
         Long userId = SecurityUtils.getUserId();
-        if (userId == null) return Result.error(401, "请先登录");
+        if (userId == null) return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "请先登录");
         int updated = jdbcTemplate.update("UPDATE user_problem_review SET status = ?, last_reviewed_at = NOW() WHERE user_id = ? AND problem_id = ?",
                 mastered ? "MASTERED" : "REVIEW", userId, problemId);
-        if (updated == 0) return Result.error("错题记录不存在");
+        if (updated == 0) return ErrorResponses.failure(SystemErrorCode.REVIEW_ENTRY_NOT_FOUND, "错题记录不存在");
         return Result.success(null);
     }
 

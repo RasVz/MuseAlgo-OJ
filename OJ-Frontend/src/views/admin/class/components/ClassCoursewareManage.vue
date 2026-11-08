@@ -154,6 +154,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // 班级课件目录管理：从课件资源库挑选课件挂到班级，也可调整班级内的可见性与顺序。
 // 课件本体在资源库里维护（CoursewareEditorView），本组件只维护「班级 ↔ 课件」的关联与顺序。
 import { ref, onMounted } from 'vue'
@@ -203,7 +205,7 @@ const fetchData = async () => {
     }
   } catch (e) {
     console.error(e)
-    ElMessage.error('获取课件列表失败')
+    showApiError(e, '获取课件列表失败')
   } finally {
     loading.value = false
   }
@@ -226,7 +228,7 @@ const fetchCoursewareData = async () => {
     }
   } catch (e) {
     console.error(e)
-    ElMessage.error('获取资源库列表失败')
+    showApiError(e, '获取资源库列表失败')
   } finally {
     cwLoading.value = false
   }
@@ -271,7 +273,7 @@ const handleAddSelected = async (row) => {
     }
   } catch (e) {
     console.error(e)
-    ElMessage.error('添加失败')
+    showApiError(e, '添加失败')
   }
 }
 
@@ -313,7 +315,7 @@ const handleSort = async (index, step) => {
     console.error(e)
     // 恢复原来的顺序
     fetchData()
-    ElMessage.error('排序更新失败')
+    showApiError(e, '排序更新失败')
   }
 }
 
@@ -335,7 +337,7 @@ const handleVisibilityChange = async (row) => {
     console.error(e)
     // 恢复原来的状态
     row.isVisible = !row.isVisible
-    ElMessage.error('更新失败')
+    showApiError(e, '更新失败')
   }
 }
 
@@ -356,7 +358,7 @@ const handleRemove = (row) => {
       }
     } catch (e) {
       console.error(e)
-      ElMessage.error('移除失败')
+      showApiError(e, '移除失败')
     }
   }).catch(() => {
     // 用户取消操作

@@ -62,6 +62,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // 班级动态发布弹窗：文本 + 最多 9 张配图。
 // el-upload 直传 /api/file/upload 而不走统一的 api 层，因为需要 Element 的
 // 逐文件上传进度与列表状态，这些是组件内建的。
@@ -151,7 +153,7 @@ const submit = async () => {
     }
   } catch (error) {
     console.error(error)
-    ElMessage.error('发布异常，请检查网络')
+    showApiError(error, '发布异常，请检查网络')
   } finally {
     publishing.value = false
   }

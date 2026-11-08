@@ -83,6 +83,7 @@
 </template>
 
 <script setup>
+
 // 测试数据生成器面板：展示 AI 生成的 Python 生成器、数据分布规划与验证结果。
 // 纯展示组件，执行验证与追加保存的动作都上抛给 ProblemAiDialog。
 import { computed } from 'vue'

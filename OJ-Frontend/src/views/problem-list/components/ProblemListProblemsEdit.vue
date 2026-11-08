@@ -1,5 +1,6 @@
 <template>
   <div class="problems-container">
+    <el-alert v-if="loadError" :title="loadError" type="error" :closable="false" show-icon />
     <div class="manage-tools">
       <div class="tool-label">快速添加</div>
       <el-input 
@@ -71,6 +72,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // 题单题目管理：按题目 ID 添加、移除、拖拽排序。
 // 顺序不是"逐条更新 sort"，而是每次变动后把完整 ID 数组整体提交，
 // 这样后端只需一次写入即可重建顺序，也避免部分更新导致顺序出现空洞。
@@ -94,6 +97,7 @@ const props = defineProps({
 const emit = defineEmits(['update-count'])
 
 const problemList = ref([])
+const loadError = ref('')
 const newProblemId = ref('')
 const tableRef = ref(null)
 
@@ -122,8 +126,9 @@ const saveCurrentOrder = async (silent = false) => {
 }
 
 const fetchProblems = async () => {
+  loadError.value = ''
   try {
-    const res = await getListProblems({ listId: props.listId })
+    const res = await getListProblems({ listId: props.listId }, { silent: true })
     problemList.value = res.data || []
     emit('update-count', problemList.value.length)
     
@@ -132,8 +137,10 @@ const fetchProblems = async () => {
     nextTick(() => {
       initSortable()
     })
+    return true
   } catch (error) {
-    console.error(error)
+    loadError.value = error.message || '题目列表刷新失败，请重试'
+    return false
   }
 }
 
@@ -155,7 +162,7 @@ const addProblem = async () => {
     newProblemId.value = '' // 清空输入框
     
     // 重新拉列表后新题可能排在任意位置（sort 值由后端分配）
-    await fetchProblems()
+    if (!await fetchProblems()) return
 
     // 找到刚加的题并挪到末尾。id 与 displayId 两个字段都匹配：
     // 用户输入的是题号（displayId），而列表项的主键是关联记录 id，只匹配一个会找不到。
@@ -172,34 +179,27 @@ const addProblem = async () => {
     await saveCurrentOrder(true)
     
   } catch (error) {
-    ElMessage.error(error.msg || '添加失败')
+    showApiError(error, error.msg || '添加失败')
   }
 }
 
 // 移除后必须补一次整体排序：删掉中间一题会让后面的 sort 留下空洞，
 // 后续拖拽再提交时顺序就可能错乱。silent 因为"移除成功"的提示已经给过了。
-const removeProblem = (row) => {
-  ElMessageBox.confirm(`确定要移除题目 ${row.title} 吗？`, '提示', {
-    confirmButtonText: '移除',
-    cancelButtonText: '取消',
-    type: 'warning',
-  }).then(async () => {
-    try {
-      await removeProblemFromList({ 
-        problemId: row.id,
-        problemListId: props.listId 
-      })
-      ElMessage.success('已移除')
-      
-      // 1. 刷新列表
-      await fetchProblems()
-      // 2. 重新排列剩下的题目序号 (填补空缺)
-      await saveCurrentOrder(true)
-      
-    } catch {
-      ElMessage.error('移除失败')
-    }
-  })
+const removeProblem = async (row) => {
+  try {
+    await ElMessageBox.confirm(`确定要移除题目 ${row.title} 吗？`, '提示', {
+      confirmButtonText: '移除', cancelButtonText: '取消', type: 'warning'
+    })
+  } catch { return }
+  try {
+    await removeProblemFromList({ problemId: row.id, problemListId: props.listId })
+    problemList.value = problemList.value.filter(item => item.id !== row.id)
+    ElMessage.success('已移除')
+    if (!await fetchProblems()) return
+    await saveCurrentOrder(true)
+  } catch (error) {
+    showApiError(error, '移除失败')
+  }
 }
 
 // Sortable 必须挂在 el-table 内部的 tbody 上，而不是外层容器

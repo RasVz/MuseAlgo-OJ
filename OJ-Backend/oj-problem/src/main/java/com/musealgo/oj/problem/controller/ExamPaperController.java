@@ -1,5 +1,9 @@
 package com.musealgo.oj.problem.controller;
 
+import com.musealgo.oj.common.exception.ErrorResponses;
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.common.exception.CommonErrorCode;
+
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -62,7 +66,7 @@ public class ExamPaperController {
         boolean admin = SecurityUtils.isAdmin();
         ExamPaperVO paper = examPaperService.detail(id, admin);
         if (paper != null && !admin && !Integer.valueOf(1).equals(paper.getIsPublished())) {
-            return Result.error(403, "试卷尚未发布");
+            return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "试卷尚未发布");
         }
         return Result.success(paper);
     }
@@ -90,7 +94,7 @@ public class ExamPaperController {
             @PathVariable Long id, @Valid @RequestBody ExamAnswerSubmitDTO submit) {
         Long userId = SecurityUtils.getUserId();
         if (userId == null) {
-            throw new ForbiddenException("请先登录");
+            throw new BusinessException(CommonErrorCode.AUTH_REQUIRED, "请先登录");
         }
         return Result.success(examPaperService.submitAnswers(id, userId, submit));
     }
@@ -116,7 +120,7 @@ public class ExamPaperController {
     private Long requireUserId() {
         Long userId = SecurityUtils.getUserId();
         if (userId == null) {
-            throw new ForbiddenException("请先登录");
+            throw new BusinessException(CommonErrorCode.AUTH_REQUIRED, "请先登录");
         }
         return userId;
     }

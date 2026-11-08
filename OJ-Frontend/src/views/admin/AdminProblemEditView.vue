@@ -50,6 +50,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // 题目编辑器：以「基本信息 / 测试用例 / 标准答案」三个 Tab 组织一道题的完整生命周期。
 //
 // 关键流程：新建时只有基本信息，保存成功拿到题目 ID 后 replace 到编辑路由并自动跳到
@@ -240,7 +242,7 @@ async function init() {
     }
   } catch (e) {
     console.error(e)
-    ElMessage.error('加载题目详情失败')
+    showApiError(e, '加载题目详情失败')
   }
 }
 
@@ -300,7 +302,7 @@ const handleSaveBasic = async () => {
     ElMessage.error(res.message || '创建失败')
   } catch (e) {
     console.error(e)
-    ElMessage.error('保存失败，请稍后重试')
+    showApiError(e, '保存失败，请稍后重试')
   } finally {
     saving.value = false
   }

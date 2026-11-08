@@ -6,6 +6,7 @@
       <el-button :disabled="!items.some(item => !item.isRead && Number(item.id) > 0)" @click="readAll">全部标为已读</el-button>
     </header>
     <div class="tabs"><button v-for="tab in tabs" :key="tab.value" :class="{ active: scope === tab.value }" @click="switchScope(tab.value)">{{ tab.label }}</button></div>
+    <el-alert v-if="loadError" :title="loadError" type="error" :closable="false" />
     <section v-if="items.length" class="notification-list">
       <button v-for="item in items" :key="`${item.type}-${item.id}`" class="notification" :class="{ unread: !item.isRead && Number(item.id) > 0 }" @click="open(item)">
         <span class="notice-icon" :class="item.type"><el-icon><component :is="iconFor(item.type)" /></el-icon></span>
@@ -13,7 +14,7 @@
         <span v-if="!item.isRead && Number(item.id) > 0" class="unread-dot" />
       </button>
     </section>
-    <el-empty v-else-if="!loading" description="暂时没有新通知" :image-size="96" />
+    <el-empty v-else-if="!loading && !loadError" description="暂时没有新通知" :image-size="96" />
   </main>
 </template>
 
@@ -28,12 +29,27 @@ import { getNotifications, markAllNotificationsRead, markNotificationRead } from
 
 const router = useRouter()
 const loading = ref(false), scope = ref('all'), items = ref([])
+const loadError = ref('')
+let loadGeneration = 0
 const tabs = [{ value: 'all', label: '全部' }, { value: 'interactions', label: '互动' }, { value: 'today', label: '今日任务' }]
 // 通知类型 → 图标的映射。未知类型兜底为通用铃铛：
 // 后端新增通知类型时前端不会因为缺图标而渲染空白。
 const iconFor = (type) => ({ LIKE: Star, FAVORITE: CollectionTag, COMMENT: ChatDotRound, REPLY: ChatDotRound, FOLLOW_POST: Reading, CONTEST_REMINDER: Trophy, HOMEWORK_REMINDER: Timer, MODERATION: Flag, REPORT_READY: Notebook }[type] || Bell)
 const formatTime = (time) => time ? dayjs(time).format('MM-DD HH:mm') : '刚刚'
-const load = async () => { loading.value = true; try { const res = await getNotifications(scope.value); items.value = res.code === 200 ? res.data || [] : [] } finally { loading.value = false } }
+const load = async () => {
+  const generation = ++loadGeneration
+  loading.value = true
+  loadError.value = ''
+  items.value = []
+  try {
+    const res = await getNotifications(scope.value, { silent: true })
+    if (generation === loadGeneration) items.value = res.data || []
+  } catch (error) {
+    if (generation === loadGeneration) loadError.value = error.message || '通知加载失败，请重试'
+  } finally {
+    if (generation === loadGeneration) loading.value = false
+  }
+}
 const switchScope = (value) => { if (scope.value !== value) { scope.value = value; load() } }
 // 先标记已读再跳转：读状态是"看过"的唯一依据，若跳转失败也不该让它一直是未读。
 const open = async (item) => {

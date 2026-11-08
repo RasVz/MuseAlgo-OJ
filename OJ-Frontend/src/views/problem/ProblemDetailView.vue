@@ -104,6 +104,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // 题目详情页：OJ 的核心页面，把题面、IDE 判题与题解/AI 助手合到一屏。
 //
 // 三条交互主线：
@@ -199,8 +201,8 @@ const handleRealSubmit = async () => {
     } else {
       ElMessage.error(res.message || '提交失败')
     }
-  } catch {
-    ElMessage.error('网络错误')
+  } catch (caughtError) {
+    showApiError(caughtError, '网络错误')
   } finally {
     submitting.value = false
   }

@@ -1,5 +1,8 @@
 package com.musealgo.oj.community.service;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.community.error.CommunityErrorCode;
+
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -37,12 +40,12 @@ public final class PostTagCatalog {
         }
 
         if (tags.size() > 8) {
-            throw new IllegalArgumentException("最多选择 8 个标签");
+            throw new BusinessException(CommunityErrorCode.COMMUNITY_INPUT_INVALID, "最多选择 8 个标签");
         }
         Set<String> allowed = new LinkedHashSet<>(ALLOWED_TAGS);
         if (extraAllowedTags != null) allowed.addAll(extraAllowedTags);
         if (!allowed.containsAll(tags)) {
-            throw new IllegalArgumentException("包含未被系统收录的标签，请从标签库中选择");
+            throw new BusinessException(CommunityErrorCode.COMMUNITY_INPUT_INVALID, "包含未被系统收录的标签，请从标签库中选择");
         }
         return List.copyOf(tags);
     }

@@ -58,6 +58,7 @@ class PostQueryServiceImpl implements PostQueryService {
     @Override
     public IPage<PostVO> list(Integer page, Integer size, String category, Integer type, List<Integer> types,
                               Long authorId, Long contestId, Long problemId, Long classId, String keyword, List<String> tags, String sort) {
+        if (classId != null) targets.requireClassAccess(classId, com.musealgo.oj.common.utils.SecurityUtils.getUserId());
         return mapper.selectPostVOList(new Page<>(page, size), category, type, types, authorId, contestId, problemId, classId, keyword, tags, sort);
     }
 
@@ -92,8 +93,7 @@ class PostQueryServiceImpl implements PostQueryService {
      */
     @Override
     public Map<String, Object> detail(Long postId, Long currentUserId) {
-        Post raw = targets.requireExisting(postId);
-        if (raw.getPrivacy() != null && raw.getPrivacy() == 1 && (currentUserId == null || !currentUserId.equals(raw.getAuthorId()))) return null;
+        Post raw = targets.requireReadable(postId, currentUserId);
         PostVO view = mapper.selectPostVODetail(postId);
         if (view == null) return null;
         hotPosts.view(postId, currentUserId);
@@ -106,7 +106,7 @@ class PostQueryServiceImpl implements PostQueryService {
         Map<String, Object> result = new LinkedHashMap<>(objectMapper.convertValue(view, Map.class));
         result.put("relatedProblems", problemRelations.selectProblemsByPostId(postId));
         result.put("views", max(stats.get("views"), raw, Post::getViews)); result.put("likeCount", max(stats.get("likes"), raw, Post::getLikes));
-        result.put("dislikeCount", max(stats.get("dislikes"), raw, Post::getDislikes)); result.put("favoriteCount", max(stats.get("favorites"), raw, Post::getFavorites));
+        result.put("dislikeCount", max(stats.get("dislikes"), raw, Post::getDislikes)); result.put("favoriteCount", value(raw.getFavorites()));
         result.put("commentCount", max(stats.get("comments"), raw, Post::getCommentCount));
         result.put("isLiked", currentUserId != null && hotPosts.hasLiked(postId, currentUserId));
         result.put("isDisliked", currentUserId != null && hotPosts.hasDisliked(postId, currentUserId));

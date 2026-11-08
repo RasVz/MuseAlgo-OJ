@@ -15,5 +15,13 @@ import org.apache.ibatis.annotations.Param;
  * @since 2025-12-12
  */
 public interface ClassMapper extends BaseMapper<Class> {
+    @org.apache.ibatis.annotations.Select("SELECT * FROM class WHERE id=#{id} AND is_deleted=0 FOR UPDATE")
+    Class selectByIdForUpdate(@Param("id") Long id);
+    @org.apache.ibatis.annotations.Update("UPDATE class SET student_count=(SELECT COUNT(*) FROM class_student WHERE class_id=#{id}) WHERE id=#{id} AND is_deleted=0")
+    int refreshStudentCount(@Param("id") Long id);
+    @org.apache.ibatis.annotations.Select({"<script>SELECT class_id AS classId, COUNT(*) AS memberCount FROM class_student WHERE class_id IN",
+            "<foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach>",
+            "GROUP BY class_id</script>"})
+    java.util.List<java.util.Map<String,Object>> selectStudentCounts(@Param("ids") java.util.List<Long> ids);
     IPage<Class> selectJoinedClasses(Page<?> page, @Param("userId") Long userId);
 }

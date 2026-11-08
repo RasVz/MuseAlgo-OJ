@@ -57,7 +57,7 @@ class FileServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "evil.png", "image/png", "not an image at all".getBytes(StandardCharsets.UTF_8));
 
-        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+        var ex = assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
                 () -> fileService.uploadToCos(file));
         assertTrue(ex.getMessage().contains("内容与扩展名不符"));
     }
@@ -71,7 +71,7 @@ class FileServiceTest {
         big[3] = 'G';
         MockMultipartFile file = new MockMultipartFile("file", "big.png", "image/png", big);
 
-        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+        var ex = assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
                 () -> fileService.uploadToCos(file));
         assertTrue(ex.getMessage().contains("大小不能超过"));
     }
@@ -81,7 +81,7 @@ class FileServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "virus.exe", "application/octet-stream", pngBytes());
 
-        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+        var ex = assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
                 () -> fileService.uploadToCos(file));
         assertTrue(ex.getMessage().contains("格式"));
     }
@@ -92,7 +92,7 @@ class FileServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "avatar.png", "application/octet-stream", pngBytes());
 
-        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+        var ex = assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
                 () -> fileService.uploadToCos(file));
         assertTrue(ex.getMessage().contains("内容类型不合法"));
     }
@@ -111,7 +111,7 @@ class FileServiceTest {
         // 缺 WEBP 头的伪 webp 拒绝
         webp[8] = 'X';
         MockMultipartFile fake = new MockMultipartFile("file", "b.webp", "image/webp", webp);
-        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+        var ex = assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
                 () -> fileService.uploadToCos(fake));
         assertTrue(ex.getMessage().contains("内容与扩展名不符"));
     }
@@ -119,7 +119,7 @@ class FileServiceTest {
     @Test
     void emptyFileRejected() {
         MockMultipartFile file = new MockMultipartFile("file", "a.png", "image/png", new byte[0]);
-        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+        var ex = assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
                 () -> fileService.uploadToCos(file));
         assertTrue(ex.getMessage().contains("不能为空"));
     }
@@ -133,4 +133,40 @@ class FileServiceTest {
         Path saved = tempDir.resolve(relative);
         assertEquals(11, java.nio.file.Files.readAllBytes(saved).length);
     }
+    @Test
+    void failedCosImageUploadClosesClientAndDeletesTemporaryFile() throws Exception {
+        ReflectionTestUtils.setField(fileService, "secretId", "synthetic-id");
+        ReflectionTestUtils.setField(fileService, "secretKey", "synthetic-key");
+        ReflectionTestUtils.setField(fileService, "bucketName", "synthetic-bucket");
+        ReflectionTestUtils.setField(fileService, "baseUrl", "https://synthetic.invalid");
+        ReflectionTestUtils.setField(fileService, "regionName", "ap-test");
+        var temporary = new java.util.concurrent.atomic.AtomicReference<java.io.File>();
+        var failure = new com.qcloud.cos.exception.CosClientException("synthetic upstream failure");
+        try (var clients = org.mockito.Mockito.mockConstruction(com.qcloud.cos.COSClient.class, (client, context) -> {
+            org.mockito.Mockito.doAnswer(call -> {
+                var request = call.getArgument(0, com.qcloud.cos.model.PutObjectRequest.class);
+                temporary.set(request.getFile());
+                assertTrue(request.getFile().isFile());
+                throw failure;
+            }).when(client).putObject(org.mockito.ArgumentMatchers.any(com.qcloud.cos.model.PutObjectRequest.class));
+        })) {
+            assertThrows(RuntimeException.class, () -> fileService.uploadToCos(
+                    new MockMultipartFile("file", "avatar.png", "image/png", pngBytes())));
+            org.mockito.Mockito.verify(clients.constructed().get(0)).shutdown();
+            assertTrue(temporary.get() != null && !temporary.get().exists(), "failed upload must remove temporary file");
+        } finally {
+            if (temporary.get() != null) java.nio.file.Files.deleteIfExists(temporary.get().toPath());
+        }
+    }
+
+    @Test
+    void localWriteFailurePreservesItsIoCause() throws Exception {
+        Path blocked = tempDir.resolve("not-a-directory");
+        java.nio.file.Files.writeString(blocked, "synthetic");
+        ReflectionTestUtils.setField(fileService, "uploadDir", blocked.toString());
+        var failure = assertThrows(RuntimeException.class, () -> fileService.uploadToCos(
+                new MockMultipartFile("file", "avatar.png", "image/png", pngBytes())));
+        assertTrue(failure.getCause() instanceof java.io.IOException);
+    }
+
 }

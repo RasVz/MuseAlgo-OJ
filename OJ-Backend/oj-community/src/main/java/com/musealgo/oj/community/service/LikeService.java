@@ -13,7 +13,7 @@ import java.util.Set;
  * </p>
  * <p>
  * 实现见 {@link com.musealgo.oj.community.service.impl.LikeServiceImpl}，
- * 数据只存 Redis，尚未落库。
+ * Redis 承担实时状态，后台按 dirty 集合持久化；冷缓存从持久化关系恢复。
  * </p>
  */
 public interface LikeService {

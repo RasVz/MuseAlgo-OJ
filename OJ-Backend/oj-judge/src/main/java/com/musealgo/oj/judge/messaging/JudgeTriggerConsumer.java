@@ -3,7 +3,6 @@ package com.musealgo.oj.judge.messaging;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import com.musealgo.oj.judge.worker.JudgeWorker;
 
@@ -22,7 +21,8 @@ import com.musealgo.oj.judge.worker.JudgeWorker;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-@ConditionalOnProperty(prefix = "oj.messaging", name = "rabbitmq-enabled", havingValue = "true")
+@org.springframework.boot.autoconfigure.condition.ConditionalOnExpression(
+        "${oj.messaging.rabbitmq-enabled:true} && ${oj.judge.worker.enabled:true}")
 public class JudgeTriggerConsumer {
 
     private final JudgeWorker judgeWorker;

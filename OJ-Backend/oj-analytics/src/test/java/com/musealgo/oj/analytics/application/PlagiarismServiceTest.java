@@ -98,6 +98,12 @@ class PlagiarismServiceTest {
         return new PlagiarismService(submissionCodeQuery, classQuery, contestScheduleQuery, reportMapper);
     }
 
+    @org.junit.jupiter.api.BeforeEach
+    void initializeMapping() {
+        var assistant = new org.apache.ibatis.builder.MapperBuilderAssistant(new org.apache.ibatis.session.Configuration(), "plagiarism-test");
+        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(assistant, PlagiarismReport.class);
+    }
+
     @AfterEach
     void clearSecurityContext() {
         SecurityContextHolder.clearContext();
@@ -304,7 +310,7 @@ class PlagiarismServiceTest {
     @Test
     void invalidStatusIsRejected() {
         loginAsTeacher(TEACHER_ID);
-        assertThrows(IllegalArgumentException.class,
+        assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
                 () -> newService().updateReportStatus(1L, "FOO"));
         verify(reportMapper, never()).selectById(anyLong());
         verify(reportMapper, never()).updateById(ArgumentMatchers.<PlagiarismReport>any());
@@ -314,9 +320,38 @@ class PlagiarismServiceTest {
     void missingReportIsRejected() {
         loginAsTeacher(TEACHER_ID);
         when(reportMapper.selectById(1L)).thenReturn(null);
-        assertThrows(IllegalArgumentException.class,
+        assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
                 () -> newService().updateReportStatus(1L, "REVIEWED"));
         verify(reportMapper, never()).updateById(ArgumentMatchers.<PlagiarismReport>any());
+    }
+
+    @Test
+    void explicitContestReportQueryRejectsOtherTeacher() {
+        loginAsTeacher(TEACHER_ID);
+        when(contestScheduleQuery.findById(CONTEST_ID)).thenReturn(Optional.of(new ContestSchedule(
+                CONTEST_ID, LocalDateTime.now().minusHours(1), LocalDateTime.now(), "OI", CONTEST_AUTHOR_ID)));
+        assertThrows(ForbiddenException.class,
+                () -> newService().pageReports(null, CONTEST_ID, null, null, 1, 20));
+    }
+
+    @Test
+    void reportedSourcesRequireCurrentScopeOwnership() {
+        loginAsTeacher(999L);
+        PlagiarismReport report = reportWith(CLASS_ID, null, "PENDING");
+        report.setSubmissionAId(1L);
+        report.setSubmissionBId(2L);
+        when(reportMapper.selectList(any())).thenReturn(List.of(report));
+        when(classQuery.findById(CLASS_ID)).thenReturn(Optional.of(new ClassInfo(CLASS_ID, "一班", TEACHER_ID)));
+        assertThrows(ForbiddenException.class, () -> newService().findCodes(List.of(1L, 2L)));
+        verify(submissionCodeQuery, never()).findBySubmissionIds(any());
+    }
+
+    @Test
+    void unreportedSourceIdsAreDenied() {
+        loginAsTeacher(TEACHER_ID);
+        when(reportMapper.selectList(any())).thenReturn(List.of());
+        assertThrows(ForbiddenException.class, () -> newService().findCodes(List.of(123L)));
+        verify(submissionCodeQuery, never()).findBySubmissionIds(any());
     }
 
     // ------------------------------------------------------------------

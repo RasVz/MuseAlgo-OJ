@@ -164,12 +164,14 @@ public class JudgeService implements JudgeGateway {
         JSONObject json = JSONUtil.parseObj(resStr);
         Map<String, Object> result = new HashMap<>();
 
-        // 获取 Judge0 的原始状态 ID
-        if (json.containsKey("status")) {
-            result.put("status", json.getJSONObject("status").getInt("id"));
-        } else {
-            result.put("status", 0); // 未知错误
+        // wait=true must produce a known terminal result. Queue/processing or malformed
+        // responses are upstream failures and must never become a contestant RE.
+        JSONObject status = json.getJSONObject("status");
+        Integer statusId = status == null ? null : status.getInt("id");
+        if (statusId == null || statusId < 3 || statusId > 14) {
+            throw new IllegalStateException("判题机返回无效或未完成的状态");
         }
+        result.put("status", statusId);
 
         // 获取资源消耗
         result.put("time", json.getStr("time")); // 原始数据是秒，如 "0.012"

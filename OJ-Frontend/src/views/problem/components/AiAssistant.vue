@@ -69,6 +69,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // AI 答疑抽屉：以「提示阶梯」的方式引导学生，而不是直接给答案。
 //
 // Hint Ladder 分四级（思路方向 → 关键观察 → 伪代码 → 完整题解），
@@ -78,6 +80,8 @@ import { ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Promotion } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/userStore'
+import { readAiResponse } from '@/utils/aiStream'
+import { ApiError } from '@/utils/apiError'
 import { getHintLevel } from '@/api/ai'
 import ChatMessageList from './ChatMessageList.vue'
 import HintLadderBar from './HintLadderBar.vue'
@@ -170,7 +174,10 @@ const askAi = async () => {
     })
   } catch (error) {
     console.error('AI 请求错误:', error)
-    ElMessage.error('网络异常，请重试')
+    if (streamingContent.value && !['AI_QUOTA_EXCEEDED', 'AI_CONTEST_BLOCKED'].includes(error.errorCode)) {
+      chatMessages.value.push({ role: 'ai', content: streamingContent.value + '\n\n> 回复未完成，请重试。' })
+    }
+    showApiError(error, error instanceof ApiError ? error.message : '网络连接异常，请重试')
   } finally {
     isAiThinking.value = false
     streamingContent.value = ''
@@ -191,36 +198,7 @@ const streamAsk = async (payload) => {
     },
     body: JSON.stringify(payload)
   })
-  if (!resp.ok || !resp.body) {
-    throw new Error(`HTTP ${resp.status}`)
-  }
-
-  const reader = resp.body.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ''
-  let fullText = ''
-
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-
-    // SSE 事件用空行分隔；一个事件里可能有多个 data: 行（内容含换行时）
-    // buffer.pop() 把最后一段（可能还没收完的半条事件）留回缓冲区，
-    // 否则跨 chunk 到达的事件会被截断成两半。
-    const events = buffer.split('\n\n')
-    buffer = events.pop()
-    for (const event of events) {
-      const dataLines = event.split('\n').filter(l => l.startsWith('data:'))
-      // 注意：只能去掉 "data:" 后的一个分隔空格，绝不能 trim()——
-      // 代码行开头的缩进空格会被 trim 掉，导致 AI 给出的代码全部失去缩进
-      const chunkText = dataLines.map(l => l.slice(5).replace(/^ /, '')).join('\n')
-      if (chunkText && chunkText !== '[DONE]') {
-        fullText += chunkText
-        streamingContent.value = fullText
-      }
-    }
-  }
+  const fullText = await readAiResponse(resp, text => { streamingContent.value = text })
 
   // 流结束后才把内容落进 messages：流式内容由 streamingContent 单独驱动，
 // 中途入列会产生一条空消息 + 一条完整消息的重复。

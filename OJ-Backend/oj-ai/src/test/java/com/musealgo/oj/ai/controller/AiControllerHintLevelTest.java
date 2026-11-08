@@ -82,6 +82,6 @@ class AiControllerHintLevelTest {
 
     @Test
     void rejectsAnonymousUser() {
-        assertThrows(ForbiddenException.class, () -> controller.hintLevel(10L));
+        assertThrows(com.musealgo.oj.common.exception.BusinessException.class, () -> controller.hintLevel(10L));
     }
 }

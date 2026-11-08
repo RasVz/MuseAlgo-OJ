@@ -54,6 +54,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // 比赛测评记录页：按题目/语言/状态筛选提交记录，默认只看自己的。
 // 比赛未结束时他人代码不可见（限制在 ContestSubmissionTable 里），
 // 赛后自动放开——这里只负责把 isContestEnded 传下去。
@@ -63,8 +65,6 @@ import { ElMessage } from 'element-plus'
 import { Document } from '@element-plus/icons-vue'
 import {
   getContestSubmissionList,
-  getContestSubmissionListFallbackA,
-  getContestSubmissionListFallbackB,
   getContestProblemList
 } from '@/api/contest'
 import { useContestStore } from '@/stores/contestContext'
@@ -134,28 +134,9 @@ const buildParams = () => {
   return params
 }
 
-// 提交记录接口尚未定型，这里依次尝试三条路径：
-// 主接口 → 备用 A（不同参数风格）→ 备用 B（路径参数风格）。
-// 联调完成后应删掉这段兜底，当前保留是为了让页面在任一版本下都能出数据。
-const requestWithFallback = async () => {
-  const params = buildParams()
+// Only this endpoint enforces the current contest's submission scope.
+const requestWithFallback = () => getContestSubmissionList(contestId.value, buildParams())
 
-  try {
-    return await getContestSubmissionList(contestId.value, params)
-  } catch {
-    try {
-      return await getContestSubmissionListFallbackA(contestId.value, params)
-    } catch {
-      return await getContestSubmissionListFallbackB({
-        ...params,
-        contestId: contestId.value
-      })
-    }
-  }
-}
-
-// 三个接口的响应形状不一致，统一在这里抹平；遇到不认识的形状要显式报出来，
-// 静默返回空列表会让人误判成"这个比赛没人提交"。
 const parseResponse = (res) => {
   if (!res || res.code !== 200) {
     return { records: [], total: 0, message: res?.message || '获取数据失败' }
@@ -199,7 +180,7 @@ const fetchData = async () => {
     languageOptions.value = Array.from(langSet)
   } catch (e) {
     console.error(e)
-    ElMessage.error('获取比赛测评记录失败')
+    showApiError(e, e.message || '获取比赛测评记录失败')
   } finally {
     loading.value = false
   }

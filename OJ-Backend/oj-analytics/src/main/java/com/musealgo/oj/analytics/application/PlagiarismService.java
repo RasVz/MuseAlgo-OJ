@@ -1,5 +1,8 @@
 package com.musealgo.oj.analytics.application;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.analytics.error.AnalyticsErrorCode;
+
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
@@ -145,7 +148,7 @@ public class PlagiarismService {
     }
 
     /**
-     * 查重报告分页（相似度降序）。classId/contestId 为空时仅要求教师/管理员登录。
+     * 查重报告分页（相似度降序）。无筛选时也只返回当前教师负责范围，管理员可查全部。
      *
      * @return 报告分页（含双方用户展示名）
      */
@@ -155,17 +158,40 @@ public class PlagiarismService {
         if (classId != null) {
             requireClassPermission(classId);
         }
+        if (contestId != null) requireContestPermission(contestId);
+        boolean restrictOwner = !SecurityUtils.isAdmin();
+        Long actorId = SecurityUtils.getUserId();
+        List<Long> classIds = restrictOwner ? classQuery.findOwnedIds(actorId) : List.of();
+        List<Long> contestIds = restrictOwner ? contestScheduleQuery.findOwnedIds(actorId) : List.of();
         Page<Map<String, Object>> pageParam = new Page<>(Math.max(page, 1), Math.max(size, 1));
         IPage<Map<String, Object>> raw = reportMapper.selectReportPage(
-                pageParam, classId, contestId, problemId, status);
+                pageParam, classId, contestId, problemId, status, restrictOwner, classIds, contestIds);
         return raw.convert(PlagiarismService::toVo);
     }
 
     /**
-     * 取提交代码（报告展开对比用），教师/管理员可看。
+     * 取提交代码（报告展开对比用），仅当前报告所属教师或管理员可看。
      */
     public List<CodePairSource> findCodes(Collection<Long> submissionIds) {
         SecurityUtils.requireTeacherOrAdmin();
+        if (submissionIds == null || submissionIds.isEmpty()) return List.of();
+        if (!SecurityUtils.isAdmin()) {
+            var reports = reportMapper.selectList(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<PlagiarismReport>()
+                    .in(PlagiarismReport::getSubmissionAId, submissionIds)
+                    .or().in(PlagiarismReport::getSubmissionBId, submissionIds));
+            java.util.Set<Long> allowed = new java.util.HashSet<>();
+            for (PlagiarismReport report : reports) {
+                boolean owns = report.getClassId() != null
+                        ? classQuery.findById(report.getClassId()).map(c -> SecurityUtils.getUserId().equals(c.teacherId())).orElse(false)
+                        : report.getContestId() != null && contestScheduleQuery.findById(report.getContestId())
+                                .map(c -> SecurityUtils.getUserId().equals(c.authorId())).orElse(false);
+                if (owns) {
+                    allowed.add(report.getSubmissionAId());
+                    allowed.add(report.getSubmissionBId());
+                }
+            }
+            if (!allowed.containsAll(submissionIds)) throw new ForbiddenException("无权限查看该提交代码");
+        }
         return submissionCodeQuery.findBySubmissionIds(submissionIds);
     }
 
@@ -182,11 +208,11 @@ public class PlagiarismService {
     public void updateReportStatus(Long id, String status) {
         SecurityUtils.requireTeacherOrAdmin();
         if (!STATUS_ALLOWED.contains(status)) {
-            throw new IllegalArgumentException("非法的报告状态: " + status);
+            throw new BusinessException(AnalyticsErrorCode.ANALYTICS_INPUT_INVALID, "非法的报告状态: " + status);
         }
         PlagiarismReport report = reportMapper.selectById(id);
         if (report == null) {
-            throw new IllegalArgumentException("报告不存在");
+            throw new BusinessException(AnalyticsErrorCode.REPORT_NOT_FOUND, "报告不存在");
         }
         if (report.getClassId() != null) {
             requireClassPermission(report.getClassId());

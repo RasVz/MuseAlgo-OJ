@@ -1,5 +1,8 @@
 package com.musealgo.oj.analytics.controller;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.common.exception.CommonErrorCode;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -30,7 +33,7 @@ public class WeaknessController {
             @RequestParam(defaultValue = "true") Boolean withAi) {
         Long userId = SecurityUtils.getUserId();
         if (userId == null) {
-            throw new ForbiddenException("请先登录");
+            throw new BusinessException(CommonErrorCode.AUTH_REQUIRED, "请先登录");
         }
         return Result.success(weaknessAnalysisService.analyze(userId, days, withAi));
     }

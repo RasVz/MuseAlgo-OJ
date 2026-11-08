@@ -1,5 +1,8 @@
 package com.musealgo.oj.community.controller;
 
+import com.musealgo.oj.common.exception.ErrorResponses;
+import com.musealgo.oj.common.exception.CommonErrorCode;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -44,14 +47,14 @@ public class UserFavoriteController {
             @RequestParam(defaultValue = "10") Integer size,
             @RequestParam(required = false) String keyword) {
         Long userId = SecurityUtils.getUserId();
-        if (userId == null) return Result.error(401, "请先登录");
+        if (userId == null) return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "请先登录");
         return Result.success(favorites.favoriteProblemLists(userId, page, size, keyword));
     }
 
     @GetMapping("/posts/list")
     public Result<List<Map<String, Object>>> getFavoritePosts(@RequestParam(defaultValue = "0") Integer type) {
         Long userId = SecurityUtils.getUserId();
-        if (userId == null) return Result.error(401, "请先登录");
+        if (userId == null) return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "请先登录");
         return Result.success(favorites.favoritePosts(userId, type));
     }
 
@@ -63,28 +66,25 @@ public class UserFavoriteController {
     @PostMapping("/add")
     public Result<String> addFavorite(@RequestBody Map<String, Object> params) {
         Result<Boolean> result = change(params, "activate");
-        return result.getCode() == 200 ? Result.success("收藏成功") : Result.error(result.getCode(), result.getMessage());
+        return result.getCode() == 200 ? Result.success("收藏成功") : ErrorResponses.copyFailure(result);
     }
 
     @PostMapping("/remove")
     public Result<String> removeFavorite(@RequestBody Map<String, Object> params) {
         Result<Boolean> result = change(params, "deactivate");
-        return result.getCode() == 200 ? Result.success("已取消收藏") : Result.error(result.getCode(), result.getMessage());
+        return result.getCode() == 200 ? Result.success("已取消收藏") : ErrorResponses.copyFailure(result);
     }
 
     @GetMapping("/batch-check")
     public Result<Map<Long, Boolean>> batchCheck(@RequestParam List<Long> targetIds, @RequestParam String type) {
-        try {
-            return Result.success(favorites.activeStates(SecurityUtils.getUserId(), FavoriteTargetType.from(type), targetIds));
-        } catch (IllegalArgumentException e) {
-            return Result.error(e.getMessage());
-        }
+        return Result.success(favorites.activeStates(SecurityUtils.getUserId(), FavoriteTargetType.from(type), targetIds));
+
     }
 
     @GetMapping("/counts")
     public Result<Map<String, Integer>> counts() {
         Long userId = SecurityUtils.getUserId();
-        if (userId == null) return Result.error(401, "请先登录");
+        if (userId == null) return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "请先登录");
         return Result.success(favorites.activeCounts(userId));
     }
 
@@ -104,17 +104,14 @@ public class UserFavoriteController {
 
     private Result<Boolean> change(Map<String, Object> params, String operation) {
         Long userId = SecurityUtils.getUserId();
-        if (userId == null) return Result.error(401, "请先登录");
-        try {
-            FavoriteCommand command = FavoriteCommand.from(userId, params);
-            boolean active = switch (operation) {
-                case "activate" -> favorites.activate(command);
-                case "deactivate" -> favorites.deactivate(command);
-                default -> favorites.toggle(command);
-            };
-            return Result.success(active);
-        } catch (IllegalArgumentException e) {
-            return Result.error(400, e.getMessage());
-        }
+        if (userId == null) return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "请先登录");
+        FavoriteCommand command = FavoriteCommand.from(userId, params);
+        boolean active = switch (operation) {
+            case "activate" -> favorites.activate(command);
+            case "deactivate" -> favorites.deactivate(command);
+            default -> favorites.toggle(command);
+        };
+        return Result.success(active);
+
     }
 }

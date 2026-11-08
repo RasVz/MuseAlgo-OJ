@@ -1,5 +1,6 @@
 <template>
   <div class="admin-lists admin-scroll-page">
+    <el-alert v-if="sortError" :title="sortError" type="error" :closable="false" show-icon />
     <div class="page-header">
       <div>
         <div class="page-title">官方题单管理</div>
@@ -46,7 +47,7 @@
               :class="{ active: selected && selected.id === row.id }"
               @click="selectRow(row)"
             >
-              <span v-if="!filterActive" class="drag-handle" @click.stop title="拖拽排序">
+              <span v-if="!filterActive && !savingSort" class="drag-handle" @click.stop title="拖拽排序">
                 <el-icon><Rank /></el-icon>
               </span>
               <div class="row-main">
@@ -57,7 +58,7 @@
               </div>
               <el-tooltip content="置顶" placement="top" :disabled="filterActive || visibleLists[0]?.id === row.id">
                 <span
-                  v-if="!filterActive && visibleLists[0]?.id !== row.id"
+                  v-if="!savingSort && !filterActive && visibleLists[0]?.id !== row.id"
                   class="pin-btn"
                   @click.stop="pinRow(row)"
                 >
@@ -140,6 +141,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // 官方题单管理：首页题单广场的官方题单维护入口，仅管理员可进入。
 //
 // 页面采用主从分栏：左栏一次拉全量题单（官方题单量级小），框内滚动 + 拖拽排序；
@@ -236,6 +239,7 @@ const selectRow = (row) => {
 const listBodyRef = ref(null)
 let sortableInstance = null
 const savingSort = ref(false)
+const sortError = ref('')
 
 // Sortable 实例挂在 DOM 上，不随组件卸载自动释放；离开页面前必须 destroy，
 // 否则残留的全局监听会在下次进入时对已销毁的节点继续响应。
@@ -252,12 +256,15 @@ const initSortable = () => {
   // 此时若照常重排会把错误的题单挪到前面，所以直接禁用拖拽。
   if (filterActive.value || !listBodyRef.value || visibleLists.value.length === 0) return
   sortableInstance = Sortable.create(listBodyRef.value, {
+    disabled: savingSort.value,
+    onMove: () => !savingSort.value,
     animation: 180,
     handle: '.drag-handle',
     ghostClass: 'sortable-ghost',
     chosenClass: 'sortable-chosen',
     dragClass: 'sortable-drag',
     onEnd: (evt) => {
+      if (savingSort.value) return
       const { oldIndex, newIndex } = evt
       if (oldIndex == null || newIndex == null || oldIndex === newIndex) return
       const arr = [...allLists.value]
@@ -272,31 +279,35 @@ const initSortable = () => {
 // 保存失败时重新拉全量来纠正顺序：本地内存里已经没有原始顺序可用，
 // 与其手动还原不如以服务端为准。
 const saveSort = async () => {
-  // savingSort 期间忽略新的排序请求：连续拖拽会产生并发写，后到的旧结果会覆盖新顺序。
   if (savingSort.value) return
   savingSort.value = true
+  sortError.value = ''
   try {
     const res = await updateProblemListSort({ type: 2, ids: allLists.value.map((r) => r.id) })
-    if (!isResultSuccess(res)) {
-      ElMessage.error(getResultMessage(res, '排序保存失败'))
-      fetchList()
-      return
-    }
+    if (!isResultSuccess(res)) throw new Error(getResultMessage(res, '排序保存失败'))
     ElMessage.success('排序已保存')
-  } catch {
-    ElMessage.error('排序保存失败，已恢复原顺序')
-    fetchList()
+  } catch (error) {
+    showApiError(error, '排序保存失败')
+    sortError.value = '排序未确认保存，已重新读取列表'
+    try { await fetchList() }
+    catch (reloadError) {
+      allLists.value = []
+      sortError.value = reloadError.message || '排序保存失败且列表刷新失败，请重试刷新列表'
+    }
   } finally {
     savingSort.value = false
   }
 }
 
 const pinRow = (row) => {
+  if (savingSort.value) return
   const arr = allLists.value.filter((r) => r.id !== row.id)
   arr.unshift(row)
   allLists.value = arr
   saveSort()
 }
+
+watch(savingSort, value => sortableInstance?.option('disabled', value))
 
 // 全量列表或筛选态变化时重建/销毁拖拽实例
 // Sortable 绑定的是渲染后的真实 DOM，而 v-for 复用节点、筛选还会改变子节点数量，

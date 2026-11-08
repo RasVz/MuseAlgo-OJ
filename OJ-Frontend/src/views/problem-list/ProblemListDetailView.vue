@@ -76,6 +76,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // 题单详情页（公开浏览视图）：概览与题目列表两个视图切换，支持收藏。
 // 「我已完成多少题」是本页最想传达的信息，所以完成数在拉题目时顺带统计，
 // 而不是让用户自己数——概览的环形进度条直接用它。
@@ -190,7 +192,7 @@ const fetchDetail = async () => {
     }
   } catch (error) {
     console.error(error)
-    ElMessage.error('获取数据失败')
+    showApiError(error, '获取数据失败')
   } finally {
     loading.value = false
   }
@@ -236,7 +238,7 @@ const handleFavorite = async () => {
     }
   } catch (error) {
     console.error(error)
-    ElMessage.error('操作失败，请重试')
+    showApiError(error, '操作失败，请重试')
   }
 }
 

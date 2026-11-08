@@ -67,6 +67,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 import { ref, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -74,6 +76,7 @@ import { Edit } from '@element-plus/icons-vue'
 import { getClassDirectory } from '@/api/class'
 import { getCoursewareDetail } from '@/api/courseware'
 import { getListProblems } from '@/api/problemList'
+import { normalizeCoursewareUrl } from '@/utils/coursewareUrl'
 import ProblemDetailView from '@/views/problem/ProblemDetailView.vue'
 import CourseDirectoryTree from './components/CourseDirectoryTree.vue'
 import PracticePanel from './components/PracticePanel.vue'
@@ -112,20 +115,15 @@ const findNodeById = (list, targetId) => {
 
 const resolveCoursewareUrl = (data) => {
   const raw = data?.url || data?.coursewareUrl || data?.fileUrl || data?.previewUrl || ''
-  if (!raw) return ''
+  const safeUrl = normalizeCoursewareUrl(raw)
+  if (!safeUrl) return ''
 
   // 腾讯文档等外部 http(s) 链接原样透传：不加防缓存参数，避免破坏第三方嵌入
-  if (/^https?:\/\//i.test(raw)) return raw
-
-  // 兼容相对路径
-  let url = raw
-  if (!/^https?:\/\//i.test(url) && !url.startsWith('/')) {
-    url = `/${url}`
-  }
+  if (/^https?:\/\//i.test(safeUrl)) return safeUrl
 
   // 避免浏览器缓存导致新课件不刷新
-  const sep = url.includes('?') ? '&' : '?'
-  return `${url}${sep}_t=${Date.now()}`
+  const sep = safeUrl.includes('?') ? '&' : '?'
+  return `${safeUrl}${sep}_t=${Date.now()}`
 }
 
 // 外部 http(s) 链接（腾讯文档嵌入）与站内 Slidev 课件分流
@@ -165,7 +163,7 @@ const initData = async () => {
     }
   } catch (e) {
     console.error('加载目录失败:', e)
-    ElMessage.error('加载课程目录失败')
+    showApiError(e, '加载课程目录失败')
   }
 }
 
@@ -240,7 +238,7 @@ const handleNodeClick = async (data, syncRoute = true) => {
     console.error('加载课件失败:', e)
     currentCourseware.value = { title: '', url: '' }
     problemList.value = []
-    ElMessage.error('加载课件失败')
+    showApiError(e, '加载课件失败')
   }
 }
 

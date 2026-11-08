@@ -47,7 +47,7 @@ class FpsImportServiceTest {
         assertThat(result.failed()).isEqualTo(1);
         assertThat(result.items()).containsExactly(
                 FpsImportItemResult.success(1, "Accepted", 101L, 1),
-                FpsImportItemResult.failure(2, "Rejected", "数据库拒绝该题")
+                FpsImportItemResult.failure(2, "Rejected", "处理失败，请稍后重试或联系管理员")
         );
     }
 
@@ -98,6 +98,57 @@ class FpsImportServiceTest {
         assertThat(result.succeeded()).isEqualTo(1);
         assertThat(result.items().get(0).title()).isEqualTo("Zipped");
         assertThat(result.items().get(0).problemId()).isEqualTo(103L);
+    }
+
+    @Test
+    void importsFpsXmlWhenArchiveContainsAnEmptyDirectoryEntry() throws IOException {
+        String xml = """
+                <fps><item><title>After empty directory</title>
+                  <test_input>1</test_input><test_output>1</test_output>
+                </item></fps>
+                """;
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        try (ZipOutputStream zip = new ZipOutputStream(bytes)) {
+            zip.putNextEntry(new ZipEntry("empty/"));
+            zip.closeEntry();
+            zip.putNextEntry(new ZipEntry("problemset.xml"));
+            zip.write(xml.getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+        }
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "problemset.zip", "application/zip", bytes.toByteArray());
+        ProblemManagementApplicationService problemManagement = mock(ProblemManagementApplicationService.class);
+        when(problemManagement.createFromFps(any(FpsProblem.class), eq(7L))).thenReturn(105L);
+
+        FpsImportResult result = new FpsImportService(new FpsProblemSetParser(), problemManagement)
+                .importFile(file, 7L);
+
+        assertThat(result.succeeded()).isEqualTo(1);
+        assertThat(result.items().get(0).title()).isEqualTo("After empty directory");
+        assertThat(result.items().get(0).problemId()).isEqualTo(105L);
+    }
+
+    @Test
+    void rejectsDirectoryZipEntriesThatContainData() throws IOException {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        try (ZipOutputStream zip = new ZipOutputStream(bytes)) {
+            zip.putNextEntry(new ZipEntry("payload/"));
+            zip.write("unexpected directory payload".getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+            zip.putNextEntry(new ZipEntry("problemset.xml"));
+            zip.write("<fps><item><title>Should not import</title></item></fps>"
+                    .getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+        }
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "directory-payload.zip", "application/zip", bytes.toByteArray());
+
+        FpsImportService service = new FpsImportService(
+                new FpsProblemSetParser(), mock(ProblemManagementApplicationService.class));
+
+        assertThatThrownBy(() -> service.importFile(file, 7L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("ZIP 目录条目不能包含数据");
     }
 
     @Test

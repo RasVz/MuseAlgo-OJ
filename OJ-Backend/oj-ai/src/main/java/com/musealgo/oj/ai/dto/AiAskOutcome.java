@@ -1,37 +1,28 @@
 package com.musealgo.oj.ai.dto;
 
-import com.musealgo.oj.ai.dto.AiCallSource;
-import com.musealgo.oj.ai.dto.AiTokenUsage;
-
-/**
- * 一次 AI 答疑请求的结构化结果（Controller 据此记录用量流水）。
- *
- * @param status     SUCCESS / FAIL / QUOTA_REJECTED / CONTEST_BLOCKED
- * @param answer     完整回答文本（被拦截/拒载时为降级文案；失败时为 null）
- * @param usage      API 返回的 token 用量，可能为 null（调用方退化为字符估算）
- * @param promptText 实际发送的提示词快照（估算 token 用；不持久化原文）
- * @param source     本次请求实际使用的服务/模型/配置版本；未调用模型时可为 null
- */
+/** Stream outcome and accounting context; problemId is resolved by the application service. */
 public record AiAskOutcome(String status, String answer, AiTokenUsage usage,
-                           String promptText, AiCallSource source) {
-
+                           String promptText, AiCallSource source, String errorType, Long problemId) {
+    public AiAskOutcome(String status, String answer, AiTokenUsage usage, String promptText, AiCallSource source) {
+        this(status, answer, usage, promptText, source, null, null);
+    }
+    public AiAskOutcome(String status, String answer, AiTokenUsage usage, String promptText, AiCallSource source, String errorType) {
+        this(status, answer, usage, promptText, source, errorType, null);
+    }
+    public AiAskOutcome withProblemId(Long id) {
+        return new AiAskOutcome(status, answer, usage, promptText, source, errorType, id);
+    }
     public static AiAskOutcome success(String answer, AiTokenUsage usage, String promptText) {
         return success(answer, usage, promptText, null);
     }
-
-    public static AiAskOutcome success(String answer, AiTokenUsage usage,
-                                       String promptText, AiCallSource source) {
+    public static AiAskOutcome success(String answer, AiTokenUsage usage, String promptText, AiCallSource source) {
         return new AiAskOutcome("SUCCESS", answer, usage, promptText, source);
     }
-
-    public static AiAskOutcome fail(String promptText) {
-        return fail(promptText, null);
+    public static AiAskOutcome fail(String promptText) { return fail(promptText, null); }
+    public static AiAskOutcome fail(String promptText, AiCallSource source) { return fail(promptText, source, null); }
+    public static AiAskOutcome fail(String promptText, AiCallSource source, String errorType) {
+        return new AiAskOutcome("FAIL", null, null, promptText, source, errorType);
     }
-
-    public static AiAskOutcome fail(String promptText, AiCallSource source) {
-        return new AiAskOutcome("FAIL", null, null, promptText, source);
-    }
-
     public static AiAskOutcome blocked(String status, String notice) {
         return new AiAskOutcome(status, notice, null, "", null);
     }

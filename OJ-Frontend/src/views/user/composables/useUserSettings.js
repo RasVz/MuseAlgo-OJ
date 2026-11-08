@@ -1,3 +1,5 @@
+
+import { showApiError } from '@/utils/errorFeedback'
 import { reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
@@ -165,7 +167,7 @@ export function useUserSettings() {
       }
     } catch (error) {
       console.error('获取个人资料失败', error)
-      ElMessage.error('获取个人资料失败')
+      showApiError(error, '获取个人资料失败')
     }
 
     try {
@@ -177,7 +179,7 @@ export function useUserSettings() {
       }
     } catch (error) {
       console.error('获取偏好设置失败', error)
-      ElMessage.error('获取偏好设置失败')
+      showApiError(error, '获取偏好设置失败')
     }
   }
 
@@ -231,7 +233,7 @@ export function useUserSettings() {
     } catch (error) {
       form.avatar = oldAvatar
       console.error('头像上传失败', error)
-      ElMessage.error('头像上传失败')
+      showApiError(error, '头像上传失败')
     } finally {
       avatarUploading.value = false
     }
@@ -261,7 +263,7 @@ export function useUserSettings() {
       }
     } catch (error) {
       console.error('个人资料更新失败', error)
-      ElMessage.error('个人资料更新失败')
+      showApiError(error, '个人资料更新失败')
     } finally {
       loading.value = false
     }
@@ -291,7 +293,7 @@ export function useUserSettings() {
       }, 800)
     } catch (error) {
       console.error('密码修改失败', error)
-      ElMessage.error('密码修改失败')
+      showApiError(error, '密码修改失败')
     }
   }
 
@@ -315,7 +317,7 @@ export function useUserSettings() {
       }
     } catch (error) {
       console.error('邮箱保存失败', error)
-      ElMessage.error('邮箱保存失败')
+      showApiError(error, '邮箱保存失败')
     } finally {
       emailSaving.value = false
     }
@@ -343,7 +345,7 @@ export function useUserSettings() {
       }
     } catch (error) {
       console.error('偏好设置保存失败', error)
-      ElMessage.error('偏好设置保存失败')
+      showApiError(error, '偏好设置保存失败')
     } finally {
       prefLoading.value = false
     }

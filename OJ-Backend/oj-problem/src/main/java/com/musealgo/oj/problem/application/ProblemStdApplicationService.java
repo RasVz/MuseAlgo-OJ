@@ -1,5 +1,8 @@
 package com.musealgo.oj.problem.application;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.problem.error.ProblemErrorCode;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.musealgo.oj.problem.entity.Problem;
@@ -54,7 +57,7 @@ public class ProblemStdApplicationService {
     @Transactional(rollbackFor = Exception.class)
     public void saveStdTested(Long problemId, String code, String explanation, String expectFingerprint) {
         if (code == null || code.trim().isEmpty()) {
-            throw new IllegalArgumentException("标准答案代码不能为空");
+            throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "标准答案代码不能为空");
         }
         // 先加锁再读：加锁后不会再有用例写入口提交改动，锁定读保证读到的是最新已提交数据
         String currentFingerprint = caseApplicationService.lockProblemRowThenFingerprint(problemId);
@@ -74,7 +77,7 @@ public class ProblemStdApplicationService {
     private void saveStdInternal(Long problemId, String code, String explanation, int tested) {
         accessGuard.requireManagedProblem(problemId);
         if (code == null || code.trim().isEmpty()) {
-            throw new IllegalArgumentException("标准答案代码不能为空");
+            throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "标准答案代码不能为空");
         }
         if (!problemService.updateStd(problemId, code, explanation == null ? "" : explanation, tested)) {
             throw new IllegalStateException("标准答案保存失败");
@@ -115,7 +118,7 @@ public class ProblemStdApplicationService {
         caseApplicationService.lockProblemRow(problemId);
         accessGuard.requireManagedProblem(problemId);
         if (code == null || code.trim().isEmpty()) {
-            throw new IllegalArgumentException("标准答案代码不能为空");
+            throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "标准答案代码不能为空");
         }
         if (!problemService.updateStd(problemId, code, explanation == null ? "" : explanation, 0)) {
             throw new IllegalStateException("标准答案保存失败");

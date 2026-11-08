@@ -55,6 +55,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // 某题的题解列表：支持排序、翻页与"有帮助"标记。
 // 写题解入口通过 URL query 带上 problemId 与 type=2，新建后会自动关联到这道题。
 import { onMounted, ref } from 'vue'
@@ -97,7 +99,7 @@ const toggleHelpful = async (solution) => {
     solution.isLiked = Boolean(res.data.isLiked)
     solution.likes = Number(res.data.likeCount || 0)
   } catch (error) {
-    ElMessage.error(error.message || '操作失败，请稍后重试')
+    showApiError(error, error.message || '操作失败，请稍后重试')
   }
 }
 

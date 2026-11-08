@@ -9,6 +9,10 @@ import com.musealgo.oj.teaching.entity.Class;
  * 班级表 服务类
  */
 public interface ClassService extends IService<Class> {
+    Class getByIdForUpdate(Long id);
+    void refreshStudentCount(Long id);
+    java.util.Map<Long,Long> studentCounts(java.util.List<Long> ids);
+
     boolean createClass(Class classGroup);
 
     String createInviteCode(Long classId);

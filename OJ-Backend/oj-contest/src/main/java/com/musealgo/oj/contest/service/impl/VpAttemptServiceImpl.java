@@ -1,5 +1,8 @@
 package com.musealgo.oj.contest.service.impl;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.contest.error.ContestErrorCode;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -8,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.musealgo.oj.api.problem.ProblemQuery;
 import com.musealgo.oj.api.submission.ContestVpQuery;
 import com.musealgo.oj.contest.entity.Contest;
+import com.musealgo.oj.contest.application.ContestAccessPolicy;
 import com.musealgo.oj.contest.entity.ContestRank;
 import com.musealgo.oj.contest.entity.VpAttempt;
 import com.musealgo.oj.contest.entity.vo.CorrectionVO;
@@ -87,12 +91,13 @@ public class VpAttemptServiceImpl implements VpAttemptService {
         // 否则并发点击会创建出两个并行会话，等于凭空多给一份时长
         Contest contest = contestService.getByIdForUpdate(contestId);
         if (contest == null) {
-            throw new IllegalArgumentException("比赛不存在");
+            throw new BusinessException(ContestErrorCode.CONTEST_NOT_FOUND, "比赛不存在");
         }
+        ContestAccessPolicy.requireReadable(contest);
         LocalDateTime now = LocalDateTime.now();
         // 边界取「now < endTime 即未结束」：恰好在结束时刻发起 VP 应当放行
         if (contest.getEndTime() == null || now.isBefore(contest.getEndTime())) {
-            throw new IllegalStateException("比赛进行中或未开始，暂不能虚拟参赛");
+            throw new BusinessException(ContestErrorCode.CONTEST_VP_NOT_AVAILABLE, "比赛进行中或未开始，暂不能虚拟参赛");
         }
         VpAttempt running = findRunning(contestId, userId);
         if (running != null) {
@@ -303,6 +308,7 @@ public class VpAttemptServiceImpl implements VpAttemptService {
         if (contest == null || contest.getEndTime() == null) {
             return List.of();
         }
+        ContestAccessPolicy.requireReadable(contest);
         List<Long> problemIds = problemContestMapper.selectList(
                         new LambdaQueryWrapper<com.musealgo.oj.contest.entity.ProblemContest>()
                                 .select(com.musealgo.oj.contest.entity.ProblemContest::getProblemId)

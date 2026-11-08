@@ -18,8 +18,13 @@ public record FpsImportItemResult(
         Long problemId,
         int testCaseCount,
         boolean success,
-        String message
+        String message,
+        @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL) String errorCode
 ) {
+    public FpsImportItemResult(int position, String title, Long problemId, int testCaseCount, boolean success, String message) {
+        this(position, title, problemId, testCaseCount, success, message, null);
+    }
+
     public static FpsImportItemResult success(int position, String title, Long problemId, int testCaseCount) {
         return new FpsImportItemResult(position, title, problemId, testCaseCount, true, "导入成功");
     }
@@ -30,6 +35,10 @@ public record FpsImportItemResult(
     }
 
     public static FpsImportItemResult failure(int position, String title, String message) {
-        return new FpsImportItemResult(position, title, null, 0, false, message);
+        return failure(position, title, message, "INTERNAL_ERROR");
+    }
+
+    public static FpsImportItemResult failure(int position, String title, String message, String errorCode) {
+        return new FpsImportItemResult(position, title, null, 0, false, message, errorCode);
     }
 }

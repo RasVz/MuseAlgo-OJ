@@ -1,5 +1,8 @@
 package com.musealgo.oj.problem.application;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.problem.error.ProblemErrorCode;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.springframework.stereotype.Service;
 import com.musealgo.oj.problem.entity.ProblemSample;
@@ -33,7 +36,7 @@ public class ProblemSampleApplicationService {
         problemSampleService.remove(new LambdaQueryWrapper<ProblemSample>()
                 .eq(ProblemSample::getProblemId, problemId));
         if (samples == null || samples.isEmpty()) return;
-        if (samples.size() > 50) throw new IllegalArgumentException("样例数量超过 50 组，请人工整理");
+        if (samples.size() > 50) throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "样例数量超过 50 组，请人工整理");
         List<ProblemSample> rows = new ArrayList<>(samples.size());
         for (int index = 0; index < samples.size(); index++) {
             ProblemSample sample = samples.get(index);
@@ -55,7 +58,7 @@ public class ProblemSampleApplicationService {
                     .eq(ProblemSample::getProblemId, problemId));
             return;
         }
-        if (samples.size() > 50) throw new IllegalArgumentException("样例数量超过 50 组，请人工整理");
+        if (samples.size() > 50) throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "样例数量超过 50 组，请人工整理");
         List<ProblemSample> rows = new ArrayList<>(samples.size());
         for (int index = 0; index < samples.size(); index++) {
             FormatSample sample = samples.get(index);

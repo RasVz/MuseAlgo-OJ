@@ -65,27 +65,26 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     @Override
     @Transactional(rollbackFor = Exception.class)
     public boolean register(User user) {
-        // 1. 密码加密 (这一步你已经写了)
+        // Registration accepts account fields, not database identity or progress.
         String encodedPassword = passwordEncoder.encode(user.getPassword());
-        user.setPassword(encodedPassword);
-
-        // 2. 设置默认信息
-        // 默认角色：1-学生
-        user.setRole((byte) 1);
-
-        // 默认头像 (可选，可以先给个默认图，或者留空)
-        // user.setAvatar("https://默认头像地址...");
-
-        // 3. 最终落库 (调用 MyBatis-Plus 的 save 方法)
-        if (!this.save(user)) {
+        User registration = new User();
+        registration.setUsername(user.getUsername());
+        registration.setNickname(user.getNickname());
+        registration.setEmail(user.getEmail());
+        registration.setPassword(encodedPassword);
+        registration.setRole((byte) 1);
+        if (!this.save(registration)) {
             return false;
         }
         // 4. 规范化 RBAC 模式下同步角色关联；否则新账号在 sys_user_role 无映射，
         //    会被 fail-closed 判为无权限（而不是被 legacy 回退兜底）。
         //    关联写不进去说明参考数据缺失/库异常，直接回滚注册，避免产生无权限的孤儿账号。
-        if (normalizedRbacEnabled && !syncNormalizedRole(user.getId(), user.getRole())) {
+        if (normalizedRbacEnabled && !syncNormalizedRole(registration.getId(), registration.getRole())) {
             throw new IllegalStateException("注册失败：规范化权限关联未能建立");
         }
+        user.setId(registration.getId());
+        user.setRole(registration.getRole());
+        user.setPassword(encodedPassword);
         return true;
     }
 
@@ -96,6 +95,14 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             return false;
         }
 
+        if (java.util.stream.Stream.of(user.getNickname(), user.getRealName(), user.getAvatar(),
+                user.getMotto(), user.getSchool(), user.getMajor()).allMatch(java.util.Objects::isNull)
+                && (user.getEmail() == null || user.getEmail().isBlank())) {
+            return true;
+        }
+        // Only write profile fields, never the security state from this SELECT.
+        dbUser = new User();
+        dbUser.setId(userId);
         dbUser.setNickname(user.getNickname());
         dbUser.setRealName(user.getRealName());
         dbUser.setAvatar(user.getAvatar());
@@ -121,8 +128,15 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             return false;
         }
 
-        dbUser.setPassword(passwordEncoder.encode(newPassword));
-        return this.updateById(dbUser);
+        return baseMapper.changePasswordIfUnchanged(userId, dbUser.getPassword(), passwordEncoder.encode(newPassword)) == 1;
+    }
+
+    @Override
+    public boolean updatePassword(Long userId, String encodedPassword) {
+        if (userId == null || encodedPassword == null || encodedPassword.isBlank()) {
+            return false;
+        }
+        return baseMapper.updatePasswordAndIncrementCredentialVersion(userId, encodedPassword) == 1;
     }
 
     @Override
@@ -138,6 +152,11 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             return false;
         }
 
+        if (preferences == null) {
+            return true;
+        }
+        dbUser = new User();
+        dbUser.setId(userId);
         dbUser.setPreferences(preferences);
         return this.updateById(dbUser);
     }

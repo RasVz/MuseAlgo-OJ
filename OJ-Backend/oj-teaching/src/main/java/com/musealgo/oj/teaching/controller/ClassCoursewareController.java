@@ -1,5 +1,12 @@
 package com.musealgo.oj.teaching.controller;
 
+import com.musealgo.oj.common.utils.RequestValues;
+
+import com.musealgo.oj.common.exception.ErrorResponses;
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.common.exception.CommonErrorCode;
+import com.musealgo.oj.teaching.error.TeachingErrorCode;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import lombok.RequiredArgsConstructor;
@@ -36,7 +43,7 @@ public class ClassCoursewareController {
     private void requireRelationManager(Long id) {
         com.musealgo.oj.common.utils.SecurityUtils.requireTeacherOrAdmin();
         ClassCourseware relation = classCoursewareService.getById(id);
-        if (relation == null) throw new IllegalArgumentException("班级课件不存在");
+        if (relation == null) throw new BusinessException(TeachingErrorCode.CLASS_COURSEWARE_NOT_FOUND, "班级课件不存在");
         membership.requireClassManager(relation.getClassId());
     }
 
@@ -124,14 +131,14 @@ public class ClassCoursewareController {
     public Result<?> addCoursewareToClass(@RequestBody Map<String, Object> params) {
         try {
             classCoursewareService.addCoursewareToClass(
-                    Long.valueOf(params.get("classId").toString()),
+                    RequestValues.longValue(params.get("classId"), "classId"),
                     (String) params.get("title"),
                     (String) params.get("url"),
-                    params.get("problemListId") != null ? Long.valueOf(params.get("problemListId").toString()) : null,
+                    params.get("problemListId") != null ? RequestValues.longValue(params.get("problemListId"), "problemListId") : null,
                     (String) params.get("description"));
             return Result.success("添加成功");
         } catch (IllegalStateException e) {
-            return Result.error(e.getMessage());
+            throw e;
         }
     }
 
@@ -142,8 +149,8 @@ public class ClassCoursewareController {
     @AuditLog(module = "class", action = "update_class_courseware")
     @PostMapping("/update")
     public Result<?> updateClassCourseware(@RequestBody Map<String, Object> params) {
-        requireRelationManager(Long.valueOf(params.get("id").toString()));
-        Long id = Long.valueOf(params.get("id").toString());
+        requireRelationManager(RequestValues.longValue(params.get("id"), "id"));
+        Long id = RequestValues.longValue(params.get("id"), "id");
 
         LambdaUpdateWrapper<ClassCourseware> updateWrapper = new LambdaUpdateWrapper<>();
         updateWrapper.eq(ClassCourseware::getId, id);
@@ -156,12 +163,12 @@ public class ClassCoursewareController {
 
         // 更新排序
         if (params.containsKey("sort")) {
-            Integer sort = Integer.valueOf(params.get("sort").toString());
+            Integer sort = RequestValues.intValue(params.get("sort"), "sort");
             updateWrapper.set(ClassCourseware::getSort, sort);
         }
 
         boolean success = classCoursewareService.update(updateWrapper);
-        return success ? Result.success("更新成功") : Result.error("更新失败");
+        return success ? Result.success("更新成功") : ErrorResponses.failure(CommonErrorCode.INTERNAL_ERROR, "更新失败");
     }
 
     /**
@@ -173,15 +180,15 @@ public class ClassCoursewareController {
     @PostMapping("/update-sort-batch")
     @Transactional
     public Result<?> updateSortBatch(@RequestBody List<Map<String, Object>> sortList) {
-        for (Map<String, Object> item : sortList) requireRelationManager(Long.valueOf(item.get("id").toString()));
+        for (Map<String, Object> item : sortList) requireRelationManager(RequestValues.longValue(item.get("id"), "id"));
         for (Map<String, Object> item : sortList) {
-            Long id = Long.valueOf(item.get("id").toString());
-            Integer sort = Integer.valueOf(item.get("sort").toString());
+            Long id = RequestValues.longValue(item.get("id"), "id");
+            Integer sort = RequestValues.intValue(item.get("sort"), "sort");
 
             LambdaUpdateWrapper<ClassCourseware> updateWrapper = new LambdaUpdateWrapper<>();
             updateWrapper.eq(ClassCourseware::getId, id)
                     .set(ClassCourseware::getSort, sort);
-            classCoursewareService.update(updateWrapper);
+            if (!classCoursewareService.update(updateWrapper)) throw new IllegalStateException("班级课件排序更新失败");
         }
         return Result.success("排序更新成功");
     }
@@ -195,6 +202,6 @@ public class ClassCoursewareController {
     public Result<?> removeCoursewareFromClass(@PathVariable Long id) {
         requireRelationManager(id);
         boolean success = classCoursewareService.removeById(id);
-        return success ? Result.success("移除成功") : Result.error("移除失败");
+        return success ? Result.success("移除成功") : ErrorResponses.failure(CommonErrorCode.INTERNAL_ERROR, "移除失败");
     }
 }

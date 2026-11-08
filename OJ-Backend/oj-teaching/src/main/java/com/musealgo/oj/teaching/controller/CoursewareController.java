@@ -1,5 +1,9 @@
 package com.musealgo.oj.teaching.controller;
 
+import com.musealgo.oj.common.exception.ErrorResponses;
+import com.musealgo.oj.common.exception.CommonErrorCode;
+import com.musealgo.oj.teaching.error.TeachingErrorCode;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
@@ -10,6 +14,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import com.musealgo.oj.common.api.Result;
 import com.musealgo.oj.common.annotation.AuditLog;
 import com.musealgo.oj.common.utils.SecurityUtils;
@@ -87,10 +93,12 @@ public class CoursewareController {
     // === 1. 获取课件详情 ===
     @Operation(summary = "课件详情")
     @GetMapping("/{id}")
-    public Result<Courseware> getDetail(@PathVariable Long id) {
+    public Result<Courseware> getDetail(@PathVariable Long id,
+                                        HttpServletRequest request,
+                                        HttpServletResponse response) {
         Courseware courseware = coursewareService.getById(id);
         if (courseware == null) {
-            return Result.error("课件不存在");
+            return ErrorResponses.failure(TeachingErrorCode.COURSEWARE_NOT_FOUND, "课件不存在");
         }
         // 私有课件越权防护（P1 遗留新债修复）：
         // 公开课件（privacy=1）所有人可看；私有课件仅 owner / 管理员 / 班级内学习者可看
@@ -101,11 +109,58 @@ public class CoursewareController {
                 boolean inClass = userId != null
                         && classCoursewareService.isVisibleForMember(courseware.getId(), userId);
                 if (!inClass) {
-                    return Result.error(403, "无权查看该课件");
+                    return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "无权查看该课件");
                 }
             }
+            issueStaticResourceCredentials(courseware, request, response);
+            response.setHeader("Cache-Control", "private, no-store");
         }
         return Result.success(courseware);
+    }
+
+    /**
+     * Iframes and Slidev's relative assets cannot carry axios' Authorization header.
+     * Reuse the already-validated access token in cookies scoped to this output directory;
+     * the JWT filter validates it again on every static request.
+     */
+    private static void issueStaticResourceCredentials(Courseware courseware,
+                                                        HttpServletRequest request,
+                                                        HttpServletResponse response) {
+        String authorization = request.getHeader("Authorization");
+        if (authorization == null || !authorization.startsWith("Bearer ") || courseware.getUrl() == null) {
+            return;
+        }
+        String path;
+        try {
+            path = java.net.URI.create(courseware.getUrl()).getPath();
+        } catch (IllegalArgumentException invalidUrl) {
+            return;
+        }
+        String directory = outputDirectory(path);
+        if (directory == null) return;
+
+        String token = authorization.substring("Bearer ".length());
+        addCoursewareCookie(response, token, "/coursewares/" + directory + "/", request.isSecure());
+        addCoursewareCookie(response, token, "/api/coursewares/" + directory + "/", request.isSecure());
+    }
+
+    private static String outputDirectory(String path) {
+        for (String prefix : List.of("/coursewares/", "/api/coursewares/")) {
+            if (!path.startsWith(prefix)) continue;
+            String remainder = path.substring(prefix.length());
+            int separator = remainder.indexOf('/');
+            if (separator <= 0) return null;
+            String directory = remainder.substring(0, separator);
+            return directory.matches("[0-9a-fA-F]{32}") ? directory : null;
+        }
+        return null;
+    }
+
+    private static void addCoursewareCookie(HttpServletResponse response, String token,
+                                            String path, boolean secure) {
+        String cookie = "courseware_access=" + token + "; Max-Age=10800; Path=" + path
+                + "; HttpOnly; SameSite=Strict" + (secure ? "; Secure" : "");
+        response.addHeader("Set-Cookie", cookie);
     }
 
     // === 2. 获取课件列表 (支持 "只看我的" 筛选) ===
@@ -130,7 +185,7 @@ public class CoursewareController {
         // 权限/筛选逻辑
         if (Boolean.TRUE.equals(onlyMine)) {
             // 只看我的
-            if (currentUserId == null) return Result.error("未登录");
+            if (currentUserId == null) return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "未登录");
             wrapper.eq(Courseware::getTeacherId, currentUserId);
         } else {
             // 看全部：(公开的) OR (我自己创建的私有课件)
@@ -199,12 +254,22 @@ public class CoursewareController {
     public Result<String> add(@RequestBody Courseware courseware) {
         SecurityUtils.requireTeacherOrAdmin();
         Long userId = getCurrentUserId();
-        if (userId == null) return Result.error("未登录");
+        if (userId == null) return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "未登录");
 
-        courseware.setTeacherId(userId);
-
-        boolean saved = coursewareService.save(courseware);
-        return saved ? Result.success("创建成功") : Result.error("创建失败");
+        String safeUrl = normalizeCoursewareUrl(courseware.getUrl());
+        if (safeUrl == null) return ErrorResponses.failure(TeachingErrorCode.TEACHING_INPUT_INVALID, "课件地址无效");
+        Courseware created = new Courseware();
+        created.setTeacherId(userId);
+        created.setTitle(courseware.getTitle());
+        created.setUrl(safeUrl);
+        created.setType(courseware.getType());
+        created.setProblemListId(courseware.getProblemListId());
+        created.setContent(courseware.getContent());
+        created.setDescription(courseware.getDescription());
+        created.setPrivacy(courseware.getPrivacy());
+        created.setIsDeleted(0);
+        boolean saved = coursewareService.save(created);
+        return saved ? Result.success("创建成功") : ErrorResponses.failure(CommonErrorCode.INTERNAL_ERROR, "创建失败");
     }
 
     // === 4. 更新课件 ===
@@ -213,18 +278,49 @@ public class CoursewareController {
     @PostMapping("/update")
     public Result<String> update(@RequestBody Courseware courseware) {
         SecurityUtils.requireTeacherOrAdmin();
-        if (courseware.getId() == null) return Result.error("ID不能为空");
+        if (courseware.getId() == null) return ErrorResponses.failure(TeachingErrorCode.TEACHING_INPUT_INVALID, "ID不能为空");
 
         Courseware existing = coursewareService.getById(courseware.getId());
-        if (existing == null) return Result.error("课件不存在");
+        if (existing == null) return ErrorResponses.failure(TeachingErrorCode.COURSEWARE_NOT_FOUND, "课件不存在");
         // 越权防护：仅课件创建者或管理员可更新（P1 技术债修复）
         SecurityUtils.requireOwnerOrAdmin(existing.getTeacherId());
+
+        if (courseware.getUrl() != null) {
+            String safeUrl = normalizeCoursewareUrl(courseware.getUrl());
+            if (safeUrl == null) return ErrorResponses.failure(TeachingErrorCode.TEACHING_INPUT_INVALID, "课件地址无效");
+            courseware.setUrl(safeUrl);
+        }
 
         // 防篡改：teacherId 只能由后端维护，不接受请求体覆盖
         courseware.setTeacherId(null);
 
         boolean updated = coursewareService.updateById(courseware);
-        return updated ? Result.success("更新成功") : Result.error("更新失败");
+        return updated ? Result.success("更新成功") : ErrorResponses.failure(CommonErrorCode.INTERNAL_ERROR, "更新失败");
+    }
+
+    static String normalizeCoursewareUrl(String value) {
+        if (!StringUtils.hasText(value)) return null;
+        String candidate = value.trim();
+        if (candidate.startsWith("//") || candidate.indexOf('\\') >= 0
+                || candidate.chars().anyMatch(ch -> ch < 0x20 || ch == 0x7f)) {
+            return null;
+        }
+
+        try {
+            java.net.URI uri = java.net.URI.create(candidate);
+            String scheme = uri.getScheme();
+            if (scheme != null) {
+                if (!("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))
+                        || uri.getHost() == null) {
+                    return null;
+                }
+            } else if (uri.getRawAuthority() != null || !org.springframework.util.StringUtils.hasText(uri.getPath())) {
+                return null;
+            }
+            return candidate;
+        } catch (IllegalArgumentException invalidUrl) {
+            return null;
+        }
     }
 
     // === 5. 删除课件 ===
@@ -234,12 +330,12 @@ public class CoursewareController {
     public Result<String> delete(@PathVariable Long id) {
         SecurityUtils.requireTeacherOrAdmin();
         Courseware existing = coursewareService.getById(id);
-        if (existing == null) return Result.error("课件不存在");
+        if (existing == null) return ErrorResponses.failure(TeachingErrorCode.COURSEWARE_NOT_FOUND, "课件不存在");
         // 越权防护：仅课件创建者或管理员可删除（P1 技术债修复）
         SecurityUtils.requireOwnerOrAdmin(existing.getTeacherId());
 
         boolean removed = coursewareService.removeById(id);
-        return removed ? Result.success("删除成功") : Result.error("删除失败");
+        return removed ? Result.success("删除成功") : ErrorResponses.failure(CommonErrorCode.INTERNAL_ERROR, "删除失败");
     }
 
     private final SlidevBuilderService slidevBuilderService;
@@ -256,7 +352,7 @@ public class CoursewareController {
         // 校验一下是不是 md 文件
         String filename = file.getOriginalFilename();
         if (filename == null || !filename.toLowerCase().endsWith(".md")) {
-            return Result.error("请上传 .md 格式的 Markdown 文件");
+            return ErrorResponses.failure(TeachingErrorCode.TEACHING_INPUT_INVALID, "请上传 .md 格式的 Markdown 文件");
         }
 
         try {
@@ -264,9 +360,11 @@ public class CoursewareController {
             String presentationUrl = slidevBuilderService.buildPresentation(file);
 
             return Result.success("课件生成成功！", presentationUrl);
+        } catch (com.musealgo.oj.common.exception.BusinessException rejected) {
+            throw rejected;
         } catch (Exception e) {
             log.error("课件生成失败", e);
-            return Result.error("课件生成失败，请检查课件内容或联系管理员");
+            return ErrorResponses.failure(CommonErrorCode.INTERNAL_ERROR, "课件生成失败，请检查课件内容或联系管理员");
         }
     }
 }

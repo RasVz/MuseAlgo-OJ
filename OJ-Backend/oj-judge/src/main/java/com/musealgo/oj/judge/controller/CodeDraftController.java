@@ -1,5 +1,9 @@
 package com.musealgo.oj.judge.controller;
 
+import com.musealgo.oj.common.exception.ErrorResponses;
+import com.musealgo.oj.common.exception.CommonErrorCode;
+import com.musealgo.oj.judge.error.JudgeErrorCode;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 import com.musealgo.oj.common.api.Result;
@@ -56,7 +60,7 @@ public class CodeDraftController {
 
         // 参数校验
         if (draftReq.getProblemId() == null || draftReq.getLanguage() == null) {
-            return Result.error("参数不完整");
+            return ErrorResponses.failure(JudgeErrorCode.JUDGE_INPUT_INVALID, "参数不完整");
         }
 
         boolean success = draftService.saveOrUpdateDraft(userId, draftReq.getProblemId(), draftReq.getLanguage(), draftReq.getCode());
@@ -64,7 +68,7 @@ public class CodeDraftController {
         if (success) {
             return Result.success("保存成功");
         } else {
-            return Result.error("保存失败");
+            return ErrorResponses.failure(CommonErrorCode.INTERNAL_ERROR, "保存失败");
         }
     }
 }

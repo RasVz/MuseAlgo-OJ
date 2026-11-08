@@ -106,7 +106,7 @@ class ProblemCaseZipImportTest {
                 new String[]{"2.out", "two"}));
 
         assertThatThrownBy(() -> service.importCasesFromZip(file(archive, "broken.zip"), PROBLEM_ID))
-                .isInstanceOf(IllegalArgumentException.class)
+                .isInstanceOf(com.musealgo.oj.common.exception.BusinessException.class)
                 .hasMessageContaining("未找到成对");
 
         verify(problemCaseMapper, never()).delete(any());
@@ -123,7 +123,7 @@ class ProblemCaseZipImportTest {
         }
 
         assertThatThrownBy(() -> service.importCasesFromZip(file(zip(entries), "huge.zip"), PROBLEM_ID))
-                .isInstanceOf(IllegalArgumentException.class)
+                .isInstanceOf(com.musealgo.oj.common.exception.BusinessException.class)
                 .hasMessageContaining("上限");
 
         verify(problemCaseMapper, never()).delete(any());

@@ -133,6 +133,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // AI 命题工具（教师）：输入命题要求与知识点，由 AI 生成题面并落库为题目。
 // 生成的难度是"评分"而非"档位名"，展示时再按区间映射回档位。
 import { ref, reactive, computed } from 'vue'
@@ -215,7 +217,7 @@ const generate = async () => {
     ElMessage.success('题面生成完成，请人工复核')
   } catch (e) {
     console.error(e)
-    ElMessage.error('生成失败，请稍后重试')
+    showApiError(e, '生成失败，请稍后重试')
   } finally {
     generating.value = false
   }
@@ -249,7 +251,7 @@ const saveProblem = async () => {
     ElMessage.success(`题目 #${id} 已保存为私有草稿`)
   } catch (e) {
     console.error(e)
-    ElMessage.error('保存失败，请稍后重试')
+    showApiError(e, '保存失败，请稍后重试')
   } finally {
     saving.value = false
   }

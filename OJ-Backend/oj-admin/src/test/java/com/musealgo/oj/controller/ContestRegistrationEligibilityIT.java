@@ -48,7 +48,7 @@ class ContestRegistrationEligibilityIT {
                 + "VALUES (?, 1, 1, 100, 1, 0)", contestId);
 
         // 未报名 → 拒绝
-        IllegalStateException notRegistered = assertThrows(IllegalStateException.class,
+        com.musealgo.oj.common.exception.BusinessException notRegistered = assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
                 () -> resolver.resolve(contestId, 1L, userId));
         assertTrue(notRegistered.getMessage().contains("报名"));
 
@@ -59,7 +59,7 @@ class ContestRegistrationEligibilityIT {
         assertEquals(0, registration.getEligible());
 
         // 审核中仍然拒绝
-        assertThrows(IllegalStateException.class, () -> resolver.resolve(contestId, 1L, userId));
+        assertThrows(com.musealgo.oj.common.exception.BusinessException.class, () -> resolver.resolve(contestId, 1L, userId));
 
         // 审核通过后允许提交；资格超限只影响正式榜，不阻止提交
         contestUserService.reviewRegistration(contestId, userId, true, null, 1L);

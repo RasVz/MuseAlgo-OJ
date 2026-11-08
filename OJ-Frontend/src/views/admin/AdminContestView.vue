@@ -74,6 +74,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // 比赛管理（仅管理员）：比赛检索、删除与成绩导出。
 // 编辑与题目配置在 ContestEditorView，本页只负责列表级操作。
 // 删除比赛会连带删除其提交记录，不可恢复，故二次确认。
@@ -126,7 +128,7 @@ const fetchData = async () => {
     list.value = Array.isArray(data.records) ? data.records : []
     total.value = Number(data.total || 0)
   } catch (e) {
-    ElMessage.error(e?.message || '获取比赛列表失败')
+    showApiError(e, e?.message || '获取比赛列表失败')
   } finally {
     loading.value = false
   }

@@ -1,5 +1,8 @@
 package com.musealgo.oj.teaching.application;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.teaching.error.TeachingErrorCode;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -44,17 +47,20 @@ public class ClassMembershipApplicationService {
     @Transactional(rollbackFor = Exception.class)
     public void removeMember(Long classId, Long studentId) {
         requireClassManager(classId);
+        if (classService.getByIdForUpdate(classId) == null)
+            throw new BusinessException(TeachingErrorCode.CLASS_NOT_FOUND);
         if (!classStudentService.remove(new LambdaQueryWrapper<ClassStudent>()
                 .eq(ClassStudent::getClassId, classId)
                 .eq(ClassStudent::getStudentId, studentId))) {
-            throw new IllegalStateException("成员不存在或移除失败");
+            throw new BusinessException(TeachingErrorCode.CLASS_MEMBER_NOT_FOUND, "成员不存在");
         }
+        classService.refreshStudentCount(classId);
     }
 
     /** 返回是否可管理；学生只能读取自己班级的可见目录。 */
     public boolean requireClassReader(Long classId) {
         Class info = classService.getById(classId);
-        if (info == null) throw new IllegalArgumentException("班级不存在");
+        if (info == null) throw new BusinessException(TeachingErrorCode.CLASS_NOT_FOUND, "班级不存在");
         Long actor = SecurityUtils.getUserId();
         if (SecurityUtils.isAdmin() || (SecurityUtils.isTeacherOrAdmin() && actor != null && actor.equals(info.getTeacherId()))) return true;
         if (actor != null && classStudentService.count(new LambdaQueryWrapper<ClassStudent>()
@@ -66,7 +72,7 @@ public class ClassMembershipApplicationService {
         SecurityUtils.requireTeacherOrAdmin();
         Class classInfo = classService.getById(classId);
         if (classInfo == null) {
-            throw new IllegalArgumentException("班级不存在");
+            throw new BusinessException(TeachingErrorCode.CLASS_NOT_FOUND, "班级不存在");
         }
         SecurityUtils.requireOwnerOrAdmin(classInfo.getTeacherId());
     }
@@ -76,7 +82,7 @@ public class ClassMembershipApplicationService {
                 .eq(ClassStudent::getClassId, classId)
                 .eq(ClassStudent::getStudentId, studentId));
         if (membership == null) {
-            throw new IllegalArgumentException("成员不存在");
+            throw new BusinessException(TeachingErrorCode.CLASS_MEMBER_NOT_FOUND, "成员不存在");
         }
         return membership;
     }

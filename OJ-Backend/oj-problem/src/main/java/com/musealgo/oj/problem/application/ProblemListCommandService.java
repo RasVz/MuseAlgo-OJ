@@ -41,7 +41,7 @@ public class ProblemListCommandService implements ProblemListCommand {
         problemList.setProblemCount(0);
         problemList.setFavoriteCount(0);
         problemList.setPrivacy(0);
-        problemListService.save(problemList);
+        if (!problemListService.save(problemList)) throw new IllegalStateException("班级题单保存失败");
         return problemList.getId();
     }
 
@@ -53,13 +53,15 @@ public class ProblemListCommandService implements ProblemListCommand {
         update.setTitle(title);
         update.setDescription(description);
         update.setUpdateTime(LocalDateTime.now());
-        problemListService.updateById(update);
+        if (!problemListService.updateById(update)) throw new com.musealgo.oj.common.exception.BusinessException(
+                com.musealgo.oj.problem.error.ProblemErrorCode.PROBLEM_LIST_NOT_FOUND);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void removeById(Long id) {
-        problemListService.removeById(id);
+        if (!problemListService.removeById(id)) throw new com.musealgo.oj.common.exception.BusinessException(
+                com.musealgo.oj.problem.error.ProblemErrorCode.PROBLEM_LIST_NOT_FOUND);
     }
 
     @Override
@@ -67,8 +69,8 @@ public class ProblemListCommandService implements ProblemListCommand {
     public void adjustFavoriteCount(Long id, int delta) {
         String expression = delta > 0 ? "favorite_count = favorite_count + 1"
                 : "favorite_count = CASE WHEN favorite_count > 0 THEN favorite_count - 1 ELSE 0 END";
-        problemListService.update(new LambdaUpdateWrapper<ProblemList>()
+        if (!problemListService.update(new LambdaUpdateWrapper<ProblemList>()
                 .setSql(expression)
-                .eq(ProblemList::getId, id));
+                .eq(ProblemList::getId, id))) throw new IllegalStateException("题单收藏计数更新失败");
     }
 }

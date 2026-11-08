@@ -1,5 +1,8 @@
 package com.musealgo.oj.community.interaction;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.community.error.CommunityErrorCode;
+
 import org.springframework.stereotype.Service;
 import java.util.EnumMap;
 import java.util.List;
@@ -58,7 +61,7 @@ public class CommunityInteractionServiceImpl implements CommunityInteractionServ
         command.validate();
         CommunityInteractionHandler handler = handlers.get(command.targetType());
         if (handler == null) {
-            throw new IllegalArgumentException("该内容不支持互动");
+            throw new BusinessException(CommunityErrorCode.INTERACTION_UNSUPPORTED, "该内容不支持互动");
         }
         return handler;
     }

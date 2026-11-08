@@ -1,5 +1,9 @@
 package com.musealgo.oj.community.controller;
 
+import com.musealgo.oj.common.exception.ErrorResponses;
+import com.musealgo.oj.common.exception.CommonErrorCode;
+import com.musealgo.oj.community.error.CommunityErrorCode;
+
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -124,7 +128,7 @@ public class PostController {
             @RequestParam(defaultValue = "10") Integer size,
             @RequestParam(defaultValue = "all") String contentType) {
         Long userId = SecurityUtils.getUserId();
-        if (userId == null) return Result.error(401, "请先登录");
+        if (userId == null) return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "请先登录");
         return Result.success(postQueries.authoredBy(userId, page, size, contentType));
     }
 
@@ -142,14 +146,13 @@ public class PostController {
     @GetMapping("/{id:\\d+}")
     public Result<Map<String, Object>> getDetail(@PathVariable Long id) {
         Map<String, Object> data;
-        try { data = postQueries.detail(id, SecurityUtils.getUserId()); }
-        catch (IllegalArgumentException e) { return Result.error(e.getMessage()); }
+        data = postQueries.detail(id, SecurityUtils.getUserId());
         Long userId = SecurityUtils.getUserId();
         if (data != null && userId != null) {
             data.put("isFavorited", interactionService.isActive(
                     new InteractionCommand(userId, InteractionTargetType.POST, id, InteractionAction.FAVORITE)));
         }
-        return data != null ? Result.success(data) : Result.error("文章不存在");
+        return data != null ? Result.success(data) : ErrorResponses.failure(CommunityErrorCode.POST_NOT_FOUND, "文章不存在");
     }
 
     @Operation(summary = "点赞帖子")
@@ -157,17 +160,14 @@ public class PostController {
     public Result<Map<String, Object>> toggleLike(
             @PathVariable Long id, @RequestParam(defaultValue = "true") Boolean active) {
         Long userId = SecurityUtils.getUserId();
-        if (userId == null) return Result.error(401, "请先登录");
+        if (userId == null) return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "请先登录");
 
         InteractionCommand command = new InteractionCommand(userId, InteractionTargetType.POST, id, InteractionAction.LIKE);
-        try {
-            InteractionResult result = Boolean.TRUE.equals(active)
-                    ? interactionService.activate(command)
-                    : interactionService.deactivate(command);
-            return Result.success(buildStats(id, userId, result));
-        } catch (IllegalArgumentException e) {
-            return Result.error(404, e.getMessage());
-        }
+        InteractionResult result = Boolean.TRUE.equals(active)
+                ? interactionService.activate(command)
+                : interactionService.deactivate(command);
+        return Result.success(buildStats(id, userId, result));
+
     }
 
     @Operation(summary = "踩帖子")
@@ -175,41 +175,32 @@ public class PostController {
     public Result<Map<String, Object>> toggleDislike(
             @PathVariable Long id, @RequestParam(defaultValue = "true") Boolean active) {
         Long userId = SecurityUtils.getUserId();
-        if (userId == null) return Result.error(401, "请先登录");
+        if (userId == null) return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "请先登录");
 
         InteractionCommand command = new InteractionCommand(userId, InteractionTargetType.POST, id, InteractionAction.DISLIKE);
-        try {
-            InteractionResult result = Boolean.TRUE.equals(active)
-                    ? interactionService.activate(command)
-                    : interactionService.deactivate(command);
-            return Result.success(buildStats(id, userId, result));
-        } catch (IllegalArgumentException e) {
-            return Result.error(404, e.getMessage());
-        }
+        InteractionResult result = Boolean.TRUE.equals(active)
+                ? interactionService.activate(command)
+                : interactionService.deactivate(command);
+        return Result.success(buildStats(id, userId, result));
+
     }
 
     @Operation(summary = "发布帖子")
     @PostMapping("/add")
     public Result<String> addPost(@RequestBody Post post) {
         Long userId = SecurityUtils.getUserId();
-        if (userId == null) return Result.error(401, "请先登录");
-        try {
-            return postContent.publish(post, userId) ? Result.success("发布成功") : Result.error("发布失败");
-        } catch (IllegalArgumentException e) {
-            return Result.error(e.getMessage());
-        }
+        if (userId == null) return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "请先登录");
+        return postContent.publish(post, userId) ? Result.success("发布成功") : ErrorResponses.failure(CommonErrorCode.INTERNAL_ERROR, "发布失败");
+
     }
 
     @Operation(summary = "更新帖子")
     @PostMapping("/update")
     public Result<String> updatePost(@RequestBody Post post) {
-        if (post.getId() == null) return Result.error("参数错误");
+        if (post.getId() == null) return ErrorResponses.failure(CommunityErrorCode.COMMUNITY_INPUT_INVALID, "参数错误");
         Long userId = SecurityUtils.getUserId();
-        try {
-            return postContent.update(post, userId) ? Result.success("修改成功") : Result.error("修改失败");
-        } catch (IllegalArgumentException e) {
-            return Result.error(e.getMessage());
-        }
+        return postContent.update(post, userId) ? Result.success("修改成功") : ErrorResponses.failure(CommonErrorCode.INTERNAL_ERROR, "修改失败");
+
     }
 
     @Operation(summary = "删除帖子")
@@ -218,8 +209,8 @@ public class PostController {
         Post post = postService.getById(id);
         if (post == null) return Result.success("文章已删除");
         Long userId = SecurityUtils.getUserId();
-        if (!post.getAuthorId().equals(userId)) return Result.error("无权删除他人的动态");
-        return postService.removeById(id) ? Result.success("删除成功") : Result.error("删除失败");
+        if (!post.getAuthorId().equals(userId)) return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "无权删除他人的动态");
+        return postService.removeById(id) ? Result.success("删除成功") : ErrorResponses.failure(CommonErrorCode.INTERNAL_ERROR, "删除失败");
     }
 
     // ---- 仅存的轻量 Controller 辅助 ----

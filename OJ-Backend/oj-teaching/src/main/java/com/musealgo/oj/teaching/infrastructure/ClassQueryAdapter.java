@@ -35,6 +35,22 @@ public class ClassQueryAdapter implements ClassQuery {
     }
 
     @Override
+    public List<Long> findOwnedIds(Long teacherId) {
+        if (teacherId == null) return List.of();
+        return classService.list(new LambdaQueryWrapper<Class>().eq(Class::getTeacherId, teacherId))
+                .stream().map(Class::getId).toList();
+    }
+
+    @Override
+    public List<Long> findAccessibleIds(Long userId) {
+        if (userId == null) return List.of();
+        java.util.Set<Long> ids = new java.util.HashSet<>(findOwnedIds(userId));
+        classStudentService.list(new LambdaQueryWrapper<ClassStudent>().eq(ClassStudent::getStudentId, userId))
+                .forEach(member -> ids.add(member.getClassId()));
+        return List.copyOf(ids);
+    }
+
+    @Override
     public List<Long> findStudentIds(Long classId) {
         if (classId == null) {
             return List.of();

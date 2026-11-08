@@ -11,11 +11,14 @@ import com.musealgo.oj.common.utils.JwtUtils;
 import com.musealgo.oj.system.service.JwtBlacklistService;
 import com.musealgo.oj.system.service.LoginFailureGuard;
 import com.musealgo.oj.system.service.UserService;
+import com.musealgo.oj.system.entity.User;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -87,12 +90,53 @@ class AuthControllerLogoutTest {
         when(jwtUtils.extractUsername(REFRESH)).thenReturn("stu");
         when(jwtUtils.extractJti(REFRESH)).thenReturn("jti-refresh");
         when(jwtBlacklistService.isRevoked("jti-refresh")).thenReturn(false);
-        when(jwtUtils.generateAccessToken("stu")).thenReturn("new-access");
+        User current = new User();
+        current.setUsername("stu");
+        current.setCredentialVersion(0L);
+        when(userService.getOne(any(LambdaQueryWrapper.class))).thenReturn(current);
+        when(jwtUtils.hasCurrentCredentialVersion(REFRESH, 0L)).thenReturn(true);
+        when(jwtUtils.generateAccessToken("stu", 0L)).thenReturn("new-access");
 
         Result<String> result = authController.refreshToken(Map.of("refreshToken", REFRESH));
 
         assertEquals(200, result.getCode());
         assertEquals("new-access", result.getData());
+    }
+
+    @Test
+    void refresh_密码变更后旧refresh被拒绝() {
+        when(jwtUtils.validateRefreshToken(REFRESH, "stu")).thenReturn(true);
+        when(jwtUtils.extractUsername(REFRESH)).thenReturn("stu");
+        when(jwtUtils.extractJti(REFRESH)).thenReturn("jti-refresh");
+        when(jwtBlacklistService.isRevoked("jti-refresh")).thenReturn(false);
+        User current = new User();
+        current.setUsername("stu");
+        current.setCredentialVersion(2L);
+        when(userService.getOne(any(LambdaQueryWrapper.class))).thenReturn(current);
+        when(jwtUtils.hasCurrentCredentialVersion(REFRESH, 2L)).thenReturn(false);
+
+        Result<String> result = authController.refreshToken(Map.of("refreshToken", REFRESH));
+
+        assertEquals(401, result.getCode());
+        verify(jwtUtils, never()).generateAccessToken(anyString(), anyLong());
+    }
+
+    @Test
+    void refresh_已禁用账号不能签发新access() {
+        when(jwtUtils.validateRefreshToken(REFRESH, "stu")).thenReturn(true);
+        when(jwtUtils.extractUsername(REFRESH)).thenReturn("stu");
+        when(jwtUtils.extractJti(REFRESH)).thenReturn("jti-refresh");
+        when(jwtBlacklistService.isRevoked("jti-refresh")).thenReturn(false);
+        User current = new User();
+        current.setUsername("stu");
+        current.setCredentialVersion(0L);
+        current.setIsBanned((byte) 1);
+        when(userService.getOne(any(LambdaQueryWrapper.class))).thenReturn(current);
+
+        Result<String> result = authController.refreshToken(Map.of("refreshToken", REFRESH));
+
+        assertEquals(401, result.getCode());
+        verify(jwtUtils, never()).generateAccessToken(anyString(), anyLong());
     }
     @Test
     void accessTokenCannotBeUsedToRefreshSession() {

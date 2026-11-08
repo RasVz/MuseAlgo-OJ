@@ -22,6 +22,7 @@ test('timed-out report export removes listeners and sends no further snapshot re
     remove: () => { removed = true }
   }
   const context = {
+    showApiError(error, fallback) { if (!error.notified && !error.authNotified) errors.push(error.message || fallback) },
     ref: value => ({ value }),
     ElMessage: { error: message => errors.push(message) },
     html2canvas() { throw new Error('timed-out report must not be rendered') },

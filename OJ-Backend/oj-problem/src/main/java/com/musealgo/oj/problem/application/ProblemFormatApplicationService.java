@@ -1,5 +1,8 @@
 package com.musealgo.oj.problem.application;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.problem.error.ProblemErrorCode;
+
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.core.json.JsonReadFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -120,15 +123,15 @@ public class ProblemFormatApplicationService {
     public ProblemFormatResult formatProblems(ProblemFormatRequest request) {
         SecurityUtils.requireTeacherOrAdmin();
         if (request == null || request.problemIds() == null || request.problemIds().isEmpty()) {
-            throw new IllegalArgumentException("请至少选择一道题目");
+            throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "请至少选择一道题目");
         }
 
         List<Long> problemIds = request.problemIds().stream()
                 .filter(Objects::nonNull)
                 .distinct()
                 .toList();
-        if (problemIds.isEmpty()) throw new IllegalArgumentException("题目 ID 无效");
-        if (problemIds.size() > 50) throw new IllegalArgumentException("单次最多格式化 50 道题目");
+        if (problemIds.isEmpty()) throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "题目 ID 无效");
+        if (problemIds.size() > 50) throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "单次最多格式化 50 道题目");
 
         List<ProblemFormatItemResult> items = new ArrayList<>(problemIds.size());
         int succeeded = 0;
@@ -148,7 +151,7 @@ public class ProblemFormatApplicationService {
                 items.add(ProblemFormatItemResult.success(problemId, problem.getTitle()));
                 succeeded++;
             } catch (Exception e) {
-                items.add(ProblemFormatItemResult.failure(problemId, rootMessage(e)));
+                items.add(ProblemFormatItemResult.failure(problemId, rootMessage(e), publicErrorCode(e)));
             }
         }
         return new ProblemFormatResult(problemIds.size(), succeeded, problemIds.size() - succeeded, List.copyOf(items));
@@ -165,7 +168,7 @@ public class ProblemFormatApplicationService {
             Problem problem = accessGuard.requireManagedProblem(problemId);
             return ProblemFormatPreviewItem.success(problemId, formatWithRetry(problem, ipMode));
         } catch (Exception e) {
-            return ProblemFormatPreviewItem.failure(problemId, rootMessage(e));
+            return ProblemFormatPreviewItem.failure(problemId, rootMessage(e), publicErrorCode(e));
         }
     }
 
@@ -175,7 +178,7 @@ public class ProblemFormatApplicationService {
     public void applyFormattedProblem(ProblemFormatApplyRequest request) {
         SecurityUtils.requireTeacherOrAdmin();
         if (request == null || request.problemId() == null || request.formatted() == null) {
-            throw new IllegalArgumentException("格式化结果无效");
+            throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "格式化结果无效");
         }
         Problem problem = accessGuard.requireManagedProblem(request.problemId());
         applyFormattedFields(problem, request.formatted());
@@ -187,7 +190,7 @@ public class ProblemFormatApplicationService {
 
     private void applyFormattedFields(Problem problem, ProblemFormattedContent formatted) {
         String title = formatted.title() == null ? "" : formatted.title().trim();
-        if (title.isEmpty()) throw new IllegalArgumentException("格式化结果缺少题目名称");
+        if (title.isEmpty()) throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "格式化结果缺少题目名称");
 
         problem.setTitle(truncateCodePoints(title, 128));
         problem.setContent(sanitizeImportedStatement(nullToEmpty(formatted.content())));
@@ -212,11 +215,11 @@ public class ProblemFormatApplicationService {
             source = source + FORMAT_IP_RENAME_REQUIREMENT;
         }
         if (source.length() > 60_000) {
-            throw new IllegalArgumentException("题面过长，无法在一次格式化中安全处理");
+            throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "题面过长，无法在一次格式化中安全处理");
         }
         String formatted = aiAssistant.chatJson(FORMAT_SYSTEM_PROMPT, source);
         if (formatted == null) {
-            throw new IllegalArgumentException("AI 服务暂不可用，请稍后重试");
+            throw new BusinessException(ProblemErrorCode.AI_UNAVAILABLE, "AI 服务暂不可用，请稍后重试");
         }
         try {
             return parseFormatResponse(formatted);
@@ -254,7 +257,7 @@ public class ProblemFormatApplicationService {
     }
 
     private ProblemFormattedContent parseFormatResponse(String response) {
-        if (!StringUtils.hasText(response)) throw new IllegalArgumentException("AI 未返回内容");
+        if (!StringUtils.hasText(response)) throw new BusinessException(ProblemErrorCode.AI_RESPONSE_INVALID, "AI 未返回内容");
         for (String candidate : jsonCandidates(response)) {
             Map<String, Object> raw = tryParseJson(candidate);
             if (raw == null) continue;
@@ -262,7 +265,7 @@ public class ProblemFormatApplicationService {
             Map<String, String> strings = new HashMap<>();
             for (String name : List.of("title", "content", "inputDesc", "outputDesc", "hint")) {
                 Object value = raw.get(name);
-                if (!(value instanceof String)) throw new IllegalArgumentException("格式化结果缺少字段: " + name);
+                if (!(value instanceof String)) throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "格式化结果缺少字段: " + name);
                 strings.put(name, (String) value);
             }
             return new ProblemFormattedContent(
@@ -275,7 +278,7 @@ public class ProblemFormatApplicationService {
                     toPositiveInt(raw.get("memoryLimitMb")),
                     parseSamples(raw.get("samples")));
         }
-        throw new IllegalArgumentException("AI 返回内容无法解析为合法 JSON，请重试或人工整理");
+        throw new BusinessException(ProblemErrorCode.AI_RESPONSE_INVALID, "AI 返回内容无法解析为合法 JSON，请重试或人工整理");
     }
 
     /** 从模型回复中提取可能的 JSON 对象片段（去掉 Markdown 围栏，按括号配对定位） */
@@ -353,7 +356,7 @@ public class ProblemFormatApplicationService {
 
     private List<FormatSample> parseSamples(Object value) {
         if (!(value instanceof List<?> list) || list.isEmpty()) return List.of();
-        if (list.size() > 50) throw new IllegalArgumentException("样例数量超过 50 组，请人工整理");
+        if (list.size() > 50) throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "样例数量超过 50 组，请人工整理");
         List<FormatSample> samples = new ArrayList<>(list.size());
         for (Object item : list) {
             if (!(item instanceof Map<?, ?> map)) continue;
@@ -366,10 +369,17 @@ public class ProblemFormatApplicationService {
         return List.copyOf(samples);
     }
 
+    private String publicErrorCode(Exception exception) {
+        return exception instanceof com.musealgo.oj.common.exception.BusinessException business
+                ? business.getErrorCode().key() : "INTERNAL_ERROR";
+    }
+
     private String rootMessage(Exception exception) {
-        Throwable root = exception;
-        while (root.getCause() != null) root = root.getCause();
-        return StringUtils.hasText(root.getMessage()) ? root.getMessage() : "格式化失败";
+        if (exception instanceof com.musealgo.oj.common.exception.BusinessException business) {
+            return business.getMessage();
+        }
+        org.slf4j.LoggerFactory.getLogger(getClass()).error("批处理单项失败", exception);
+        return "处理失败，请稍后重试或联系管理员";
     }
 
     static String nullToEmpty(String value) {

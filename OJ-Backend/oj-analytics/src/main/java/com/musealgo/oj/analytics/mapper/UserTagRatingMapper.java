@@ -31,6 +31,9 @@ public interface UserTagRatingMapper extends BaseMapper<UserTagRating> {
      * 批量 upsert：AC 后更新所有相关 tag 的评分。
      * MySQL: INSERT ... ON DUPLICATE KEY UPDATE
      */
+    @org.apache.ibatis.annotations.Insert("INSERT INTO user_tag_rating_lock(user_id) VALUES (#{userId}) ON DUPLICATE KEY UPDATE user_id=VALUES(user_id)")
+    int lockUser(@org.apache.ibatis.annotations.Param("userId") Long userId);
+
     int upsert(@Param("userId") Long userId,
                @Param("tagId") Long tagId,
                @Param("rating") int rating);

@@ -1,5 +1,10 @@
 package com.musealgo.oj.ai.controller;
 
+import com.musealgo.oj.common.utils.RequestValues;
+
+import com.musealgo.oj.common.exception.ErrorResponses;
+import com.musealgo.oj.ai.error.AiErrorCode;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
@@ -123,8 +128,8 @@ public class AiAdminController {
         wrapper.eq(userId != null, AiUsage::getUserId, userId)
                 .eq(StringUtils.hasText(scene), AiUsage::getScene, scene)
                 .eq(StringUtils.hasText(status), AiUsage::getStatus, status)
-                .ge(StringUtils.hasText(start), AiUsage::getCreatedAt, parseTime(start))
-                .le(StringUtils.hasText(end), AiUsage::getCreatedAt, parseEndTime(end))
+                .ge(StringUtils.hasText(start), AiUsage::getCreatedAt, RequestValues.dateTime(start, "start", false))
+                .le(StringUtils.hasText(end), AiUsage::getCreatedAt, RequestValues.dateTime(end, "end", true))
                 .orderByDesc(AiUsage::getCreatedAt);
         return Result.success(aiUsageQueryService.selectPage(new Page<>(page, size), wrapper));
     }
@@ -186,13 +191,13 @@ public class AiAdminController {
         String key = body.get("key");
         String value = body.get("value");
         if (key == null || !CONFIG_KEYS.contains(key)) {
-            return Result.error("不允许的配置键: " + key);
+            return ErrorResponses.failure(AiErrorCode.AI_INPUT_INVALID, "不允许的配置键: " + key);
         }
         if (value == null) {
-            return Result.error("配置值不能为空");
+            return ErrorResponses.failure(AiErrorCode.AI_INPUT_INVALID, "配置值不能为空");
         }
         if (SERVICE_LEVEL_KEYS.contains(key) && AiRuntimeConfig.MODE_MANAGED.equals(currentRuntimeMode())) {
-            return Result.error(409, "当前使用后台服务，模型与生成参数请在“AI 服务”页修改");
+            return ErrorResponses.failure(AiErrorCode.AI_STATE_CONFLICT, "当前使用后台服务，模型与生成参数请在“AI 服务”页修改");
         }
         systemConfigCommand.set(key, value);
         return Result.success("配置已更新（秒级生效）");
@@ -223,7 +228,7 @@ public class AiAdminController {
     @AuditLog(module = "ai", action = "set_quota")
     @PostMapping("/quota/{userId}/set")
     public Result<String> setQuota(@PathVariable Long userId, @RequestBody Map<String, Object> body) {
-        long used = body.get("used") == null ? 0 : Long.parseLong(String.valueOf(body.get("used")));
+        long used = body.get("used") == null ? 0 : RequestValues.longValue(body.get("used"), "used");
         String key = QUOTA_KEY_PREFIX + userId + ":" + LocalDate.now().format(DAY);
         if (used <= 0) {
             redisTemplate.delete(key);
@@ -247,25 +252,4 @@ public class AiAdminController {
         return new LocalDateTime[]{from, to};
     }
 
-    private static LocalDateTime parseTime(String value) {
-        if (value == null || value.isBlank()) {
-            return null; // 条件参数会被立即求值，空值返回 null 而非 NPE
-        }
-        try {
-            return LocalDateTime.parse(value);
-        } catch (Exception e) {
-            return LocalDate.parse(value).atStartOfDay();
-        }
-    }
-
-    private static LocalDateTime parseEndTime(String value) {
-        if (value == null || value.isBlank()) {
-            return null;
-        }
-        try {
-            return LocalDateTime.parse(value);
-        } catch (Exception e) {
-            return LocalDate.parse(value).plusDays(1).atStartOfDay().minusNanos(1);
-        }
-    }
 }

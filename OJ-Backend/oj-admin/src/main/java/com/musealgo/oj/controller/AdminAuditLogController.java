@@ -43,20 +43,10 @@ public class AdminAuditLogController {
         wrapper.eq(userId != null, AuditLog::getUserId, userId)
                 .eq(StringUtils.hasText(module), AuditLog::getModule, module)
                 .like(StringUtils.hasText(action), AuditLog::getAction, action)
-                .ge(StringUtils.hasText(start), AuditLog::getCreateTime, parse(start))
-                .le(StringUtils.hasText(end), AuditLog::getCreateTime, parse(end))
+                .ge(StringUtils.hasText(start), AuditLog::getCreateTime, com.musealgo.oj.common.utils.RequestValues.dateTime(start, "start", false))
+                .le(StringUtils.hasText(end), AuditLog::getCreateTime, com.musealgo.oj.common.utils.RequestValues.dateTime(end, "end", false))
                 .orderByDesc(AuditLog::getCreateTime);
         return Result.success(auditLogService.selectPage(new Page<>(page, size), wrapper));
     }
 
-    private static LocalDateTime parse(String value) {
-        if (value == null || value.isBlank()) {
-            return null; // 条件为 false 时 MyBatis-Plus 也会立即求值参数，必须容忍空值
-        }
-        try {
-            return LocalDateTime.parse(value);
-        } catch (Exception e) {
-            return LocalDate.parse(value).atStartOfDay();
-        }
-    }
 }

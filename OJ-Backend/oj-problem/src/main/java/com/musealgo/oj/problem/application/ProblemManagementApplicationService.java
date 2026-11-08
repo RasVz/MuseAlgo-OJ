@@ -1,5 +1,8 @@
 package com.musealgo.oj.problem.application;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.problem.error.ProblemErrorCode;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.jsoup.Jsoup;
 import org.jsoup.safety.Safelist;
@@ -147,7 +150,7 @@ public class ProblemManagementApplicationService {
     @Transactional(rollbackFor = Exception.class)
     public void update(ProblemDTO command) {
         if (command.getId() == null) {
-            throw new IllegalArgumentException("题目ID不能为空");
+            throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "题目ID不能为空");
         }
         Problem existing = accessGuard.requireManagedProblem(command.getId());
         applyEditableFields(existing, command);
@@ -279,7 +282,7 @@ public class ProblemManagementApplicationService {
         readAccess.requireReadable(problemId);
         Problem problem = problemService.getById(problemId);
         if (problem == null) {
-            throw new IllegalArgumentException("题目不存在");
+            throw new BusinessException(ProblemErrorCode.PROBLEM_NOT_FOUND, "题目不存在");
         }
         ProblemDetailVO vo = new ProblemDetailVO();
         org.springframework.beans.BeanUtils.copyProperties(problem, vo);

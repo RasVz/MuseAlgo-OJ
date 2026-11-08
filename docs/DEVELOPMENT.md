@@ -311,6 +311,33 @@ compose.dev.yml             开发栈编排（核心四件套 + judge / extras �
 > 位于 `oj-admin` 的 `ModuleDependencyArchTest`（ArchUnit）负责校验模块依赖规则，
 > 属于单元测试层，改动模块依赖关系后 CI 会自动拦下。
 
+社区、课件和真实搜索的串行功能回归需单独准备一次性测试栈，并载入
+`OJ-Backend/db/seed.sql` 的合成账号。设置 `OJ_TEST_API`、`OJ_TEST_WEB` 和
+`OJ_TEST_OUTPUT_DIR` 后运行；前端代理指向该测试后端。课件阶段需要已安装依赖的
+Slidev 工厂，后端配置 `OJ_SLIDEV_WORKER_DIR` / `OJ_SLIDEV_OUTPUT_DIR`。
+搜索阶段启用真实 Meilisearch，测试端设置 `OJ_TEST_MEILI`、`OJ_TEST_MEILI_KEY`，
+后端使用对应的 `OJ_SEARCH_MEILISEARCH_URL` / `OJ_SEARCH_MEILISEARCH_API_KEY`。
+
+```bash
+python3 tests/modules_smoke.py community --label community-final
+python3 tests/modules_smoke.py courseware --label courseware-final
+python3 tests/search_smoke.py normal --label search-after
+python3 tests/search_consistency_smoke.py
+# 停止测试搜索服务后执行；脚本会确认服务不可达。
+python3 tests/search_smoke.py outage --label search-outage
+# 重新启动同一个测试搜索服务，再重建索引验证恢复。
+python3 tests/search_smoke.py recovery --label search-recovery
+(cd OJ-Frontend && OJ_MODULE_SMOKE_ENABLED=1 npx playwright test modules-functional.spec.js)
+```
+
+这些脚本会创建、编辑和删除合成业务数据，搜索用例还会临时修改索引，
+仅用于一次性测试环境。浏览器专项默认不加入普通套件；显式启用时需要上述同名 JSON
+夹具，缺失会失败。运行后回收本轮服务与卷。全文搜索最多校验1000个候选ID，按数据库
+公开/未删除及难度条件筛选后统一计数和分页，保留索引相关性顺序；达到服务端分页上限、
+超过候选预算或候选不完整时回退SQL。后端密钥须能读取索引分页设置，否则也回退SQL。
+数据库读取使用同一只读快照，SQL回退同样排除软删除行。索引漏收的新题仍需同步或重建，
+本机制不扩大Meilisearch自身的检索窗口，也不承诺索引内容实时一致。
+
 常用的排错手段：
 
 ```bash
@@ -327,3 +354,7 @@ docker compose -f compose.dev.yml down -v                # 彻底重置（清空
 - **看健康状态**：`curl localhost:8080/actuator/health`。若为 `DOWN` 但服务正常，多半是某个可选中间件的健康探针没关——把对应的 `*_ENABLED` 设为 `false`。
 - **前端请求 404**：检查后端接口真实路径。注意前端以 `/api` 为前缀，但后端本身的路径**不含** `/api`（前缀由代理去掉）。
 - **判题不返回结果**：先确认判题机已启动（`--profile judge`），再看后端日志里的 Judge0 端点与熔断状态。
+
+### 错误响应
+
+现行协议、业务错误定义、前端错误读取及文件/SSE 适配见[错误响应约定](ERRORS.md)。普通接口继续按 body `code=200` 判断成功，失败原因使用稳定 `errorCode`；不能把未知异常消息直接返回给页面。

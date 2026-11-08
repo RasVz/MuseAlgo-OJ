@@ -50,6 +50,19 @@ class RejudgeApplicationServiceTest {
     @Mock private ObjectProvider<JudgeTaskNotifier> notifierProvider;
     @InjectMocks private RejudgeApplicationService service;
 
+    @org.junit.jupiter.api.BeforeAll static void metadata() {
+        for (var type : List.of(Submission.class, JudgeTask.class, RejudgeOperation.class, RejudgeItem.class)) {
+            com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(
+                new org.apache.ibatis.builder.MapperBuilderAssistant(new org.apache.ibatis.session.Configuration(), "rejudge"), type);
+        }
+    }
+
+    @org.junit.jupiter.api.BeforeEach void successfulWrites() {
+        lenient().when(operationMapper.insert(any(RejudgeOperation.class))).thenReturn(1);
+        lenient().when(itemMapper.insert(any(RejudgeItem.class))).thenReturn(1);
+        lenient().when(judgeTaskMapper.insert(any(JudgeTask.class))).thenReturn(1);
+    }
+
     private Submission submission() {
         Submission s = new Submission();
         s.setId(10L);
@@ -75,7 +88,7 @@ class RejudgeApplicationServiceTest {
                 new ContestSchedule(3L, LocalDateTime.now().minusDays(2), LocalDateTime.now().minusDays(1), "ACM", 1L)));
         when(contestScheduleQuery.isRankFinalized(3L)).thenReturn(true);
 
-        IllegalStateException ex = assertThrows(IllegalStateException.class,
+        com.musealgo.oj.common.exception.BusinessException ex = assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
                 () -> service.rejudgeSingleSubmission(10L, "纠正错误判题", 1L, "admin"));
         assertTrue(ex.getMessage().contains("冻结"));
         verify(operationMapper, never()).insert(any(RejudgeOperation.class));
@@ -90,7 +103,7 @@ class RejudgeApplicationServiceTest {
                 new ContestSchedule(3L, LocalDateTime.now().minusHours(1), LocalDateTime.now().plusHours(1), "ACM", 1L)));
         when(contestScheduleQuery.isRankFinalized(3L)).thenReturn(false);
 
-        assertThrows(IllegalStateException.class,
+        assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
                 () -> service.rejudgeSingleSubmission(10L, "赛中修正", 1L, "admin"));
         verify(operationMapper, never()).insert(any(RejudgeOperation.class));
     }
@@ -101,7 +114,7 @@ class RejudgeApplicationServiceTest {
         s.setVpAttemptId(99L);
         when(submissionMapper.selectOne(any())).thenReturn(s);
 
-        assertThrows(IllegalStateException.class,
+        assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
                 () -> service.rejudgeSingleSubmission(10L, "VP 修正", 1L, "admin"));
         verify(operationMapper, never()).insert(any(RejudgeOperation.class));
     }
@@ -160,7 +173,7 @@ class RejudgeApplicationServiceTest {
 
     @Test
     void blankReasonIsRejectedBeforeAnyDatabaseWork() {
-        assertThrows(IllegalArgumentException.class,
+        assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
                 () -> service.rejudgeSingleSubmission(10L, "  ", 1L, "admin"));
         verifyNoInteractions(submissionMapper, operationMapper, itemMapper);
     }
@@ -255,7 +268,7 @@ class RejudgeApplicationServiceTest {
                 new RejudgeBatchScope("PROBLEM", 1L, null, null, null));
         assertTrue(preview.overLimit());
 
-        IllegalStateException ex = assertThrows(IllegalStateException.class, () -> service.rejudgeBatch(
+        com.musealgo.oj.common.exception.BusinessException ex = assertThrows(com.musealgo.oj.common.exception.BusinessException.class, () -> service.rejudgeBatch(
                 new RejudgeBatchScope("PROBLEM", 1L, null, null, null), "批量", 1L, "admin"));
         assertTrue(ex.getMessage().contains("上限"));
         verify(operationMapper, never()).insert(any(RejudgeOperation.class));
@@ -301,4 +314,21 @@ class RejudgeApplicationServiceTest {
         op.setFailedItems(0);
         return op;
     }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"operation","item","task"})
+    void requiredInsertFailureAbortsRejudgeAcceptance(String failure) {
+        when(submissionMapper.selectOne(any())).thenReturn(submission());
+        when(problemQuery.findTestCases(1L)).thenReturn(cases());
+        lenient().when(submissionMapper.update(isNull(), any())).thenReturn(1);
+        lenient().when(operationMapper.insert(any(RejudgeOperation.class))).thenAnswer(call -> {
+            call.getArgument(0,RejudgeOperation.class).setId(9L); return failure.equals("operation") ? 0 : 1;
+        });
+        lenient().when(itemMapper.insert(any(RejudgeItem.class))).thenReturn(failure.equals("item") ? 0 : 1);
+        lenient().when(judgeTaskMapper.insert(any(JudgeTask.class))).thenReturn(failure.equals("task") ? 0 : 1);
+        lenient().when(operationMapper.selectById(9L)).thenReturn(operation(9L,1));
+        lenient().when(itemMapper.selectList(any())).thenReturn(List.of());
+        assertThrows(IllegalStateException.class,()->service.rejudgeSingleSubmission(10L,"synthetic",2L,"admin"));
+        verify(notifierProvider,never()).ifAvailable(any());
+    }
+
 }

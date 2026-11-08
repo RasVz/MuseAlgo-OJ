@@ -24,7 +24,7 @@ const contentRef = ref(null)
 
 // 初始化 Markdown 解析器
 const md = new MarkdownIt({
-  html: true,
+  html: false,
   linkify: true,
   typographer: true,
   highlight: (str, lang) => {

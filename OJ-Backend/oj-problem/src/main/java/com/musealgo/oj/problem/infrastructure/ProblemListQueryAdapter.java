@@ -28,6 +28,7 @@ import java.util.Optional;
 public class ProblemListQueryAdapter implements ProblemListQuery {
 
     private final ProblemListService problemListService;
+    private final com.musealgo.oj.problem.application.ProblemListAccessService access;
 
     @Override
     public Optional<ProblemListView> findById(Long problemListId) {
@@ -50,11 +51,11 @@ public class ProblemListQueryAdapter implements ProblemListQuery {
 
     @Override
     public PageResult<ProblemListView> findClassProblemListPage(Long classId, int page, int size) {
-        Page<ProblemList> raw = problemListService.page(new Page<>(page, size),
-                new LambdaQueryWrapper<ProblemList>()
-                        .eq(ProblemList::getClassId, classId)
-                        .eq(ProblemList::getType, 3)
-                        .orderByDesc(ProblemList::getCreateTime));
+        LambdaQueryWrapper<ProblemList> query = new LambdaQueryWrapper<ProblemList>()
+                .eq(ProblemList::getClassId, classId).eq(ProblemList::getType, 3)
+                .orderByDesc(ProblemList::getCreateTime);
+        access.restrict(query);
+        Page<ProblemList> raw = problemListService.page(new Page<>(page, size), query);
         List<ProblemListView> records = raw.getRecords().stream().map(this::toView).toList();
         return new PageResult<>(raw.getCurrent(), raw.getSize(), raw.getTotal(), records);
     }
@@ -70,6 +71,7 @@ public class ProblemListQueryAdapter implements ProblemListQuery {
         if (keyword != null && !keyword.trim().isEmpty()) {
             query.like(ProblemList::getTitle, keyword.trim());
         }
+        access.restrict(query);
         IPage<ProblemList> result = problemListService.page(raw, query);
         List<ProblemListView> records = result.getRecords().stream().map(this::toView).toList();
         return new PageResult<>(result.getCurrent(), result.getSize(), result.getTotal(), records);

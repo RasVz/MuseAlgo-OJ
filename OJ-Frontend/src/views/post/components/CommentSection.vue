@@ -38,6 +38,8 @@
 </template>
 
 <script setup>
+import { showApiError } from '@/utils/errorFeedback'
+
 // 评论区容器：发表评论、接收"回复某条"的意图，并把评论树交给 CommentItem 渲染。
 // 提交成功后 emit('refresh') 让父组件重拉整棵树——
 // 评论树的组装逻辑在父组件里，这里不重复实现，代价只是一次请求。
@@ -133,7 +135,7 @@ const submit = async () => {
     }
   } catch (e) {
     console.error(e)
-    ElMessage.error('网络错误')
+    showApiError(e, '网络错误')
   } finally {
     submitting.value = false
   }

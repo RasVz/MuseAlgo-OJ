@@ -81,6 +81,32 @@ public class PostRankingService {
 
     private final DefaultRedisScript<Long> updateRankScript = buildLongScript(UPDATE_RANK_IF_MATCH_LUA);
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.musealgo.oj.community.mapper.PostMapper posts;
+
+    // 先清理失效成员再分页，避免硬删除、私密化或改分类留下空位及错误总数。
+    private void reconcile(String key, String category) {
+        Set<String> members = redisTemplate.opsForZSet().range(key, 0, -1);
+        if (members == null || members.isEmpty()) return;
+        List<String> ids = new java.util.ArrayList<>(members);
+        for (int offset = 0; offset < ids.size(); offset += 500) {
+            List<String> batch = ids.subList(offset, Math.min(offset + 500, ids.size()));
+            var current = posts.selectByIds(batch).stream().collect(Collectors.toMap(
+                    post -> String.valueOf(post.getId()), post -> post));
+            List<String> invalid = batch.stream().filter(id -> !matches(current.get(id), category)).toList();
+            if (!invalid.isEmpty()) redisTemplate.opsForZSet().remove(key, invalid.toArray());
+        }
+    }
+
+    private boolean matches(com.musealgo.oj.community.entity.Post post, String category) {
+        if (post == null || Integer.valueOf(1).equals(post.getIsDeleted()) || post.getClassId() != null
+                || (post.getPrivacy() != null && post.getPrivacy() != 0) || post.getType() == null
+                || post.getType() < 0 || post.getType() > 3) return false;
+        if (category == null || category.isBlank() || "all".equalsIgnoreCase(category)) return true;
+        if ("solution".equals(category)) return post.getType() == 1;
+        return post.getType() == 0 && Objects.equals(category, post.getCategory());
+    }
+
     public List<Long> getHotPosts(String category, int page, int size) {
         int safePage = Math.max(page, 1);
         int safeSize = Math.max(size, 1);
@@ -89,6 +115,7 @@ public class PostRankingService {
                 ? PostRedisKey.hotGlobal()
                 : PostRedisKey.hotCategory(category);
 
+        reconcile(key, category);
         long start = (long) (safePage - 1) * safeSize;
         long end = start + safeSize - 1;
 
@@ -110,6 +137,7 @@ public class PostRankingService {
         String key = (category == null || category.trim().isEmpty() || "all".equalsIgnoreCase(category))
                 ? PostRedisKey.hotGlobal()
                 : PostRedisKey.hotCategory(category);
+        // 列表入口先调用 getHotPosts 完成修剪，再读取同一集合的总数。
         Long size = redisTemplate.opsForZSet().zCard(key);
         return size == null ? 0L : size;
     }

@@ -25,4 +25,9 @@ public class SecurityProbeController {
     public String probe() {
         return "probe-ok";
     }
+
+    @GetMapping({"/problem/search", "/problem/filter-options"})
+    public String publicProblemSearch() {
+        return "public-search-ok";
+    }
 }

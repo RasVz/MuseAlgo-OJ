@@ -82,6 +82,8 @@ class SubmissionServiceImplTest {
         Submission s = submission(1L);
         when(problemQuery.findTestCases(100L)).thenReturn(List.of(caseOf(1), caseOf(2)));
 
+        when(submissionMapper.insert(any(Submission.class))).thenReturn(1);
+        when(submissionCodeMapper.insert(any(com.musealgo.oj.judge.entity.SubmissionCode.class))).thenReturn(1);
         Submission result = submissionService.submitCode(s);
 
         // 提交后进入 PENDING / QUEUED，判题任务只经 JudgeTaskService.submit 入队
@@ -102,12 +104,24 @@ class SubmissionServiceImplTest {
         verify(judgeTaskService, never()).claimBatch(anyInt());
     }
 
+    @Test void refusedSubmissionRowCannotBeAccepted() {
+        when(problemQuery.findTestCases(100L)).thenReturn(List.of(caseOf(1)));
+        assertThrows(IllegalStateException.class, () -> submissionService.submitCode(submission(3L)));
+        verify(submissionCodeMapper, never()).insert(any(com.musealgo.oj.judge.entity.SubmissionCode.class));
+    }
+    @Test void refusedCodeRowCannotLeaveAnAcceptedSubmission() {
+        when(problemQuery.findTestCases(100L)).thenReturn(List.of(caseOf(1)));
+        when(submissionMapper.insert(any(Submission.class))).thenReturn(1);
+        assertThrows(IllegalStateException.class, () -> submissionService.submitCode(submission(3L)));
+        verify(judgeTaskService, never()).submit(any());
+    }
+
     @Test
     void submitCodeRejectsProblemWithoutTestCases() {
         Submission s = submission(2L);
         when(problemQuery.findTestCases(100L)).thenReturn(List.of());
 
-        assertThrows(IllegalStateException.class, () -> submissionService.submitCode(s));
+        assertThrows(com.musealgo.oj.common.exception.BusinessException.class, () -> submissionService.submitCode(s));
 
         verify(judgeTaskService, never()).submit(any());
         verify(judgeTaskService, never()).claimBatch(anyInt());
