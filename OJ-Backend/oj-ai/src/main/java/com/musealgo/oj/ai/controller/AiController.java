@@ -132,7 +132,7 @@ public class AiController {
                                 throw new ClientGoneException();
                             }
                             try {
-                                emitter.send(SseEmitter.event().data(chunk));
+                                sendDelta(emitter, chunk);
                             } catch (IOException | IllegalStateException e) {
                                 // IOException = 网络断开；IllegalStateException = emitter 已超时/完成
                                 clientGone.set(true);
@@ -191,7 +191,7 @@ public class AiController {
                                 throw new ClientGoneException();
                             }
                             try {
-                                emitter.send(SseEmitter.event().data(chunk));
+                                sendDelta(emitter, chunk);
                             } catch (IOException | IllegalStateException e) {
                                 clientGone.set(true);
                                 throw new ClientGoneException();
@@ -264,6 +264,19 @@ public class AiController {
         public synchronized Throwable fillInStackTrace() {
             return this; // 纯信号异常，不需要堆栈
         }
+    }
+
+    /**
+     * 发送一段增量文本。
+     * <p>
+     * SSE 规范把「data:」后紧跟的第一个空格当作分隔符，客户端会剥掉它；
+     * 而 {@code SseEmitter} 对 String 直接写 {@code data:} + 内容，不补这个分隔符。
+     * 结果是以空格开头的增量（例如 {@code " long long"}）在浏览器端丢掉空格，
+     * 表现为英文单词与代码粘连。这里显式补一个空格，使线格式恒为 {@code data: <内容>}。
+     * </p>
+     */
+    private static void sendDelta(SseEmitter emitter, String chunk) throws IOException {
+        emitter.send(SseEmitter.event().data(" " + chunk));
     }
 
     private static void safeComplete(SseEmitter emitter) {

@@ -110,8 +110,8 @@ public class ChatCompletionsClient {
         try (Response response = clientForEndpoint(endpoint).newCall(request).execute()) {
             if (!response.isSuccessful()) {
                 String type = classifyHttpStatus(response.code());
-                log.warn("【AI上游】非成功响应 status={} type={} serviceId={}",
-                        response.code(), type, snapshot.serviceId());
+                log.warn("【AI上游】非成功响应 status={} type={} serviceId={} reason={}",
+                        response.code(), type, snapshot.serviceId(), upstreamReason(response));
                 return AiCompletionResult.failure(source, type, httpErrorMessage(type));
             }
             ResponseBody body = response.body();
@@ -183,8 +183,8 @@ public class ChatCompletionsClient {
         try (Response response = clientForEndpoint(endpoint).newCall(request).execute()) {
             if (!response.isSuccessful()) {
                 String type = classifyHttpStatus(response.code());
-                log.warn("【AI上游】流式非成功响应 status={} type={} serviceId={}",
-                        response.code(), type, snapshot.serviceId());
+                log.warn("【AI上游】流式非成功响应 status={} type={} serviceId={} reason={}",
+                        response.code(), type, snapshot.serviceId(), upstreamReason(response));
                 return AiStreamResult.failure(source, false, type, httpErrorMessage(type));
             }
             ResponseBody body = response.body();
@@ -332,6 +332,42 @@ public class ChatCompletionsClient {
             return snapshot.unavailableMessage();
         }
         return "AI 服务当前不可用";
+    }
+
+    /**
+     * 读取上游错误响应的原因，仅用于日志定位。
+     * <p>
+     * 上游拒绝请求时只回 status 会让排障变成猜测（模型名/参数/额度无法区分）；
+     * 这里只取 {@code error.message} 或 {@code message}，截断到 200 字符，
+     * 不回写业务响应，也不向用户侧透露。
+     * </p>
+     */
+    private static String upstreamReason(Response response) {
+        try {
+            ResponseBody body = response.body();
+            if (body == null) {
+                return "";
+            }
+            String raw = body.string();
+            if (raw == null || raw.isBlank()) {
+                return "";
+            }
+            String message = raw;
+            try {
+                JSONObject parsed = new JSONObject(raw);
+                JSONObject error = parsed.getJSONObject("error");
+                String extracted = error != null ? error.getStr("message") : parsed.getStr("message");
+                if (extracted != null && !extracted.isBlank()) {
+                    message = extracted;
+                }
+            } catch (RuntimeException ignored) {
+                // 非 JSON 响应按原文截断
+            }
+            message = message.replaceAll("\\s+", " ").trim();
+            return message.length() > 200 ? message.substring(0, 200) : message;
+        } catch (IOException | RuntimeException e) {
+            return "";
+        }
     }
 
     private static String readBounded(ResponseBody body, long limit) throws IOException {

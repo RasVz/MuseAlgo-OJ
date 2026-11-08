@@ -142,11 +142,7 @@ public class TeacherAiController {
             log.warn("【命题工作台】{} 返回不可解析内容: {}", toolKey,
                     raw == null ? "null" : raw.substring(0, Math.min(raw.length(), 200)));
             if (!call.success()) {
-                if ("INVALID_RESPONSE".equals(call.errorType()) || "RESPONSE_TOO_LARGE".equals(call.errorType())) {
-                    return ErrorResponses.failure(AiErrorCode.AI_RESPONSE_INVALID);
-                }
-                return ErrorResponses.failure("TIMEOUT".equals(call.errorType())
-                        ? CommonErrorCode.UPSTREAM_TIMEOUT : AiErrorCode.AI_UPSTREAM_FAILED);
+                return upstreamFailure(call);
             }
             return ErrorResponses.failure(AiErrorCode.AI_RESPONSE_INVALID);
         }
@@ -230,7 +226,22 @@ public class TeacherAiController {
         AiCompletionResult call = teacherWorkbenchService.teacherChatDetailed(toolKey, userPrompt);
         String answer = call.success() ? call.content() : null;
         recordUsage(scene, startMs, call.success(), userPrompt, answer, call.source(), call.usage());
-        return Result.success(answer == null ? "生成失败，请稍后重试" : answer);
+        if (answer == null || answer.isBlank()) {
+            // 失败必须回错误码：把「生成失败」当成功文本返回，前端会把它填进题面编辑器，
+            // 使用者无法区分模型没答和题目内容本身。
+            log.warn("【教师AI】{} 生成失败 type={}", toolKey, call.errorType());
+            return upstreamFailure(call);
+        }
+        return Result.success(answer);
+    }
+
+    /** 把上游失败类型映射为对外错误码，供非结构化与结构化工具共用。 */
+    private static Result<String> upstreamFailure(AiCompletionResult call) {
+        if ("INVALID_RESPONSE".equals(call.errorType()) || "RESPONSE_TOO_LARGE".equals(call.errorType())) {
+            return ErrorResponses.failure(AiErrorCode.AI_RESPONSE_INVALID);
+        }
+        return ErrorResponses.failure("TIMEOUT".equals(call.errorType())
+                ? CommonErrorCode.UPSTREAM_TIMEOUT : AiErrorCode.AI_UPSTREAM_FAILED);
     }
 
     private void recordUsage(String scene, long startMs, boolean success, String prompt, String answer,

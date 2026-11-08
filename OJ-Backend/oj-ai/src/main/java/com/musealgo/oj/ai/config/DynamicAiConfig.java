@@ -26,7 +26,7 @@ public class DynamicAiConfig {
     private boolean fallbackContestGuardEnabled;
     @Value("${oj.ai.contest-guard.cache-seconds:60}")
     private long fallbackContestGuardCacheSeconds;
-    @Value("${ai.model:deepseek-chat}")
+    @Value("${ai.model:deepseek-flash}")
     private String fallbackModel;
     @Value("${ai.max-tokens:8192}")
     private int fallbackMaxTokens;
