@@ -141,5 +141,9 @@ class IntegrationRunnerContractTests(unittest.TestCase):
             self.assertEqual(env['OJ_CI_MQ_PORT'], env['OJ_RABBIT_PORT'])
             self.assertEqual(env['OJ_CI_MQ_PASSWORD'], env['OJ_RABBIT_PASS'])
             self.assertEqual('86400000', env['OJ_MESSAGING_OUTBOX_INITIAL_DELAY_MS'])
+            # Cached Spring contexts must not each reserve the production pool.
+            self.assertEqual('8', env['SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE'])
+            self.assertEqual('0', env['SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE'])
+            self.assertIn('-Dspring.test.context.cache.maxSize=4', command)
         finally:
             os.umask(previous)

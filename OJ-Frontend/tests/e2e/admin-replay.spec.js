@@ -46,8 +46,9 @@ test.describe('QA-02 结算链式重放', () => {
     expect(res.status).toBe(200)
     expect(res.body.code).not.toBe(200)
     if (!REPLAY_ENABLED) {
-      // IllegalStateException（维护开关未开启）走全局兜底文案。
-      expect(String(res.body.message || '')).toContain('系统暂时不可用')
+      // 维护开关未开启抛 SETTLEMENT_REPLAY_DISABLED(409)：返回具体业务码与文案，不走全局兜底。
+      expect(res.body.code).toBe(409)
+      expect(String(res.body.message || '')).toContain('链式重放维护开关未开启')
     }
     const historyAfter = await api.get('/admin/settlement-replay/history', { session: adminSession })
     const afterIds = ((historyAfter.body && historyAfter.body.data) || []).map((row) => row.id)
