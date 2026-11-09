@@ -52,6 +52,7 @@ class OpenTutorHttpTest {
     @LocalServerPort int port;
     @Autowired State state;
     final HttpClient client=HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).connectTimeout(Duration.ofSeconds(3)).build();
+    @BeforeEach void resetFixture(){state.history.clear();state.requests.clear();clearInvocations(state.usage);}
     @Test void httpConversationContestReviewAndOutputLimit() throws Exception {
         var complete=call("POST","/ai/ask/stream","{\"problemId\":1,\"studentQuestion\":\"完整讲解\",\"helpDirection\":\"FULL_SOLUTION\",\"studentCode\":\"int x = 7;\"}");
         assertTrue(complete.contains("event:done"),complete);assertTrue(complete.contains("参考实现"));
@@ -69,6 +70,16 @@ class OpenTutorHttpTest {
         String output=System.getenv("OJ_TEST_OUTPUT_DIR");
         if(output!=null){var directory=Path.of(output);Files.createDirectories(directory);Files.writeString(directory.resolve("http-success.sse"),complete);Files.writeString(directory.resolve("http-contest-blocked.sse"),blocked);Files.writeString(directory.resolve("http-output-limit.sse"),truncated);Files.writeString(directory.resolve("http-review-ac.sse"),ac);Files.writeString(directory.resolve("http-upstream-requests.json"),state.requests.toString());}
     }
+    @Test void optionalEvidenceRoundAutoAppendsTrustedCounterexampleAndSumsUsage() throws Exception {
+        int before=state.requests.size();
+        String sse=call("POST","/ai/ask/stream","{\"problemId\":1,\"studentQuestion\":\"verify-counterexample\",\"studentCode\":\"student-current-code\",\"language\":\"cpp\"}");
+        assertTrue(sse.contains("event:counterexample"),sse);assertTrue(sse.contains("event:diagnostic-status"));assertTrue(sse.contains("event:done"));
+        assertEquals(before+2,state.requests.size());var first=state.requests.get(before);var last=state.requests.get(before+1);
+        assertTrue(first.containsKey("tools"));assertFalse(last.containsKey("tools"));assertTrue(first.toString().contains("SELECTED-OFFICIAL-SOLUTION"));
+        assertTrue(last.toString().contains("OFFICIAL_SAMPLE"));assertTrue(last.toString().contains("确认失败：true"));assertFalse(last.toString().contains("PRIVATE_ORACLE"));
+        verify(state.usage,timeout(1000)).record(eq(7L),eq(1L),eq("ASK"),eq(24),eq(16),eq(false),anyLong(),eq("SUCCESS"),isNull(),any());
+        String directory=System.getenv("OJ_TEST_OUTPUT_DIR");if(directory!=null){Files.writeString(Path.of(directory,"http-diagnostic-counterexample.sse"),sse);Files.writeString(Path.of(directory,"http-diagnostic-upstream.json"),new JSONArray(List.of(first,last)).toStringPretty());}
+    }
     String call(String method,String path,String body)throws Exception {
         var request=HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+path)).timeout(Duration.ofSeconds(10)).header("X-Fixture-User","7");
         if(body==null)request.method(method,HttpRequest.BodyPublishers.noBody());else request.header("Content-Type","application/json").method(method,HttpRequest.BodyPublishers.ofString(body));
@@ -76,12 +87,20 @@ class OpenTutorHttpTest {
     }
     static final class State implements AutoCloseable {
         final HttpServer upstream;
+        final AiUsageRecorder usage=mock(AiUsageRecorder.class);
         final List<JSONObject> requests=new CopyOnWriteArrayList<>();
         final Map<String,List<JSONObject>> history=new ConcurrentHashMap<>();
         State()throws IOException {
             upstream=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);
             upstream.createContext("/v1/chat/completions",exchange->{
                 var request=new JSONObject(new String(exchange.getRequestBody().readAllBytes(),StandardCharsets.UTF_8));requests.add(request);
+                boolean verify=request.toString().contains("verify-counterexample") && request.containsKey("tools");
+                if(verify) {
+                    exchange.getResponseHeaders().add("Content-Type","text/event-stream");exchange.sendResponseHeaders(200,0);
+                    String part1="data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"verify_1\",\"type\":\"function\",\"function\":{\"name\":\"verify_case\",\"arguments\":\"{\\\"input\\\":\"}}]}}]}\n\n";
+                    String part2="data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"\\\"0\\\"}\"}}]},\"finish_reason\":\"tool_calls\"}],\"usage\":{\"prompt_tokens\":12,\"completion_tokens\":8,\"total_tokens\":20}}\n\ndata: [DONE]\n\n";
+                    exchange.getResponseBody().write((part1+part2).getBytes(StandardCharsets.UTF_8));exchange.close();return;
+                }
                 String reason=request.toString().contains("truncate")?"length":"stop";
                 String text="参考实现：\\nint main() { return 0; }";
                 var chunk=new JSONObject().set("choices",new JSONArray().put(new JSONObject().set("delta",new JSONObject().set("content",text)).set("finish_reason",reason)))
@@ -119,8 +138,15 @@ class OpenTutorHttpTest {
             var submissions=mock(SubmissionReviewQuery.class);when(submissions.findById(anyLong())).thenAnswer(i->{Long id=i.getArgument(0);return Optional.of(new SubmissionReviewQuery.SubmissionReviewData(id,7L,1L,(byte)1,"cpp","int main(){}",100,1,1,null,id==9?9L:null,List.of()));});
             var builder=new TutorMessageBuilder(new PromptRegistry(mock(PromptTemplateMapper.class)));var contest=new AiContestGuard();
             var review=new ReviewApplicationService(gateway,quota,contest,submissions,problems,builder);
-            var ai=new AiService(gateway,sessions,mock(RagContextService.class),quota,contest,mock(TeacherWorkbenchService.class),review,builder);
-            return new AiController(ai,quota,mock(AiUsageRecorder.class),sessions,executor,problems);
+            var execution=mock(com.musealgo.oj.api.judge.CodeExecutionGateway.class);
+            when(execution.reuse(any(),any(),any(),any(),any())).thenReturn(List.of());
+            var run=new com.musealgo.oj.api.judge.CodeExecutionGateway.Observation("00000000-0000-0000-0000-000000000001","0","1","","",3,"0.01",10,false);
+            when(execution.verify(any(),nullable(String.class),any())).thenReturn(new com.musealgo.oj.api.judge.CodeExecutionGateway.Verification(run,"0","OFFICIAL_SAMPLE",true,"实测输出不匹配"));
+            var settings=mock(com.musealgo.oj.ai.diagnostics.DiagnosisSettings.class);when(settings.maxCases()).thenReturn(1);when(settings.waitSeconds()).thenReturn(2);
+            var refs=mock(com.musealgo.oj.ai.reference.TutorReferenceService.class);when(refs.resolve(1L,true)).thenReturn(new com.musealgo.oj.ai.reference.TutorReferenceService.Reference(12L,"官方题解","SELECTED-OFFICIAL-SOLUTION",false,26));
+            var diagnosis=new com.musealgo.oj.ai.diagnostics.TutorDiagnosisService(gateway,execution,settings,mock(com.musealgo.oj.ai.diagnostics.DiagnosticStats.class),refs,executor);
+            var ai=new AiService(gateway,sessions,mock(RagContextService.class),quota,contest,mock(TeacherWorkbenchService.class),review,builder,diagnosis,state.usage);
+            return new AiController(ai,quota,state.usage,sessions,executor,problems);
         }
     }
 }

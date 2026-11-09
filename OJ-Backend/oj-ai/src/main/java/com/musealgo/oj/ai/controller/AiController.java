@@ -43,6 +43,10 @@ public class AiController {
     private final ExecutorService aiStreamExecutor;
     private final ProblemTutoringQuery problems;
 
+    @GetMapping("/quota")
+    public Result<java.util.Map<String,Object>> quota() {
+        return Result.success(quotaService.snapshot(user(), SecurityUtils.isTeacherOrAdmin()));
+    }
     @GetMapping("/conversation")
     public Result<List<JSONObject>> conversation(@RequestParam @Positive Long problemId) {
         Long user = user(); problems.load(problemId);
@@ -87,6 +91,9 @@ public class AiController {
                 // 第一个空格是 SSE 分隔符，保留增量本身的缩进。
                 emitter.send(SseEmitter.event().data(" " + chunk));
             } catch (IOException | IllegalStateException disconnected) { throw new AiStreamControl.Cancelled(); }
+        }, (name, data) -> {
+            try { emitter.send(SseEmitter.event().name(name).data(data, MediaType.APPLICATION_JSON)); }
+            catch (IOException | IllegalStateException disconnected) { throw new AiStreamControl.Cancelled(); }
         });
         emitter.onTimeout(control::cancel);
         emitter.onError(error -> control.cancel());
@@ -158,9 +165,9 @@ public class AiController {
                 return;
             }
             boolean called = outcome.requestSent();
-            boolean estimated = outcome.usage() == null;
-            int input = !called ? 0 : estimated ? AiService.estimateTokens(outcome.promptText()) : outcome.usage().promptTokens();
-            int output = !called ? 0 : estimated ? AiService.estimateTokens(outcome.answer()) : outcome.usage().completionTokens();
+            boolean estimated = outcome.usage() == null || outcome.usageEstimated();
+            int input = !called ? 0 : outcome.usage() == null ? AiService.estimateTokens(outcome.promptText()) : outcome.usage().promptTokens();
+            int output = !called ? 0 : outcome.usage() == null ? AiService.estimateTokens(outcome.answer()) : outcome.usage().completionTokens();
             if (AiUsage.STATUS_SUCCESS.equals(outcome.status())) quotaService.consume(user, input + output, privileged);
             String detail = AiUsage.STATUS_CANCELLED.equals(outcome.status()) ? "用户停止生成；估算仅含已发送输入和已接收输出，最终供应商成本未知"
                     : AiUsage.STATUS_FAIL.equals(outcome.status()) ? (called ? "模型回复未完成：" : "未发送上游请求：") + outcome.errorType() : null;

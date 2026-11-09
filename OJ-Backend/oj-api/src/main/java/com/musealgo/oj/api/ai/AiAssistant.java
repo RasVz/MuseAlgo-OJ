@@ -11,6 +11,9 @@ public interface AiAssistant {
      */
     String chat(String systemPrompt, String userPrompt);
 
+    /** 后台报告等无请求上下文的调用显式标注资源归属，不用于授权。 */
+    default String chatForUser(Long userId, String systemPrompt, String userPrompt) { return chat(systemPrompt,userPrompt); }
+
     /**
      * 结构化对话入口：自定义 system + user prompt，要求模型只输出一个合法 JSON 对象。
      * <p>

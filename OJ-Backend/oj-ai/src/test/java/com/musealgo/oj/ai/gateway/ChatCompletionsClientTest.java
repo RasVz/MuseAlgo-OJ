@@ -43,6 +43,14 @@ class ChatCompletionsClientTest {
     }
 
     @Test
+    void toolOnlyTurnIsAValidModelResultRatherThanAnEmptyReply() throws Exception {
+        start(exchange -> respond(exchange, 200,
+                "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"case-1\",\"type\":\"function\",\"function\":{\"name\":\"verify_case\",\"arguments\":\"{\\\"input\\\":\\\"0\\\"}\"}}]},\"finish_reason\":\"tool_calls\"}]}\n\ndata: [DONE]\n\n"));
+        var result = client(4096,65536,2048).stream(snapshot(false,true),messages(),x -> {});
+        assertTrue(result.success(), "模型申请验证是有效响应，不能按空回答处理");
+    }
+
+    @Test
     void legacyStreamingSendsConfiguredOutputLimitAndDetectsTruncation() throws Exception {
         AtomicReference<String> body = new AtomicReference<>();
         start(exchange -> {

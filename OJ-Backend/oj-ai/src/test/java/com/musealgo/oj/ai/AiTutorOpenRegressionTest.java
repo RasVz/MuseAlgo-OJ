@@ -41,7 +41,7 @@ class AiTutorOpenRegressionTest {
     }
     @Test void historyIsPrunedInCompleteTurnsAndReferenceMarked() {
         var history=List.of(TutorMessageBuilder.message("user","x".repeat(7000)),TutorMessageBuilder.message("assistant","y".repeat(7000)),TutorMessageBuilder.message("user","新问题"),TutorMessageBuilder.message("assistant","新回答"));
-        var m=builder.build("tutor-open",problem,"c","cpp","q",new AiTeachingPreferences(),"r".repeat(6100),history,null);
+        var m=builder.build("tutor-open",problem,"c","cpp","q",new AiTeachingPreferences(),"r".repeat(11000),history,null);
         assertEquals(4,m.size());assertEquals("新问题",m.getJSONObject(1).getStr("content"));assertTrue(m.toString().contains("已截断"));
     }
 }

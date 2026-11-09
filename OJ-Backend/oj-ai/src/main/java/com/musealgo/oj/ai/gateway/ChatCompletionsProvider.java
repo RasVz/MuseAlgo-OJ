@@ -37,4 +37,7 @@ public class ChatCompletionsProvider implements AiProvider {
     public AiStreamResult stream(AiServiceSnapshot snapshot, JSONArray messages, Consumer<String> onChunk) {
         return chatClient.stream(snapshot, messages, onChunk);
     }
+    @Override public AiStreamResult stream(AiServiceSnapshot snapshot, JSONArray messages, JSONArray tools, Consumer<String> onChunk) {
+        return chatClient.stream(snapshot, messages, tools, onChunk);
+    }
 }

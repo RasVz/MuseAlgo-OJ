@@ -145,6 +145,10 @@ public class ChatCompletionsClient {
     }
 
     public AiStreamResult stream(AiServiceSnapshot snapshot, JSONArray messages, Consumer<String> onChunk) {
+        return stream(snapshot, messages, null, onChunk);
+    }
+
+    public AiStreamResult stream(AiServiceSnapshot snapshot, JSONArray messages, JSONArray tools, Consumer<String> onChunk) {
         AiCallSource source = snapshot.source();
         String unavailable = unavailableReason(snapshot);
         if (unavailable != null) {
@@ -159,6 +163,9 @@ public class ChatCompletionsClient {
 
         JSONObject requestBody = baseRequest(snapshot, messages, false);
         requestBody.set("stream", true);
+        if (tools != null && !tools.isEmpty()) {
+            requestBody.set("tools", tools); requestBody.set("tool_choice", "auto");
+        }
         requestBody.set("max_tokens", snapshot.maxTokens());
         if (snapshot.streamIncludeUsage()) {
             JSONObject streamOptions = new JSONObject();
@@ -177,6 +184,7 @@ public class ChatCompletionsClient {
         }
 
         StringBuilder full = new StringBuilder();
+        var toolParts = new java.util.TreeMap<Integer, ToolParts>();
         AiTokenUsage usage = null;
         boolean emitted = false;
         boolean finished = false;
@@ -190,9 +198,12 @@ public class ChatCompletionsClient {
         if (onChunk instanceof AiStreamControl control) control.onCancel(call::cancel);
         try (Response response = call.execute()) {
             if (!response.isSuccessful()) {
-                String type = classifyHttpStatus(response.code());
+                String reason = upstreamReason(response);
+                String type = tools != null && (response.code() == 400 || response.code() == 422)
+                        && (reason.toLowerCase(java.util.Locale.ROOT).contains("tool") || reason.toLowerCase(java.util.Locale.ROOT).contains("function"))
+                        ? "TOOLS_UNSUPPORTED" : classifyHttpStatus(response.code());
                 log.warn("【AI上游】流式非成功响应 status={} type={} serviceId={} reason={}",
-                        response.code(), type, snapshot.serviceId(), upstreamReason(response));
+                        response.code(), type, snapshot.serviceId(), reason);
                 return partial(full, usage, source, false, requestSent.get(), type, httpErrorMessage(type));
             }
             ResponseBody body = response.body();
@@ -229,6 +240,7 @@ public class ChatCompletionsClient {
                     delta = extractDeltaContent(chunk);
                     JSONArray choices = chunk.getJSONArray("choices");
                     if (choices != null && !choices.isEmpty()) {
+                        collectTools(choices.getJSONObject(0).getJSONObject("delta"), toolParts);
                         String reason = choices.getJSONObject(0).getStr("finish_reason");
                         finished |= reason != null && !reason.isBlank();
                         outputLimited |= "length".equals(reason);
@@ -247,14 +259,20 @@ public class ChatCompletionsClient {
                 }
             }
             if (contentFiltered) return partial(full, usage, source, emitted, requestSent.get(), "CONTENT_FILTER", "供应商未能完成本次回复，请调整问题后重试");
-            if (full.isEmpty()) {
+            if (full.isEmpty() && toolParts.isEmpty()) {
                 return partial(full, usage, source, false, requestSent.get(), "INVALID_RESPONSE", "上游流式响应缺少有效内容");
             }
             if (!finished) {
                 return partial(full, usage, source, emitted, requestSent.get(), "NETWORK", "上游流式连接未完整结束");
             }
             if (outputLimited) return partial(full, usage, source, emitted, requestSent.get(), "OUTPUT_LIMIT", "回复达到输出上限，尚未完成");
-            return AiStreamResult.success(full.toString(), usage, source, emitted);
+                        var calls = new java.util.ArrayList<AiStreamResult.ToolCall>();
+            for (var part : toolParts.values()) {
+                if (part.id.isEmpty() || part.name.isEmpty() || part.arguments.isEmpty())
+                    return partial(full, usage, source, emitted, requestSent.get(), "INVALID_RESPONSE", "工具调用不完整");
+                calls.add(new AiStreamResult.ToolCall(part.id.toString(),part.name.toString(),part.arguments.toString()));
+            }
+            return new AiStreamResult(full.toString(), usage, source, true, emitted, null, null, requestSent.get(), calls, false);
         } catch (AiStreamControl.Cancelled e) {
             return partial(full, usage, source, emitted, requestSent.get(), "CANCELLED", "用户已停止生成，最终供应商成本未知");
         } catch (ResponseTooLargeException e) {
@@ -271,6 +289,27 @@ public class ChatCompletionsClient {
             log.warn("【AI上游】流式网络失败 serviceId={} exception={}",
                     snapshot.serviceId(), e.getClass().getSimpleName());
             return partial(full, usage, source, emitted, requestSent.get(), "NETWORK", "上游流式连接中断");
+        }
+    }
+
+    private static final class ToolParts {
+        final StringBuilder id = new StringBuilder(), name = new StringBuilder(), arguments = new StringBuilder();
+    }
+    private static void collectTools(JSONObject delta, java.util.Map<Integer,ToolParts> parts) {
+        JSONArray calls = delta == null ? null : delta.getJSONArray("tool_calls");
+        if (calls == null) return;
+        for (Object value : calls) {
+            JSONObject call = (JSONObject)value;
+            int index = call.getInt("index", 0);
+            if (index < 0 || index > 1) throw new IllegalArgumentException("too many tool calls");
+            ToolParts part = parts.computeIfAbsent(index, ignored -> new ToolParts());
+            part.id.append(call.getStr("id", ""));
+            JSONObject function = call.getJSONObject("function");
+            if (function != null) {
+                part.name.append(function.getStr("name", "")); part.arguments.append(function.getStr("arguments", ""));
+            }
+            if (part.id.length()>200 || part.name.length()>64 || part.arguments.length()>8192)
+                throw new IllegalArgumentException("tool arguments too large");
         }
     }
 
@@ -371,7 +410,7 @@ public class ChatCompletionsClient {
             if (body == null) {
                 return "";
             }
-            String raw = body.string();
+            String raw = readBounded(body, 8192);
             if (raw == null || raw.isBlank()) {
                 return "";
             }

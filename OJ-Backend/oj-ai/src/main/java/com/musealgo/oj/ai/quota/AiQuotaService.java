@@ -109,6 +109,13 @@ public class AiQuotaService {
         return config.dailyTokens();
     }
 
+    public java.util.Map<String,Object> snapshot(Long user, boolean privileged) {
+        boolean exempt = !config.quotaEnabled() || config.exemptTeacherAdmin() && privileged;
+        long limit=dailyLimit(), used=currentUsage(user);
+        return java.util.Map.of("usedToday",used,"dailyLimit",limit,"remaining",Math.max(0,limit-used),"exempt",exempt,
+                "resetAt",LocalDate.now().plusDays(1).atStartOfDay(java.time.ZoneId.systemDefault()).toOffsetDateTime().toString());
+    }
+
     private static String key(Long userId) {
         return KEY_PREFIX + userId + ":" + LocalDate.now().format(DAY);
     }

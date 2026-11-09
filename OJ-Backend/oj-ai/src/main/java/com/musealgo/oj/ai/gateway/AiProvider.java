@@ -22,4 +22,7 @@ public interface AiProvider {
     AiCompletionResult complete(AiServiceSnapshot snapshot, JSONArray messages, boolean jsonMode);
 
     AiStreamResult stream(AiServiceSnapshot snapshot, JSONArray messages, Consumer<String> onChunk);
+    default AiStreamResult stream(AiServiceSnapshot snapshot, JSONArray messages, JSONArray tools, Consumer<String> onChunk) {
+        return stream(snapshot, messages, onChunk);
+    }
 }

@@ -149,7 +149,7 @@ public class TeacherAiController {
             }
         }
         boolean success = json != null;
-        recordUsage(scene, startMs, success, userPrompt, raw, call.source(), call.usage());
+        recordUsage(scene, startMs, success, userPrompt, raw, call.source(), call.cached() ? AiTokenUsage.empty() : call.usage());
         if (!success) {
             log.warn("【命题工作台】{} 返回不可解析内容: {}", toolKey,
                     raw == null ? "null" : raw.substring(0, Math.min(raw.length(), 200)));
@@ -299,7 +299,7 @@ public class TeacherAiController {
                 ? input + "\n【难度/要求】" + extra : input;
         AiCompletionResult call = teacherWorkbenchService.teacherChatDetailed(toolKey, userPrompt);
         String answer = call.success() ? call.content() : null;
-        recordUsage(scene, startMs, call.success(), userPrompt, answer, call.source(), call.usage());
+        recordUsage(scene, startMs, call.success(), userPrompt, answer, call.source(), call.cached() ? AiTokenUsage.empty() : call.usage());
         if (answer == null || answer.isBlank()) {
             // 失败必须回错误码：把「生成失败」当成功文本返回，前端会把它填进题面编辑器，
             // 使用者无法区分模型没答和题目内容本身。

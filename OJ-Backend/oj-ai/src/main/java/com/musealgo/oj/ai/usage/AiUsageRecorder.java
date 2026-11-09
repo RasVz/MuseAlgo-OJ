@@ -69,6 +69,7 @@ public class AiUsageRecorder {
         tokenCounter.increment(promptTokens + completionTokens);
         latencyTimer.record(java.time.Duration.ofMillis(latencyMs));
 
+        if (userId == null) { log.warn("AI 调用缺少归属用户，已记录资源指标，跳过用户流水 scene={}",scene); return; }
         aiUsageExecutor.execute(() -> {
             try {
                 AiUsage usage = new AiUsage();

@@ -20,6 +20,12 @@ public class AiExecutorConfig {
         return Executors.newFixedThreadPool(8);
     }
 
+    @Bean("aiDiagnosisExecutor")
+    public ExecutorService aiDiagnosisExecutor() {
+        return new java.util.concurrent.ThreadPoolExecutor(2, 2, 0L, java.util.concurrent.TimeUnit.MILLISECONDS,
+                new java.util.concurrent.ArrayBlockingQueue<>(4), new java.util.concurrent.ThreadPoolExecutor.AbortPolicy());
+    }
+
     /**
      * AI 用量流水落库专用单线程池。
      * <p>

@@ -41,12 +41,23 @@ public class AiService implements AiAssistant {
     private final TeacherWorkbenchService teacherWorkbenchService;
     private final ReviewApplicationService reviewApplicationService;
     private final com.musealgo.oj.ai.tutor.TutorMessageBuilder messages;
+    private final com.musealgo.oj.ai.diagnostics.TutorDiagnosisService diagnosis;
+    private final com.musealgo.oj.ai.usage.AiUsageRecorder usage;
 
     public AiService(AiGateway aiGateway, AiChatSessionService sessionService,
                      RagContextService ragContextService, AiQuotaService quotaService,
                      AiContestGuard contestGuard, TeacherWorkbenchService teacherWorkbenchService,
                      ReviewApplicationService reviewApplicationService,
                      com.musealgo.oj.ai.tutor.TutorMessageBuilder messages) {
+        this(aiGateway, sessionService, ragContextService, quotaService, contestGuard, teacherWorkbenchService, reviewApplicationService, messages, null, null);
+    }
+    @org.springframework.beans.factory.annotation.Autowired
+    public AiService(AiGateway aiGateway, AiChatSessionService sessionService,
+                     RagContextService ragContextService, AiQuotaService quotaService,
+                     AiContestGuard contestGuard, TeacherWorkbenchService teacherWorkbenchService,
+                     ReviewApplicationService reviewApplicationService, com.musealgo.oj.ai.tutor.TutorMessageBuilder messages,
+                     com.musealgo.oj.ai.diagnostics.TutorDiagnosisService diagnosis, com.musealgo.oj.ai.usage.AiUsageRecorder usage) {
+        this.diagnosis = diagnosis; this.usage=usage;
         this.aiGateway = aiGateway; this.sessionService = sessionService;
         this.ragContextService = ragContextService; this.quotaService = quotaService;
         this.contestGuard = contestGuard; this.teacherWorkbenchService = teacherWorkbenchService;
@@ -61,7 +72,10 @@ public class AiService implements AiAssistant {
      */
     @Override
     public String chatWithTool(String toolKey, String userPrompt) {
-        return teacherWorkbenchService.teacherChat(toolKey, userPrompt);
+        long start=System.currentTimeMillis();
+        var result=teacherWorkbenchService.teacherChatDetailed(toolKey, userPrompt);
+        recordIndirect(com.musealgo.oj.common.utils.SecurityUtils.getUserId(),"TOOL",result,userPrompt,start);
+        return result.success()?result.content():API_FAIL_FALLBACK;
     }
 
     /**
@@ -72,7 +86,10 @@ public class AiService implements AiAssistant {
      */
     @Override
     public String chatJsonWithTool(String toolKey, String userPrompt) {
-        return teacherWorkbenchService.teacherWorkbenchJson(toolKey, userPrompt);
+        long start=System.currentTimeMillis();
+        var result=teacherWorkbenchService.teacherWorkbenchJsonDetailed(toolKey, userPrompt);
+        recordIndirect(com.musealgo.oj.common.utils.SecurityUtils.getUserId(),"TOOL_JSON",result,userPrompt,start);
+        return result.success()?result.content():null;
     }
 
     /** 从模型输出中稳健提取 JSON 对象：容忍 ```json 围栏与前后说明文字；失败返回 null。 */
@@ -101,8 +118,10 @@ public class AiService implements AiAssistant {
         JSONArray messages = new JSONArray();
         messages.add(systemMessage(systemPrompt));
         messages.add(userMessage(userPrompt));
-        String answer = aiGateway.complete(messages, false);
-        return answer != null ? answer : API_FAIL_FALLBACK;
+        long start=System.currentTimeMillis();
+        var result=aiGateway.completeDetailed(messages,false);
+        recordIndirect(com.musealgo.oj.common.utils.SecurityUtils.getUserId(),"INDIRECT",result,messages.toString(),start);
+        return result.success()?result.content():API_FAIL_FALLBACK;
     }
 
     @Override
@@ -111,7 +130,26 @@ public class AiService implements AiAssistant {
         messages.add(systemMessage(systemPrompt));
         messages.add(userMessage(userPrompt));
         // 失败返回 null，由调用方自行处理；不返回降级文案，避免把失败伪装成 JSON 内容
-        return aiGateway.complete(messages, true);
+        long start=System.currentTimeMillis();
+        var result=aiGateway.completeDetailed(messages,true);
+        recordIndirect(com.musealgo.oj.common.utils.SecurityUtils.getUserId(),"INDIRECT_JSON",result,messages.toString(),start);
+        return result.success()?result.content():null;
+    }
+
+    @Override public String chatForUser(Long user, String systemPrompt, String userPrompt) {
+        JSONArray request=new JSONArray();request.add(systemMessage(systemPrompt));request.add(userMessage(userPrompt));
+        long start=System.currentTimeMillis();var result=aiGateway.completeDetailed(request,false);
+        recordIndirect(user,"ADVICE",result,request.toString(),start);
+        return result.success()?result.content():API_FAIL_FALLBACK;
+    }
+    private void recordIndirect(Long user,String scene,com.musealgo.oj.ai.dto.AiCompletionResult result,String prompt,long start) {
+        if(usage==null||result==null)return;
+        boolean estimated=!result.cached()&&result.usage()==null;
+        int input=result.cached()?0:result.usage()!=null?result.usage().promptTokens():result.success()?estimateTokens(prompt):0;
+        int output=result.cached()?0:result.usage()!=null?result.usage().completionTokens():result.success()?estimateTokens(result.content()):0;
+        try { usage.record(user,null,scene,input,output,estimated,System.currentTimeMillis()-start,result.success()?AiUsage.STATUS_SUCCESS:AiUsage.STATUS_FAIL,
+                result.cached()?"缓存命中，未调用供应商":estimated?"未获供应商用量，按可得内容估算（工具模板可能未计入）":result.errorType(),result.source()); }
+        catch(RuntimeException failure){log.warn("间接 AI 用量记录不可用：{}",failure.getClass().getSimpleName());}
     }
 
     static final String CONTEST_BLOCKED_NOTICE = "比赛场景不提供 AI 教学帮助，请到普通练习中使用。";
@@ -126,10 +164,10 @@ public class AiService implements AiAssistant {
             return AiAskOutcome.blocked(AiUsage.STATUS_QUOTA_REJECTED, QUOTA_EXCEEDED_NOTICE);
         try (var lease = sessionService.lock(userId, request.getProblemId())) {
             JSONArray conversation = messages.build("tutor-open", problem, request.getStudentCode(), request.getLanguage(),
-                    request.getStudentQuestion(), request, ragContextService.buildReference(request.getProblemId()),
-                    sessionService.loadHistory(userId, request.getProblemId()), null);
+                    request.getStudentQuestion(), request, diagnosis == null ? ragContextService.buildReference(request.getProblemId()) : teachingReference(request.getProblemId()),
+                    sessionService.loadHistory(userId, request.getProblemId()), diagnosis == null ? null : diagnosis.assessment(userId, request));
             String prompt = com.musealgo.oj.ai.tutor.TutorMessageBuilder.flatten(conversation);
-            AiStreamResult result = aiGateway.stream(conversation, onChunk);
+            AiStreamResult result = diagnosis == null ? aiGateway.stream(conversation, onChunk) : diagnosis.stream(userId, request, conversation, onChunk);
             AiAskOutcome outcome = outcome(result, prompt);
             if (AiUsage.STATUS_SUCCESS.equals(outcome.status()))
                 sessionService.appendTurn(userId, request.getProblemId(), request.getStudentQuestion(), result.content());
@@ -137,11 +175,17 @@ public class AiService implements AiAssistant {
         }
     }
 
+    private String teachingReference(Long problem) {
+        String reference=diagnosis.reference(problem);
+        try { String supplement=ragContextService.buildSupplement(problem); return supplement==null ? reference : reference+"\n【补充材料，可能不完整】\n"+supplement.substring(0,Math.min(2000,supplement.length())); }
+        catch(RuntimeException failure){ log.warn("教学补充材料暂不可读：{}",failure.getClass().getSimpleName()); return reference; }
+    }
+
     static AiAskOutcome outcome(AiStreamResult result, String prompt) {
         if (result == null) return AiAskOutcome.fail(prompt);
         return new AiAskOutcome(result.success() ? AiUsage.STATUS_SUCCESS
                 : "CANCELLED".equals(result.errorType()) ? AiUsage.STATUS_CANCELLED : AiUsage.STATUS_FAIL,
-                result.content(), result.usage(), prompt, result.source(), result.errorType(), null, result.requestSent());
+                result.content(), result.usage(), prompt, result.source(), result.errorType(), null, result.requestSent(), result.usageEstimated());
     }
 
     public ReviewApplicationService.PreparedReview prepareReview(Long userId, com.musealgo.oj.ai.dto.AiReviewRequest request) {

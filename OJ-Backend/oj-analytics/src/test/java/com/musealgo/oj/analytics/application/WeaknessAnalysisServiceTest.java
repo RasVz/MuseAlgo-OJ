@@ -85,7 +85,7 @@ class WeaknessAnalysisServiceTest {
                 .thenReturn(List.of(stat(1L, "图论", 4, 0, 0, 800)));
         when(profileQuery.findSolvedProblemIds(1L)).thenReturn(Set.of());
         when(problemTagMapper.selectList(any())).thenReturn(List.of());
-        when(aiAssistant.chat(any(), any())).thenThrow(new RuntimeException("模型不可用"));
+        when(aiAssistant.chatForUser(any(), any(), any())).thenThrow(new RuntimeException("模型不可用"));
 
         WeaknessResultVO result = newService().analyze(1L, 30, true);
 
