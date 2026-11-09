@@ -7,7 +7,7 @@
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 系统架构：模块划分、依赖约束、判题链路、报告生命周期、关键机制 |
 | [DEVELOPMENT.md](DEVELOPMENT.md) | 开发指南：环境搭建、工程结构、数据库迁移、构建测试、代码与注释约定 |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | 生产部署：Docker Compose / systemd 两种方式、反向代理、密钥管理、安全清单 |
-| [AI-TUTOR.md](AI-TUTOR.md) | 开放式教学、帮助偏好、比赛场景与代码上下文 |
+| [AI-TUTOR.md](AI-TUTOR.md) | 开放式教学、默认诊断、临时样例、题解连通与资源管理 |
 | [AI-SERVICES.md](AI-SERVICES.md) | 管理中心维护 AI 接口/模型/密钥、运行模式、主密钥挂载与轮换 |
 | [CONTEST-AND-REPORTS.md](CONTEST-AND-REPORTS.md) | 资格快照、正式/全局榜、教师报告操作与边界 |
 | [TESTING.md](TESTING.md) | 独立数据库/Judge0、真实 API、浏览器与 MQ 故障验收 |
