@@ -15,7 +15,9 @@ public enum ProblemErrorCode implements ErrorCode {
     PROBLEM_LIST_ITEM_ALREADY_EXISTS(409, "该题目已在题单中"),
     PROBLEM_LIST_ITEM_NOT_FOUND(404, "该题目不在题单中"),
     PROBLEM_LIST_NOT_FOUND(404, "题单不存在"),
-    PROBLEM_NOT_FOUND(404, "题目不存在");
+    PROBLEM_NOT_FOUND(404, "题目不存在"),
+    /** 写入未生效属于服务端故障，保留 500 语义但给出可定位的业务码。 */
+    PROBLEM_WRITE_FAILED(500, "题目写入失败，请稍后重试");
 
     private final int status;
     private final String message;

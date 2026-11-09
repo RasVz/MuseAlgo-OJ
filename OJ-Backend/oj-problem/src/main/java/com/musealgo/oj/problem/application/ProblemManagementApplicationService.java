@@ -97,7 +97,7 @@ public class ProblemManagementApplicationService {
         applyEditableFields(problem, command);
         problem.setAuthorId(actorId);
         if (!problemService.save(problem)) {
-            throw new IllegalStateException("题目保存失败");
+            throw new BusinessException(ProblemErrorCode.PROBLEM_WRITE_FAILED, "题目保存失败");
         }
         sampleApplicationService.replaceSamples(problem.getId(), command.getSamples());
         matchTags(problem);
@@ -123,7 +123,7 @@ public class ProblemManagementApplicationService {
         problem.setIsPublic(false);
         problem.setAuthorId(actorId);
         if (!problemService.save(problem)) {
-            throw new IllegalStateException("题目保存失败");
+            throw new BusinessException(ProblemErrorCode.PROBLEM_WRITE_FAILED, "题目保存失败");
         }
         try {
             sampleApplicationService.replaceSamples(problem.getId(), imported.samples().stream()
@@ -153,7 +153,7 @@ public class ProblemManagementApplicationService {
         Problem existing = accessGuard.requireManagedProblem(command.getId());
         applyEditableFields(existing, command);
         if (!problemService.updateById(existing)) {
-            throw new IllegalStateException("题目更新失败");
+            throw new BusinessException(ProblemErrorCode.PROBLEM_WRITE_FAILED, "题目更新失败");
         }
         if (command.getSamples() != null) {
             sampleApplicationService.replaceSamples(existing.getId(), command.getSamples());
@@ -173,7 +173,7 @@ public class ProblemManagementApplicationService {
         problemSampleService.remove(new LambdaQueryWrapper<ProblemSample>()
                 .eq(ProblemSample::getProblemId, problemId));
         if (!problemService.removeById(problemId)) {
-            throw new IllegalStateException("题目删除失败");
+            throw new BusinessException(ProblemErrorCode.PROBLEM_WRITE_FAILED, "题目删除失败");
         }
         // DB 事务提交后再删文件：删除失败回滚时题目与用例记录仍然有效，文件不能提前消失
         testCaseStorageService.deleteProblemDirsAfterCommit(problemId);

@@ -99,6 +99,21 @@ class CoursewareDetailAuthorizationTest {
         verifyNoInteractions(classCoursewareService);
     }
 
+    @Test
+    void updateWithoutUpdatableFieldsIsRejectedBeforeWrite() {
+        when(coursewareService.getById(88L)).thenReturn(privateCourseware());
+        authenticate(10L, "TEACHER");
+        Courseware request = new Courseware();
+        request.setId(88L);
+
+        Result<String> result = controller.update(request);
+
+        assertEquals(400, result.getCode());
+        assertEquals("TEACHING_INPUT_INVALID", result.getErrorCode());
+        org.mockito.Mockito.verify(coursewareService, org.mockito.Mockito.never())
+                .updateById(org.mockito.ArgumentMatchers.any());
+    }
+
     private static Courseware privateCourseware() {
         Courseware courseware = new Courseware();
         courseware.setId(88L);
