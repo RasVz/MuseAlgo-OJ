@@ -1,5 +1,7 @@
 package com.musealgo.oj.problem.application;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.problem.error.ProblemErrorCode;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -41,7 +43,7 @@ public class ProblemListCommandService implements ProblemListCommand {
         problemList.setProblemCount(0);
         problemList.setFavoriteCount(0);
         problemList.setPrivacy(0);
-        if (!problemListService.save(problemList)) throw new IllegalStateException("班级题单保存失败");
+        if (!problemListService.save(problemList)) throw new BusinessException(ProblemErrorCode.PROBLEM_LIST_WRITE_FAILED, "班级题单保存失败");
         return problemList.getId();
     }
 
@@ -71,6 +73,6 @@ public class ProblemListCommandService implements ProblemListCommand {
                 : "favorite_count = CASE WHEN favorite_count > 0 THEN favorite_count - 1 ELSE 0 END";
         if (!problemListService.update(new LambdaUpdateWrapper<ProblemList>()
                 .setSql(expression)
-                .eq(ProblemList::getId, id))) throw new IllegalStateException("题单收藏计数更新失败");
+                .eq(ProblemList::getId, id))) throw new BusinessException(ProblemErrorCode.PROBLEM_LIST_WRITE_FAILED, "题单收藏计数更新失败");
     }
 }

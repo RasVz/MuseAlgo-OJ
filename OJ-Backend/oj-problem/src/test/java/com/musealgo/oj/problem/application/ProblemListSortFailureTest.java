@@ -45,6 +45,8 @@ class ProblemListSortFailureTest {
     @Test void failedIndividualListSortMustNotClaimSuccess() {
         when(lists.selectCount(any())).thenReturn(1L);
         when(lists.update(any(),any())).thenReturn(0);
-        assertThrows(IllegalStateException.class,()->service.updateSort(1,List.of(3L)));
+        var error=assertThrows(BusinessException.class,()->service.updateSort(1,List.of(3L)));
+        assertEquals("PROBLEM_LIST_WRITE_FAILED",error.getErrorCode().key());
+        assertEquals(500,error.getErrorCode().status());
     }
 }

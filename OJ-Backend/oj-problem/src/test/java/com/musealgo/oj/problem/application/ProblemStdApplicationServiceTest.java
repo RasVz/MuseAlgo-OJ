@@ -75,6 +75,23 @@ class ProblemStdApplicationServiceTest {
     }
 
     @Test
+    void failedStdWriteReportsAnExplicitWriteFailure() {
+        when(caseApplicationService.lockProblemRowThenFingerprint(PROBLEM_ID)).thenReturn("fp-1");
+        Problem problem = new Problem();
+        problem.setId(PROBLEM_ID);
+        when(accessGuard.requireManagedProblem(PROBLEM_ID)).thenReturn(problem);
+        when(problemService.updateStd(anyLong(), any(), any(), anyInt())).thenReturn(false);
+
+        var error = org.junit.jupiter.api.Assertions.assertThrows(
+                com.musealgo.oj.common.exception.BusinessException.class,
+                () -> service.saveStdTested(PROBLEM_ID, "int main(){}", "思路", "fp-1"));
+
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "PROBLEM_STD_WRITE_FAILED", error.getErrorCode().key());
+        org.junit.jupiter.api.Assertions.assertEquals(500, error.getErrorCode().status());
+    }
+
+    @Test
     void blankCodeIsRejectedBeforeTakingAnyLock() {
         assertThatThrownBy(() -> service.saveStdTested(PROBLEM_ID, "  ", "", "fp-1"))
                 .isInstanceOf(com.musealgo.oj.common.exception.BusinessException.class);

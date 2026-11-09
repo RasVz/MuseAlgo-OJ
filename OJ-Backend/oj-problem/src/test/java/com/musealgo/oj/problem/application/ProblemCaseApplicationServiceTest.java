@@ -360,4 +360,17 @@ class ProblemCaseApplicationServiceTest {
         order.verify(problemCaseService).getProblemCasesForShare(PROBLEM_ID);
         verify(problemCaseService, never()).getProblemCases(anyLong());
     }
+
+    @Test
+    void failedCountWriteReportsAnExplicitWriteFailure() {
+        when(problemService.updateById(any())).thenReturn(false);
+
+        var error = org.junit.jupiter.api.Assertions.assertThrows(
+                com.musealgo.oj.common.exception.BusinessException.class,
+                () -> service.updateTestCaseCount(PROBLEM_ID, 3));
+
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "PROBLEM_CASE_WRITE_FAILED", error.getErrorCode().key());
+        org.junit.jupiter.api.Assertions.assertEquals(500, error.getErrorCode().status());
+    }
 }
