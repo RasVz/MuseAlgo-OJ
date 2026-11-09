@@ -11,6 +11,8 @@
       </div>
       <p v-if="!state.messages.length && !state.loading" class="welcome">可以直接描述问题，也可以选择帮助方向。完整讲解与代码随时可用。</p>
       <p v-if="state.loading" role="status">正在恢复本题对话…</p>
+      <div class="diagnostic-info"><span>{{ quotaText }}</span><el-button v-if="quotaError" link @click="loadQuota">重新读取额度</el-button>
+        <span v-if="state.busy" role="status">{{ diagnosisStatus || '正在分析当前代码…' }}</span></div>
       <ChatMessageList :messages="state.messages" :thinking="state.busy" :streaming-content="state.text" />
       <div v-if="state.error" role="alert" class="request-error">
         {{ state.error }}
@@ -37,31 +39,44 @@ import { ref, shallowRef, computed, watch, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/userStore'
 import { showApiError } from '@/utils/errorFeedback'
-import { getConversation, clearConversation, streamTeaching } from '@/api/ai'
+import { getConversation, clearConversation, streamTeaching, getMyAiQuota } from '@/api/ai'
 import { createTutorConversation } from '@/utils/tutorConversation'
 import { HELP_DIRECTIONS, defaultPreferences } from '@/utils/tutorPreferences'
 import ChatMessageList from './ChatMessageList.vue'
 import TutorPreferenceControls from './TutorPreferenceControls.vue'
 const props = defineProps({ visible: Boolean, problem: { type: Object, default: () => ({}) }, getStudentContext: { type: Function, required: true } })
-const emit = defineEmits(['update:visible'])
+const emit = defineEmits(['update:visible', 'counterexample'])
 const userStore = useUserStore()
 const question = ref('')
 const preferences = ref(defaultPreferences())
 const selected = computed(() => HELP_DIRECTIONS.find(item => item.value === preferences.value.helpDirection) || HELP_DIRECTIONS[0])
 const state = shallowRef({ messages: [], loading: false, busy: false, ready: false })
 const conversation = createTutorConversation({ load: getConversation, clear: clearConversation,
-  send: (payload, signal, onChunk) => streamTeaching('ask/stream', payload, userStore.getAccessToken(), signal, onChunk),
+  send: (payload, signal, onChunk, onMetadata) => streamTeaching('ask/stream', payload, userStore.getAccessToken(), signal, onChunk, onMetadata),
+  onMetadata: (name, data, payload) => {
+    if (name === 'diagnostic-status') diagnosisStatus.value = typeof data.message === 'string' ? data.message : ''
+    if (name === 'counterexample') emit('counterexample', { ...data, snapshot: { code: payload.studentCode, language: payload.language } })
+  },
   onChange: value => { state.value = value }, onError: error => showApiError(error, error.message || 'AI 请求失败') })
 const identity = computed(() => `${userStore.userInfo?.id || 'guest'}:${props.problem?.id}`)
 const openConversation = () => {
   if (props.visible && props.problem?.id) return conversation.open(identity.value, props.problem.id)
+}
+const diagnosisStatus = ref('')
+const quota = ref(null), quotaError = ref(false)
+let quotaGeneration = 0
+const quotaText = computed(() => quotaError.value ? '额度暂不可读取' : !quota.value ? '正在读取额度…' : quota.value.exempt ? '当前账号无需扣减学生额度' : `今日剩余 ${quota.value.remaining} / ${quota.value.dailyLimit} token · 次日重置`)
+const loadQuota = async () => {
+  const version = ++quotaGeneration
+  try { const result = await getMyAiQuota(); if (version === quotaGeneration) { quota.value = result.data; quotaError.value = false } }
+  catch { if (version === quotaGeneration) quotaError.value = true }
 }
 let snapshotGeneration = 0
 watch(() => [props.visible, identity.value], ([visible, key], previous) => {
   snapshotGeneration++
   conversation.stop()
   if (previous && key !== previous[1]) { question.value = ''; preferences.value = defaultPreferences() }
-  if (visible) openConversation()
+  if (visible) { openConversation(); loadQuota() }
 }, { immediate: true })
 onBeforeUnmount(() => conversation.stop())
 const sending = ref(false)
@@ -77,10 +92,11 @@ const ask = async (retryQuestion) => {
     const snapshot = await props.getStudentContext()
     if (version !== snapshotGeneration || key !== identity.value || !props.visible) return
     if (question.value.trim() === text) question.value = ''
+    diagnosisStatus.value = ''
     await conversation.ask({ problemId: props.problem.id, studentQuestion: text,
-      studentCode: snapshot.code || '', language: snapshot.language || 'cpp', ...selectedPreferences })
+      studentCode: snapshot.code || '', language: snapshot.language || 'cpp', runIds: snapshot.runIds || [], selectedSample: snapshot.selectedSample, ...selectedPreferences })
   } catch (error) { showApiError(error, '读取当前草稿失败，请重试') }
-  finally { sending.value = false }
+  finally { sending.value = false; if (props.visible) loadQuota() }
 }
 const fillQuestion = () => { question.value = selected.value.question }
 const onEnter = event => { if (!event.isComposing) ask() }
@@ -100,6 +116,7 @@ const clearHistory = () => { snapshotGeneration++; return conversation.clear() }
 .chat-input-area > label { font-size: 13px; }
 .composer-footer { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .composer-footer > span { flex: 1; font-size: 12px; color: var(--text-secondary); }
+.diagnostic-info { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 4px 20px; font-size: 12px; color: var(--text-secondary); }
 .request-error { padding: 8px 20px; color: var(--el-color-danger); font-size: 13px; }
 @media (max-width: 480px) { .chat-input-area { padding: 12px; } .composer-footer > span { display: none; } }
 </style>

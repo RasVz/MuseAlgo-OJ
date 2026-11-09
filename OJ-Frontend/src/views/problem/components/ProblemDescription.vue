@@ -31,27 +31,8 @@
       </div>
     </div>
 
-    <template v-if="samples.length">
-      <h3 class="sub-title">样例</h3>
-      <div v-for="(sample, index) in samples" :key="sample.id ?? index" class="sample-item">
-        <div class="sample-container">
-          <div class="sample-header">
-            <span class="sample-badge">样例 #{{ index + 1 }}</span>
-            <div class="sample-btns">
-              <el-button type="primary" link size="small" @click="handleRunSample(sample)">运行</el-button>
-              <el-button link size="small" @click="copy(sample.input)">复制输入</el-button>
-              <el-button link size="small" @click="copy(sample.output)">复制输出</el-button>
-            </div>
-          </div>
-          <pre class="code-block">{{ sample.input }}</pre>
-
-          <div class="sample-header output-header">
-            <span class="sample-badge">Output</span>
-          </div>
-          <pre class="code-block">{{ sample.output }}</pre>
-        </div>
-      </div>
-    </template>
+    <TestCasePanel v-if="!isIdeMode" :cases="cases" :model="caseModel" :snapshot="snapshot" :running="running"
+      @run="emit('run', $event)" @run-all="emit('run-all')" @stop="emit('stop')" />
 
     <div v-if="props.problem.hint" class="hint-section">
       <h3 class="sub-title">提示</h3>
@@ -63,13 +44,13 @@
 <script setup>
 // 题面渲染组件：把 Markdown 题面转成 HTML，并承载"进入 IDE / 试跑样例 / 打开 AI"三个动作。
 // simple 模式用于 IDE 布局下的窄栏渲染，isIdeMode 影响按钮文案与布局。
-import { computed } from 'vue'
-import { ElMessage } from 'element-plus'
 import { Monitor, CloseBold } from '@element-plus/icons-vue' 
+import TestCasePanel from './TestCasePanel.vue'
 import { createMarkdown } from '@/utils/markdown'
 import { sanitizeStatementMarkup } from '@/utils/statement-markup'
 
 const props = defineProps({
+  cases: { type: Array, default: () => [] }, caseModel: { type: Object, default: null }, snapshot: { type: Object, default: null }, running: Boolean,
   aiEnabled: { type: Boolean, default: true },
   problem: { type: Object, default: () => ({}) },
   simple: { type: Boolean, default: false },
@@ -78,28 +59,7 @@ const props = defineProps({
 })
 
 // 增加了 open-ai 事件
-const emit = defineEmits(['toggle-ide', 'run-sample', 'open-ai'])
-
-const samples = computed(() => {
-  if (Array.isArray(props.problem.samples) && props.problem.samples.length) {
-    return props.problem.samples
-  }
-  // 兼容旧数据：只剩一组样例时兜底展示
-  if (props.problem.inputSample != null || props.problem.outputSample != null) {
-    return [{ input: props.problem.inputSample || '', output: props.problem.outputSample || '' }]
-  }
-  return []
-})
-
-// 先发 toggle-ide 再发 run-sample：顺序不能反。
-// 父组件需要先切换到 IDE 模式把编辑器渲染出来，才能往里填样例并触发运行。
-const handleRunSample = (sample) => {
-  emit('toggle-ide')
-  emit('run-sample', {
-    input: sample?.input || '',
-    output: sample?.output || ''
-  })
-}
+const emit = defineEmits(['toggle-ide', 'run', 'run-all', 'stop', 'open-ai'])
 
 // 统一走全站 Markdown 工厂：放行 HTML + LaTeX + 代码高亮。
 // 放行 HTML 是因为 FPS 导入的题面以 HTML 存储；因此渲染前先按白名单消毒，
@@ -111,10 +71,6 @@ const renderMarkdown = (text) => {
   return md.render(sanitizeStatementMarkup(text))
 }
 
-const copy = (text) => {
-  navigator.clipboard.writeText(text)
-  ElMessage.success('已复制到剪贴板')
-}
 </script>
 
 <style scoped>

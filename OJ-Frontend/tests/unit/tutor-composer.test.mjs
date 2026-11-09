@@ -12,7 +12,7 @@ test('question typed while the code snapshot loads is preserved after sending th
   const end = source.indexOf('const fillQuestion', start)
   const sent = []
   const context = { sending: { value: false }, state: { value: { busy: false, ready: true } }, question: { value: '第一个问题' },
-    identity: { value: '7:1' }, snapshotGeneration: 0, preferences: { value: defaultPreferences() },
+    diagnosisStatus: { value: '' }, loadQuota() {}, identity: { value: '7:1' }, snapshotGeneration: 0, preferences: { value: defaultPreferences() },
     props: { visible: true, problem: { id: 1 }, getStudentContext: () => pending },
     conversation: { ask: async payload => { sent.push(payload) } }, ElMessage: { info() {} }, showApiError() {} }
   vm.runInNewContext(source.slice(start, end) + '\nglobalThis.run = ask', context)

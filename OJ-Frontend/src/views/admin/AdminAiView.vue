@@ -24,6 +24,8 @@
     </el-row>
     <div v-if="overview.costNote" class="cost-note">{{ overview.costNote }}；用户主动停止 {{ overview.cancelled ?? 0 }} 次，未获供应商用量的取消记录仅为估算。</div>
 
+    <AiDiagnosticsPanel :days="days" />
+
     <el-card shadow="never" class="block">
       <template #header>调用量与 token 趋势</template>
       <div ref="trendChartRef" class="trend-chart"></div>
@@ -39,7 +41,7 @@
                 <el-input v-model="filters.userId" placeholder="用户 ID" clearable style="width: 110px" />
                 <el-select v-model="filters.scene" placeholder="场景" clearable style="width: 110px">
                   <el-option label="答疑" value="ASK" />
-                  <el-option label="复盘" value="REVIEW" />
+                  <el-option label="复盘" value="REVIEW" /><el-option label="建议" value="ADVICE" /><el-option label="间接对话" value="INDIRECT" /><el-option label="题面格式化" value="INDIRECT_JSON" /><el-option label="学情解读" value="TOOL" />
                 </el-select>
                 <el-select v-model="filters.status" placeholder="状态" clearable style="width: 130px">
                   <el-option label="成功" value="SUCCESS" />
@@ -185,6 +187,7 @@
 </template>
 
 <script setup>
+import AiDiagnosticsPanel from './components/AiDiagnosticsPanel.vue'
 import { showApiError } from '@/utils/errorFeedback'
 // AI 管理后台（仅管理员）：平台侧 AI 能力的运营面板。
 //

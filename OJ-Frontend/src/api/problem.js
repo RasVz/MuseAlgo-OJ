@@ -231,8 +231,9 @@ export function saveDraftCode(data) {
 }
 
 // 在线运行代码 (不保存，只测试)
-export function runCodeApi(data) {
+export function runCodeApi(data, signal) {
   return request({
+    signal,
     url: '/problem/run', // 这里对应你后端的 @PostMapping("/run") 接口
     method: 'post',
     data: data,

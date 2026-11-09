@@ -34,6 +34,8 @@
               :problem="problem" 
               :is-ide-mode="false"
               :ai-enabled="!isContestScene"
+              :cases="testCases" :case-model="caseModel" :snapshot="currentStudentContext" :running="runningCases"
+              @run="runCase" @run-all="runAllCases" @stop="stopCases"
               @toggle-ide="enterIde"
               @open-ai="handleOpenAi"
             />
@@ -70,8 +72,9 @@
                   :simple="true" 
                   :is-ide-mode="true"
                   :ai-enabled="!isContestScene"
+              :cases="testCases" :case-model="caseModel" :snapshot="currentStudentContext" :running="runningCases"
+              @run="runCase" @run-all="runAllCases" @stop="stopCases"
                   @toggle-ide="exitIde"
-                  @run-sample="onRunSample"
                   @open-ai="handleOpenAi"
                 />
             </div>
@@ -85,6 +88,8 @@
             :initial-snapshot="currentStudentContext"
             @snapshot="currentStudentContext = $event"
             :problem-id="problem.id"
+            :cases="testCases" :case-model="caseModel" :snapshot="currentStudentContext" :running="runningCases"
+            @run="runCase" @run-all="runAllCases" @stop="stopCases"
             :submitting="submitting"
             @submit="handleRealSubmit"
           />
@@ -95,7 +100,7 @@
     <AiAssistant v-if="!isContestScene"
       v-model:visible="aiDrawerVisible"
       :problem="problem"
-      :get-student-context="getStudentContext"
+      :get-student-context="getStudentContext" @counterexample="appendCounterexample"
     />
 
     <AddToProblemListDialog
@@ -114,11 +119,11 @@ import { showApiError } from '@/utils/errorFeedback'
 //
 // 三条交互主线：
 // 1. 写代码 → CodeEditor 本地草稿（按题目隔离）或正式提交；
-// 2. 点样例 → 切到 IDE 模式并把样例灌进输入框试跑（不出正式提交记录）；
+// 2. 官方、自定义与 AI 反例共用本页样例状态；试跑不产生正式提交；
 // 3. 每次发送 AI 提问读取当前代码；比赛场景不挂载 AI 助手。
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch, onBeforeUnmount, markRaw } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getProblemDetail, submitCode, getLatestDraftCode, getDraftCode } from '@/api/problem'
+import { getProblemDetail, submitCode, getLatestDraftCode, getDraftCode, runCodeApi } from '@/api/problem'
 import { getRelatedArticles } from '@/api/post'
 import { useUserStore } from '@/stores/userStore'
 import { ElMessage } from 'element-plus'
@@ -128,6 +133,7 @@ import ProblemDescription from './components/ProblemDescription.vue'
 import ProblemInfoCards from './components/ProblemInfoCards.vue'
 import CodeEditor from './components/CodeEditor.vue'
 import AiAssistant from './components/AiAssistant.vue'
+import { createLocalTestCases } from '@/utils/localTestCases'
 import AddToProblemListDialog from './components/AddToProblemListDialog.vue'
 
 const route = useRoute()
@@ -143,21 +149,59 @@ const aiDrawerVisible = ref(false)
 const currentStudentContext = ref(null)
 const addToListVisible = ref(false)
 
-// 点样例要把用户从"阅读模式"拉到"写代码模式"：
-// 否则他看到样例被填进一个还没展开的编辑器里，会以为没生效。
-const onRunSample = ({ input, output }) => {
-  isIdeMode.value = true
-  nextTick(() => {
-    if (editorRef.value) {
-      editorRef.value.fillSampleAndRun(input, output)
-    }
-  })
+const testCases = ref([])
+const caseModel = ref(markRaw(createLocalTestCases()))
+const runningCases = ref(false)
+let runGeneration = 0
+let runController = null
+const stopCases = () => { runGeneration++; runController?.abort(); runningCases.value = false }
+const initializeCases = data => {
+  stopCases()
+  const official = Array.isArray(data.samples) && data.samples.length ? data.samples
+    : data.inputSample != null || data.outputSample != null ? [{ input: data.inputSample || '', output: data.outputSample ?? '' }] : []
+  caseModel.value = markRaw(createLocalTestCases(official, items => { testCases.value = items }))
+  testCases.value = [...caseModel.value.items]
 }
+const runSelectedCases = async items => {
+  if (runningCases.value) return
+  const model = caseModel.value, problemId = problem.value.id
+  const generation = ++runGeneration
+  runController = new AbortController()
+  const signal = runController.signal
+  runningCases.value = true
+  try {
+    const snapshot = await readStudentSnapshot()
+    if (generation !== runGeneration) return
+    if (!snapshot.code?.trim()) return ElMessage.info('请先进入编辑器编写代码')
+    for (const item of items) {
+      if (generation !== runGeneration) break
+      // 代码/语言在执行中改变时，停止后续试跑；已经产生的旧回执只匹配旧版本。
+      if (model.result(item.id, snapshot)) continue
+      const result = await runCodeApi({ ...snapshot, input: item.input, problemId }, signal)
+      if (generation !== runGeneration) break
+      if (result.code !== 200) throw new Error(result.message || '试跑失败')
+      if (model.items.some(existing => existing.id === item.id && existing.input === item.input && existing.hasExpected === item.hasExpected && existing.expectedOutput === item.expectedOutput)) model.record(item.id, snapshot, result.data)
+    }
+  } catch (error) { if (generation === runGeneration && !signal.aborted) showApiError(error, '样例运行失败') }
+  finally { if (generation === runGeneration) runningCases.value = false }
+}
+const runCase = item => runSelectedCases([{ ...item }])
+const runAllCases = () => runSelectedCases(caseModel.value.items.map(item => ({ ...item })))
+const appendCounterexample = event => {
+  try {
+    const id = caseModel.value.addCounterexample(event)
+    if (id) ElMessage.success('已验证反例已同步到本页样例区')
+  } catch (error) { ElMessage.info(error.message) }
+}
+watch(() => [currentStudentContext.value?.code, currentStudentContext.value?.language], (value, previous) => {
+  if (previous && previous[0] !== undefined && (value[0] !== previous[0] || value[1] !== previous[1])) stopCases()
+})
+onBeforeUnmount(stopCases)
 
 // 编辑器是当前代码真源；普通练习每次发送重新读取，比赛上下文不挂载 AI。
 const isContestScene = computed(() => route.query.contestId !== undefined)
 watch(isContestScene, value => { if (value) aiDrawerVisible.value = false })
-const getStudentContext = async () => {
+const readStudentSnapshot = async () => {
   if (editorRef.value) return editorRef.value.getSubmissionData()
   if (currentStudentContext.value && currentStudentContext.value.ready !== false) return currentStudentContext.value
   const problemId = problem.value.id
@@ -166,6 +210,10 @@ const getStudentContext = async () => {
   const snapshot = { code: result.data?.code || '', language: pending?.language || result.data?.language || 'cpp', ready: true }
   if (problemId === problem.value.id && currentStudentContext.value === pending) currentStudentContext.value = snapshot
   return snapshot
+}
+const getStudentContext = async () => {
+  const snapshot = await readStudentSnapshot()
+  return { ...snapshot, runIds: caseModel.value.receipts(snapshot), selectedSample: caseModel.value.context() }
 }
 const handleOpenAi = () => {
   if (!isContestScene.value) aiDrawerVisible.value = true
@@ -181,6 +229,7 @@ const fetchDetail = async () => {
     if (generation !== detailGeneration) return
     if (res.code === 200) {
       problem.value = res.data
+      initializeCases(res.data)
       const articles = await getRelatedArticles(id, { currentPage: 1, pageSize: 4, sort: 'latest' })
       if (generation !== detailGeneration) return
       relatedArticles.value = articles.code === 200 ? (articles.data?.records || []) : []
@@ -239,6 +288,7 @@ watch(() => route.params.id, () => {
   aiDrawerVisible.value = false
   isIdeMode.value = false
   currentStudentContext.value = null
+  initializeCases({})
   problem.value = {}
   relatedArticles.value = []
   fetchDetail().catch(error => showApiError(error, '题目加载失败'))

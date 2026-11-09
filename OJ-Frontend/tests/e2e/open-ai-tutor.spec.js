@@ -3,7 +3,7 @@ import { join } from 'node:path'
 const evidence = process.env.OJ_TEST_OUTPUT_DIR
 
 test.describe.configure({ timeout: 45000 })
-async function setup(page, { contestSubmission = false, interrupted = false } = {}) {
+async function setup(page, { contestSubmission = false, interrupted = false, diagnostic = false } = {}) {
   // 真实编辑器代码从本地依赖加载，浏览器验收不依赖公共 CDN。
   await page.route('**/monaco-editor@*/min/vs/**', route => {
     const asset = new URL(route.request().url()).pathname.split('/min/vs/')[1]
@@ -23,6 +23,11 @@ async function setup(page, { contestSubmission = false, interrupted = false } = 
     const json = data => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, data, message: '成功' }) })
     if (/\/api\/problem\/\d+$/.test(path)) return json({ id: Number(path.split('/').at(-1)), title: '求和教学案例', content: '输入两个整数，输出它们的和。', inputDesc: '两个整数', outputDesc: '和', hint: '绝对值不超过 100', timeLimit: 1000, memoryLimit: 256, samples: [{ input: '1 2', output: '3' }] })
     if (path === '/api/problem/draft/get' || path === '/api/problem/draft/latest') return json({ language: 'cpp', code: 'int main() { return 0; }' })
+    if (path === '/api/ai/quota') return json({ remaining: 27000, dailyLimit: 30000, exempt: false })
+    if (path === '/api/problem/run') {
+      const run = request.postDataJSON(); calls.push({ path, run })
+      return json({ runId: '00000000-0000-0000-0000-' + String(calls.length).padStart(12,'0'), status: 3, raw_stdout: run.input === '1 2' ? '3' : '', stdout: run.input === '1 2' ? '3' : '', time: '0.01', truncated: false })
+    }
     if (path === '/api/problem/draft/save') return json(null)
     if (path.includes('/articles')) return json({ records: [] })
     if (path === '/api/ai/conversation') {
@@ -34,7 +39,8 @@ async function setup(page, { contestSubmission = false, interrupted = false } = 
       const payload = request.postDataJSON(); calls.push({ path, payload })
       const text = '这是参考实现，关键修改是边界条件。\n\n```cpp\nint main() { return 0; }\n```'
       history.push({ role: 'user', content: payload.studentQuestion || '复盘' }, { role: 'assistant', content: text })
-      const body = text.split('\n').map(line => `data: ${line}`).join('\n') + '\n\n' + (interrupted
+      const metadata = diagnostic ? 'event: diagnostic-status\ndata: {"phase":"answering","message":"正在根据验证结果整理回答"}\n\nevent: counterexample\ndata: ' + JSON.stringify({ input:'0', expectedOutput:'0', hasExpected:true, expectationSource:'OFFICIAL_SAMPLE', confirmedFailure:true, runId:'00000000-0000-0000-0000-000000000099', status:3, stdout:'1', note:'实测输出不匹配' }) + '\n\n' : ''
+      const body = metadata + text.split('\n').map(line => `data: ${line}`).join('\n') + '\n\n' + (interrupted
         ? 'event: app-error\ndata: {"code":502,"errorCode":"AI_OUTPUT_LIMIT","message":"回复达到输出上限，尚未完成"}\n\n'
         : 'event: done\ndata: \n\n')
       return route.fulfill({ contentType: 'text/event-stream', body })
@@ -241,4 +247,82 @@ test('leaving during a language switch loads the selected language before asking
   expect(calls.find(call => call.payload).payload.language).toBe('python')
   expect(calls.find(call => call.payload).payload.studentCode).toBe('print(99)')
   release()
+})
+
+
+test('custom cases preserve empty expectations, share editor state and reuse matching runs', async ({ page }) => {
+  const calls = await setup(page); await page.goto('/problem/1')
+  await page.getByRole('button', { name: '新增样例', exact: true }).click()
+  await page.getByText('设置期望输出（可以为空字符串）', { exact: true }).click()
+  await page.getByRole('textbox', { name: '备注', exact: true }).fill('空输入测试')
+  await page.getByRole('button', { name: '保存到当前页面', exact: true }).click()
+  await expect(page.locator('.case-tabs')).toContainText('样例 2')
+  await page.getByRole('button', { name: '运行当前样例', exact: true }).click()
+  await expect(page.locator('.case-result')).toContainText('输出匹配')
+  expect(calls.filter(call => call.run)).toHaveLength(1)
+  expect(calls.find(call => call.run).run.input).toBe('')
+  await page.getByRole('button', { name: '运行全部样例', exact: true }).click()
+  await expect.poll(() => calls.filter(call => call.run).length).toBe(2)
+  await page.getByRole('button', { name: '提交答案', exact: true }).click()
+  await expect(page.locator('.case-tabs')).toContainText('样例 2')
+  await expect(page.locator('.case-result')).toContainText('输出匹配')
+  await expect(page.locator('.monaco-editor .view-lines').first()).toContainText('return', { timeout: 20000 })
+  if (evidence) await page.screenshot({ path: join(evidence,'local-cases-editor.png'),fullPage:true })
+  await page.getByRole('button', { name: '返回题目', exact: true }).click()
+  await page.getByRole('button', { name: '删除样例', exact: true }).click()
+  await expect(page.locator('.case-tabs')).not.toContainText('样例 2')
+  await expect(page.getByRole('button', { name: '编辑样例', exact: true })).toHaveCount(0)
+})
+
+test('verified AI counterexamples append automatically, deduplicate, and disappear after refresh', async ({ page }) => {
+  const calls = await setup(page, { diagnostic: true }); await page.goto('/problem/1'); await openTutor(page)
+  await expect(page.locator('.diagnostic-info')).toContainText('27000')
+  await page.getByRole('textbox', { name: '你的问题' }).fill('找出边界反例')
+  await page.getByRole('button', { name: '发送', exact: true }).click()
+  await expect(page.locator('.chat-history')).toContainText('这是参考实现')
+  await expect(page.getByRole('button', { name: '发送', exact: true })).toBeEnabled()
+  await page.getByRole('textbox', { name: '你的问题' }).fill('解释这个反例')
+  await page.getByRole('button', { name: '发送', exact: true }).click()
+  await expect.poll(() => calls.filter(call => call.payload).length).toBe(2)
+  expect(calls.filter(call => call.payload)[1].payload.runIds).toContain('00000000-0000-0000-0000-000000000099')
+  await page.locator('.el-drawer__close-btn').click()
+  await expect(page.locator('.case-tabs .el-button')).toHaveCount(2)
+  await expect(page.locator('.case-result')).toContainText('输出不匹配')
+  if (evidence) await page.screenshot({ path: join(evidence,'verified-counterexample-auto-added.png'),fullPage:true })
+  await page.reload()
+  await expect(page.locator('.case-tabs .el-button')).toHaveCount(1)
+})
+
+test('editing code invalidates case output and another problem clears temporary samples', async ({ page }) => {
+  const calls = await setup(page); await page.goto('/problem/1')
+  await page.getByRole('button', { name:'运行当前样例',exact:true }).click()
+  await expect(page.locator('.case-result')).toContainText('输出匹配')
+  await page.getByRole('button', { name:'提交答案',exact:true }).click()
+  const lines = page.locator('.monaco-editor .view-lines').first()
+  await expect(lines).toContainText('return', { timeout: 20000 }); await lines.click(); await page.keyboard.press('Meta+A'); await page.keyboard.type('int main() { return 9; }')
+  await expect(page.locator('.case-result')).toHaveCount(0)
+  await page.getByRole('button', { name:'运行当前样例',exact:true }).click()
+  await expect.poll(() => calls.filter(call => call.run).length).toBe(2)
+  expect(calls.filter(call => call.run)[1].run.code).toContain('return 9')
+  await page.getByRole('button', { name:'新增样例',exact:true }).click();await page.getByRole('button', { name:'保存到当前页面',exact:true }).click()
+  await expect(page.locator('.case-tabs .el-button')).toHaveCount(2)
+  await page.goto('/problem/2');await expect(page.locator('.case-tabs .el-button')).toHaveCount(1)
+})
+
+
+test('stopping a serial batch prevents subsequent samples from running', async ({ page }) => {
+  await setup(page)
+  await page.route('**/api/problem/1', route => route.fulfill({contentType:'application/json',body:JSON.stringify({code:200,data:{id:1,title:'两组样例',content:'测试',samples:[{input:'first',output:'1'},{input:'second',output:'2'}]}})}))
+  let release, runs = 0
+  const held = new Promise(resolve => { release = resolve })
+  await page.route('**/api/problem/run', async route => {
+    runs++;await held
+    await route.fulfill({contentType:'application/json',body:JSON.stringify({code:200,data:{runId:'id',status:3,raw_stdout:'1'}})}).catch(()=>{})
+  })
+  await page.goto('/problem/1')
+  await page.getByRole('button',{name:'运行全部样例',exact:true}).click()
+  await expect.poll(() => runs).toBe(1)
+  await page.getByRole('button',{name:'停止后续运行',exact:true}).click();release()
+  await expect(page.getByRole('button',{name:'运行全部样例',exact:true})).toBeEnabled()
+  expect(runs).toBe(1)
 })
