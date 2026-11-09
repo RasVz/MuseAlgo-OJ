@@ -64,13 +64,6 @@
         <el-button class="full-btn" @click="$emit('view-solutions')">
           <el-icon><Document /></el-icon> 题解
         </el-button>
-        <el-tooltip content="功能即将上线" placement="top">
-          <span class="full-btn-wrap">
-            <el-button class="full-btn" disabled>
-              <el-icon><ChatLineSquare /></el-icon> 题目反馈
-            </el-button>
-          </span>
-        </el-tooltip>
       </div>
     </el-card>
 
@@ -111,13 +104,13 @@
 // 题目信息侧栏：难度、标签、通过率与统计，以及提交记录/我的提交/题解的跳转入口。
 // 侧栏是「看完题面之后决定下一步做什么」的地方，因此入口按用户意图分组而非按数据表分组。
 import { ref, computed } from 'vue'
-import { DataLine, InfoFilled, CollectionTag, List, Document, ChatLineSquare } from '@element-plus/icons-vue'
+import { DataLine, InfoFilled, CollectionTag, List, Document } from '@element-plus/icons-vue'
 import { getDifficultyColor, getDifficultyLabel } from '@/utils/difficulty'
 
 const props = defineProps({
   problem: { type: Object, default: () => ({}) }
 })
-defineEmits(['view-records', 'view-my-submission', 'view-solutions', 'feedback'])
+defineEmits(['view-records', 'view-my-submission', 'view-solutions'])
 
 const showTags = ref(false)
 
