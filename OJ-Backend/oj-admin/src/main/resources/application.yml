@@ -12,6 +12,11 @@ management:
     web:
       exposure:
         include: health,info,prometheus
+  health:
+    # MQ 未启用时，Spring AMQP 的健康指示器仍会去连 broker，把整体健康拖成 DOWN，
+    # 编排层会据此判死并反复重启。这里与业务开关保持一致：不用 MQ 就不参与健康判定。
+    rabbit:
+      enabled: ${OJ_RABBITMQ_ENABLED:true}
   endpoint:
     health:
       show-details: never
