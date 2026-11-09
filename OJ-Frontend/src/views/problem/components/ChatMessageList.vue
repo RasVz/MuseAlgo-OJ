@@ -48,6 +48,7 @@
 import { ref, watch, nextTick } from 'vue'
 import { UserFilled } from '@element-plus/icons-vue'
 import { createMarkdown } from '@/utils/markdown'
+import { sanitizeStatementMarkup } from '@/utils/statement-markup'
 
 const props = defineProps({
   messages: { type: Array, default: () => [] },
@@ -57,12 +58,14 @@ const props = defineProps({
 
 const chatHistoryRef = ref(null)
 
-// 统一走全站 Markdown 工厂：放行 HTML + LaTeX + 换行转 <br>（聊天气泡）+ 代码高亮
+// 统一走全站 Markdown 工厂：放行 HTML + LaTeX + 换行转 <br>（聊天气泡）+ 代码高亮。
+// AI 回复是模型生成内容，可能回显用户输入或被提示注入；渲染前按题面同一白名单消毒，
+// 保证 <img onerror> 这类内容不会在对话气泡里执行。
 const md = createMarkdown({ html: true, math: true, breaks: true })
 
 const renderMarkdown = (text) => {
   if (!text) return ''
-  return md.render(text)
+  return md.render(sanitizeStatementMarkup(text))
 }
 
 const scrollToBottom = () => {
