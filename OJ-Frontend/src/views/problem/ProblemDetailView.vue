@@ -33,6 +33,7 @@
             <ProblemDescription 
               :problem="problem" 
               :is-ide-mode="false"
+              :ai-enabled="!isContestScene"
               @toggle-ide="enterIde"
               @open-ai="handleOpenAi"
             />
@@ -68,6 +69,7 @@
                   :problem="problem" 
                   :simple="true" 
                   :is-ide-mode="true"
+                  :ai-enabled="!isContestScene"
                   @toggle-ide="exitIde"
                   @run-sample="onRunSample"
                   @open-ai="handleOpenAi"
@@ -79,6 +81,9 @@
         <div class="ide-right">
           <CodeEditor
             ref="editorRef"
+            :key="problem.id"
+            :initial-snapshot="currentStudentContext"
+            @snapshot="currentStudentContext = $event"
             :problem-id="problem.id"
             :submitting="submitting"
             @submit="handleRealSubmit"
@@ -87,10 +92,10 @@
       </div>
     </div>
 
-    <AiAssistant 
+    <AiAssistant v-if="!isContestScene"
       v-model:visible="aiDrawerVisible"
       :problem="problem"
-      :student-code="currentStudentCode"
+      :get-student-context="getStudentContext"
     />
 
     <AddToProblemListDialog
@@ -110,10 +115,10 @@ import { showApiError } from '@/utils/errorFeedback'
 // 三条交互主线：
 // 1. 写代码 → CodeEditor 本地草稿（按题目隔离）或正式提交；
 // 2. 点样例 → 切到 IDE 模式并把样例灌进输入框试跑（不出正式提交记录）；
-// 3. 打开 AI 助手前先同步编辑器里的最新代码，保证 AI 看到的是用户当前的思路。
-import { ref, onMounted, nextTick } from 'vue'
+// 3. 每次发送 AI 提问读取当前代码；比赛场景不挂载 AI 助手。
+import { ref, computed, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getProblemDetail, submitCode } from '@/api/problem'
+import { getProblemDetail, submitCode, getLatestDraftCode, getDraftCode } from '@/api/problem'
 import { getRelatedArticles } from '@/api/post'
 import { useUserStore } from '@/stores/userStore'
 import { ElMessage } from 'element-plus'
@@ -135,7 +140,7 @@ const isIdeMode = ref(false)
 const editorRef = ref(null)
 
 const aiDrawerVisible = ref(false)
-const currentStudentCode = ref('')
+const currentStudentContext = ref(null)
 const addToListVisible = ref(false)
 
 // 点样例要把用户从"阅读模式"拉到"写代码模式"：
@@ -149,29 +154,39 @@ const onRunSample = ({ input, output }) => {
   })
 }
 
-// 打开 AI 前主动取一次编辑器里的最新代码：
-// 编辑器的 code 才是真源，父组件持有的这份是打开抽屉那一刻的快照，可能已经过时。
+// 编辑器是当前代码真源；普通练习每次发送重新读取，比赛上下文不挂载 AI。
+const isContestScene = computed(() => route.query.contestId !== undefined)
+watch(isContestScene, value => { if (value) aiDrawerVisible.value = false })
+const getStudentContext = async () => {
+  if (editorRef.value) return editorRef.value.getSubmissionData()
+  if (currentStudentContext.value && currentStudentContext.value.ready !== false) return currentStudentContext.value
+  const problemId = problem.value.id
+  const pending = currentStudentContext.value
+  const result = pending?.ready === false ? await getDraftCode(problemId, pending.language) : await getLatestDraftCode(problemId)
+  const snapshot = { code: result.data?.code || '', language: pending?.language || result.data?.language || 'cpp', ready: true }
+  if (problemId === problem.value.id && currentStudentContext.value === pending) currentStudentContext.value = snapshot
+  return snapshot
+}
 const handleOpenAi = () => {
-  if (editorRef.value) {
-    const data = editorRef.value.getSubmissionData()
-    currentStudentCode.value = data.code || ''
-  } else {
-    currentStudentCode.value = ''
-  }
-  aiDrawerVisible.value = true
+  if (!isContestScene.value) aiDrawerVisible.value = true
 }
 
+let detailGeneration = 0
 const fetchDetail = async () => {
+  const id = route.params.id
+  const generation = ++detailGeneration
   loading.value = true
   try {
-    const res = await getProblemDetail(route.params.id)
+    const res = await getProblemDetail(id)
+    if (generation !== detailGeneration) return
     if (res.code === 200) {
       problem.value = res.data
-      const articles = await getRelatedArticles(route.params.id, { currentPage: 1, pageSize: 4, sort: 'latest' })
+      const articles = await getRelatedArticles(id, { currentPage: 1, pageSize: 4, sort: 'latest' })
+      if (generation !== detailGeneration) return
       relatedArticles.value = articles.code === 200 ? (articles.data?.records || []) : []
     }
   } finally {
-    loading.value = false
+    if (generation === detailGeneration) loading.value = false
   }
 }
 
@@ -196,7 +211,7 @@ const handleRealSubmit = async () => {
     const res = await submitCode({ problemId: problem.value.id, contestId, language, code })
     if (res.code === 200) {
       ElMessage.success('提交成功，正在进入判题进度页')
-      if (res.data?.id) router.push({ name: 'SubmissionDetail', params: { id: res.data.id } })
+      if (res.data?.id) router.push({ name: 'SubmissionDetail', params: { id: res.data.id }, query: contestId ? { contestId } : {} })
     } else {
       ElMessage.error(res.message || '提交失败')
     }
@@ -216,11 +231,18 @@ const writeSolution = () => router.push({ name: 'PostCreate', query: { problemId
 const viewSolutions = () => router.push({ name: 'ProblemSolutions', params: { id: route.params.id } })
 const goPost = (id) => router.push({ name: 'PostDetail', params: { id } })
 const handleViewRecords = () => {
-  const routeData = router.resolve({ name: 'Submission', query: { problemId: route.params.id } })
+  const routeData = router.resolve({ name: 'Submission', query: { problemId: route.params.id, ...(isContestScene.value ? { contestId: route.query.contestId } : {}) } })
   window.open(routeData.href, '_blank')
 }
 
-onMounted(fetchDetail)
+watch(() => route.params.id, () => {
+  aiDrawerVisible.value = false
+  isIdeMode.value = false
+  currentStudentContext.value = null
+  problem.value = {}
+  relatedArticles.value = []
+  fetchDetail().catch(error => showApiError(error, '题目加载失败'))
+}, { immediate: true })
 </script>
 
 <style scoped>

@@ -32,7 +32,7 @@
         <div class="info-row mb-4">
           <el-descriptions :column="3" border class="info-desc">
             <el-descriptions-item label="题目">
-              <el-link type="primary" :underline="false" @click="router.push({ path: `/problem/${detail.problemId}` })">
+              <el-link type="primary" :underline="false" @click="router.push({ path: `/problem/${detail.problemId}`, query: (route.query.contestId || detail.contestId) ? { contestId: route.query.contestId || detail.contestId } : {} })">
                 P{{ detail.problemId }} {{ detail.problemTitle || '' }}
               </el-link>
             </el-descriptions-item>
@@ -92,10 +92,10 @@
       </div>
     </div>
 
-    <AiReviewDialog
+    <AiReviewDialog v-if="canReview"
       v-model:visible="reviewDialogVisible"
       :submission-id="route.params.id"
-      :problem-id="detail?.problemId ?? null"
+      :contest-id="route.query.contestId ?? detail?.contestId ?? null"
     />
   </div>
 </template>
@@ -117,6 +117,7 @@ import {
 } from '@element-plus/icons-vue'
 import NavbarContext from '@/components/NavbarContext.vue'
 import SubmissionStatusBanner from './components/SubmissionStatusBanner.vue'
+import { canReviewSubmission } from '@/utils/tutorPreferences'
 import AiReviewDialog from './components/AiReviewDialog.vue'
 import hljs from '@/utils/highlight'
 import 'highlight.js/styles/atom-one-light.css'
@@ -133,9 +134,8 @@ let loadGeneration = 0
 const reviewDialogVisible = ref(false)
 const reviewing = ref(false)
 
-// 只对"判过但没过"的提交开放 AI 复盘：AC 的没什么可复盘，
-// 编译错误（3）虽然没过但 AI 也帮不上什么实际的忙，这里仍开放是为了覆盖代码本身写错的情况。
-const canReview = computed(() => [2, 3, 4, 5].includes(Number(detail.value?.status)))
+const canReview = computed(() => canReviewSubmission(detail.value, route.query.contestId))
+watch(canReview, value => { if (!value) reviewDialogVisible.value = false })
 
 const loadData = async () => {
   const id = route.params.id

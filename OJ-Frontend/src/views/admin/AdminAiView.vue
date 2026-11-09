@@ -22,7 +22,7 @@
         </el-card>
       </el-col>
     </el-row>
-    <div v-if="overview.costNote" class="cost-note">{{ overview.costNote }}</div>
+    <div v-if="overview.costNote" class="cost-note">{{ overview.costNote }}；用户主动停止 {{ overview.cancelled ?? 0 }} 次，未获供应商用量的取消记录仅为估算。</div>
 
     <el-card shadow="never" class="block">
       <template #header>调用量与 token 趋势</template>
@@ -44,6 +44,7 @@
                 <el-select v-model="filters.status" placeholder="状态" clearable style="width: 130px">
                   <el-option label="成功" value="SUCCESS" />
                   <el-option label="失败" value="FAIL" />
+                  <el-option label="用户停止" value="CANCELLED" />
                   <el-option label="配额拒绝" value="QUOTA_REJECTED" />
                   <el-option label="比赛拦截" value="CONTEST_BLOCKED" />
                 </el-select>
@@ -120,12 +121,7 @@
         <el-form-item label="教师/管理员豁免">
           <el-switch v-model="editableConfig.ai_quota_exempt_teacher_admin" active-value="true" inactive-value="false" />
         </el-form-item>
-        <el-form-item label="比赛拦截">
-          <el-switch v-model="editableConfig.ai_contest_guard_enabled" active-value="true" inactive-value="false" />
-        </el-form-item>
-        <el-form-item label="拦截缓存秒数">
-          <el-input-number v-model="editableConfig.ai_contest_guard_cache_seconds" :min="0" />
-        </el-form-item>
+        <el-form-item label="教学使用范围"><span>比赛场景禁用，普通练习开放</span></el-form-item>
         <el-form-item label="模型">
           <el-input v-model="editableConfig.ai_model" style="width: 220px" :disabled="serviceManaged" />
         </el-form-item>
@@ -163,8 +159,8 @@
     <el-dialog v-model="promptsVisible" title="提示词模板版本管理" width="820px" top="5vh">
       <div class="prompt-tool">
         <el-select v-model="promptKey" placeholder="选择模板 key" clearable style="width: 220px" @change="loadPrompts">
-          <el-option label="tutor（答疑导师）" value="tutor" />
-          <el-option label="review（AI 复盘）" value="review" />
+          <el-option label="开放答疑" value="tutor-open" />
+          <el-option label="开放复盘" value="review-open" />
         </el-select>
         <el-input v-model="promptNewContent" type="textarea" :rows="3" placeholder="新建版本内容（创建后自动激活）" />
         <el-button type="primary" @click="createPrompt">新建版本并激活</el-button>
@@ -220,7 +216,7 @@ const quotaUserId = ref('')
 const quotaInfo = ref(null)
 const quotaSetValue = ref(0)
 const promptsVisible = ref(false)
-const promptKey = ref('tutor')
+const promptKey = ref('tutor-open')
 const promptNewContent = ref('')
 const prompts = ref([])
 const trendChartRef = ref(null)
@@ -246,7 +242,7 @@ const cards = computed(() => [
 
 const statusTag = (s) => ({
   SUCCESS: 'success', FAIL: 'danger',
-  QUOTA_REJECTED: 'warning', CONTEST_BLOCKED: 'warning'
+  CANCELLED: 'info', QUOTA_REJECTED: 'warning', CONTEST_BLOCKED: 'warning'
 }[s] || 'info')
 
 // 布尔开关在这里统一转成字符串：后端配置项以字符串存储，
@@ -256,8 +252,6 @@ const syncEditableConfig = () => {
     ai_quota_enabled: String(config.value.quotaEnabled),
     ai_quota_daily_tokens: config.value.dailyTokens ?? 30000,
     ai_quota_exempt_teacher_admin: String(config.value.exemptTeacherAdmin),
-    ai_contest_guard_enabled: String(config.value.contestGuardEnabled),
-    ai_contest_guard_cache_seconds: config.value.contestGuardCacheSeconds ?? 60,
     ai_model: config.value.model || 'deepseek-chat',
     ai_max_tokens: config.value.maxTokens ?? 8192,
     ai_json_mode: String(config.value.jsonMode ?? true)
@@ -342,7 +336,7 @@ const createPrompt = async () => {
     ElMessage.warning('请输入模板内容')
     return
   }
-  const res = await createPromptTemplate(promptKey.value || 'tutor', promptNewContent.value)
+  const res = await createPromptTemplate(promptKey.value || 'tutor-open', promptNewContent.value)
   if (!isResultSuccess(res)) {
     ElMessage.error(getResultMessage(res, '创建失败'))
     return

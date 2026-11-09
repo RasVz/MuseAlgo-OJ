@@ -56,15 +56,6 @@ export function appendProblemCases(problemId, cases) {
   })
 }
 
-/** 班级 × 题目的 Hint Ladder 解锁情况：{classId, problemId} → [{userId, username, level}] */
-export function getHintLevels(classId, problemId) {
-  return request({
-    url: '/ai/teacher/hint/levels',
-    method: 'get',
-    params: { classId, problemId }
-  })
-}
-
 // ======================= 题目落库 =======================
 
 /** 批量保存测试用例（覆盖旧用例） */
