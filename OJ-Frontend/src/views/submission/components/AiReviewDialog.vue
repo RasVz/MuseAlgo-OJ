@@ -1,107 +1,93 @@
 <template>
-  <el-dialog v-model="dialogVisible" title="AI 代码复盘" width="720px" class="review-dialog">
-    <div v-loading="reviewing" class="review-content">
+  <el-dialog v-model="dialogVisible" title="AI 提交复盘" width="min(760px, 95vw)" class="review-dialog">
+    <p class="review-scope">分析对象：历史提交 #{{ submissionId }}，不是当前编辑器草稿。</p>
+    <div class="review-content">
       <div v-if="reviewContent" class="markdown-body custom-md" v-html="renderMarkdown(reviewContent)"></div>
-      <div v-else-if="reviewing" class="review-thinking">教练正在分析你的代码与评测结果…</div>
+      <div v-else-if="reviewing" role="status" class="review-thinking">正在分析代码、题目与评测结果…</div>
     </div>
-    <p v-if="reviewIncomplete" class="review-incomplete">回复未完成，请重试</p>
+    <p v-if="reviewIncomplete" class="review-incomplete" role="status">{{ reviewNotice || '回复未完成，请重试' }}</p>
+    <TutorPreferenceControls v-model="preferences" id-prefix="review" :disabled="reviewing" />
+    <label for="review-question">继续提问</label>
+    <el-input id="review-question" v-model="question" type="textarea" :rows="2" :maxlength="2000" placeholder="描述你想进一步了解的地方" />
+    <template #footer>
+      <el-button v-if="reviewing" @click="stopReview">停止生成</el-button>
+      <template v-else>
+        <el-button @click="startReview">重新分析</el-button>
+        <el-button type="primary" :disabled="!question.trim()" @click="startReview">发送追问</el-button>
+      </template>
+    </template>
   </el-dialog>
 </template>
-
 <script setup>
-import { showApiError } from '@/utils/errorFeedback'
-
-// AI 复盘弹窗：对一次未通过的提交做错误分析，走 SSE 流式返回。
-// 每次打开弹窗就重新请求一次（不复用上次结果）：复盘针对的是"这次提交"，
-// 而提交状态可能已经变了，缓存旧结论会误导学生。
 import { ref, watch, onBeforeUnmount } from 'vue'
+import { showApiError } from '@/utils/errorFeedback'
 import { useUserStore } from '@/stores/userStore'
 import { createMarkdown } from '@/utils/markdown'
 import { readAiResponse } from '@/utils/aiStream'
-
-const props = defineProps({
-  visible: { type: Boolean, default: false },
-  submissionId: { type: [Number, String], default: null },
-  problemId: { type: [Number, String], default: null }
-})
+import { defaultPreferences, isContestScene } from '@/utils/tutorPreferences'
+import TutorPreferenceControls from '@/views/problem/components/TutorPreferenceControls.vue'
+const props = defineProps({ visible: Boolean, submissionId: { type: [Number, String], default: null }, contestId: { type: [Number, String], default: null } })
 const emit = defineEmits(['update:visible'])
-
 const md = createMarkdown({ html: false, math: true, breaks: true })
 const dialogVisible = ref(false)
 const reviewContent = ref('')
 const reviewing = ref(false)
 const reviewIncomplete = ref(false)
+const reviewNotice = ref('')
+const question = ref('')
+const preferences = ref(defaultPreferences())
+let lastAnswer = ''
 let reviewController = null
 let reviewGeneration = 0
-const cancelReview = () => {
-  reviewGeneration++
-  reviewController?.abort()
-  reviewing.value = false
-}
+const cancelReview = () => { reviewGeneration++; reviewController?.abort(); reviewing.value = false }
+const stopReview = () => { lastAnswer = reviewContent.value ? '【前次回复未完成】\n' + reviewContent.value : ''; cancelReview(); reviewIncomplete.value = true; reviewNotice.value = '已停止生成，当前回复未完成。' }
 onBeforeUnmount(cancelReview)
-
-watch(
-  () => props.visible,
-  (val) => {
-    dialogVisible.value = val
-    if (val) startReview()
-  }
-)
-
-// v-model 的手动转发：el-dialog 自身关闭（点遮罩/按 ESC）时要通知父组件收起。
-watch(dialogVisible, (val) => {
-  if (!val) cancelReview()
-  emit('update:visible', val)
+watch(() => [props.visible, props.submissionId, props.contestId], ([visible, id], previous) => {
+  cancelReview()
+  if (previous && id !== previous[1]) { lastAnswer = ''; question.value = ''; preferences.value = defaultPreferences(); reviewContent.value = '' }
+  dialogVisible.value = visible && !isContestScene(props.contestId)
+  if (dialogVisible.value) startReview()
 })
-
-const renderMarkdown = (text) => (text ? md.render(text) : '')
-
-// 直接用 fetch 而非 axios 封装：axios 拦截器会尝试解包 JSON，
-// 遇到 SSE 流会破坏分块结构，拿不到逐段推送的效果。
+watch(dialogVisible, value => { if (!value) cancelReview(); emit('update:visible', value) })
+const renderMarkdown = text => text ? md.render(text) : ''
 const startReview = async () => {
-  if (!props.submissionId) return
+  if (!props.submissionId || isContestScene(props.contestId)) return
   reviewController?.abort()
   const generation = ++reviewGeneration
   const controller = new AbortController()
   reviewController = controller
+  const followup = question.value.trim()
   reviewContent.value = ''
   reviewIncomplete.value = false
+  reviewNotice.value = ''
   reviewing.value = true
   try {
     const token = useUserStore().getAccessToken()
     const resp = await fetch('/api/ai/review', {
-      method: 'POST',
-      signal: controller.signal,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      },
-      body: JSON.stringify({ submissionId: Number(props.submissionId) })
+      method: 'POST', signal: controller.signal,
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify({ submissionId: Number(props.submissionId), ...preferences.value,
+        studentQuestion: followup || undefined,
+        previousAnswer: followup && lastAnswer ? (lastAnswer.length <= 11000 ? lastAnswer : '【前次回复过长，以下为开头节选】\n' + lastAnswer.slice(0, 10900)) : undefined })
     })
-    await readAiResponse(resp, text => {
-      if (generation === reviewGeneration) reviewContent.value = text
-    })
+    const answer = await readAiResponse(resp, text => { if (generation === reviewGeneration) reviewContent.value = text })
+    if (generation === reviewGeneration) {
+      lastAnswer = answer
+      if (question.value.trim() === followup) question.value = ''
+    }
   } catch (error) {
     if (generation !== reviewGeneration || controller.signal.aborted) return
+    lastAnswer = reviewContent.value ? '【前次回复未完成】\n' + reviewContent.value : ''
     reviewIncomplete.value = true
-    showApiError(error, error.message || 'AI 复盘请求失败，请稍后重试')
-  } finally {
-    if (generation === reviewGeneration) reviewing.value = false
-  }
+    reviewNotice.value = error.message || 'AI 复盘请求失败，请重试'
+    showApiError(error, reviewNotice.value)
+  } finally { if (generation === reviewGeneration) reviewing.value = false }
 }
 </script>
-
 <style scoped>
-.review-content {
-  min-height: 160px;
-  max-height: 55vh;
-  overflow-y: auto;
-}
-
-.review-thinking {
-  color: var(--text-secondary);
-  text-align: center;
-  padding: 40px 0;
-  font-size: 14px;
-}
+.review-scope { font-size: 13px; color: var(--text-secondary); }
+.review-content { min-height: 120px; max-height: 40vh; overflow-y: auto; margin-bottom: 16px; }
+.review-thinking { color: var(--text-secondary); padding: 32px 0; text-align: center; }
+.review-incomplete { color: var(--el-color-warning-dark-2); }
+label { display: block; margin: 12px 0 8px; font-size: 13px; }
 </style>

@@ -19,6 +19,7 @@
           v-html="renderMarkdown(msg.content)"
         ></div>
         <div v-else class="bubble-content">{{ msg.content }}</div>
+        <el-button v-if="msg.role === 'ai' && codeBlocks(msg.content)" size="small" link @click="copyCode(msg.content)">复制代码</el-button>
       </div>
     </div>
 
@@ -44,6 +45,13 @@
 </template>
 
 <script setup>
+import { ElMessage } from 'element-plus'
+const codeBlocks = content => [...content.matchAll(/```[^\n]*\n([\s\S]*?)```/g)].map(match => match[1]).join('\n')
+const copyCode = async content => {
+  try { await navigator.clipboard.writeText(codeBlocks(content)); ElMessage.success('代码已复制') }
+  catch { ElMessage.error('复制失败，请手动选择代码复制') }
+}
+
 // AI 对话消息列表：渲染历史消息与流式中的半成品消息，并在新消息到达时自动滚到底。
 import { ref, watch, nextTick } from 'vue'
 import { UserFilled } from '@element-plus/icons-vue'

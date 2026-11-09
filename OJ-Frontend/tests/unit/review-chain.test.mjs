@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
 import { readAiResponse } from '../../src/utils/aiStream.js'
+import { defaultPreferences, isContestScene } from '../../src/utils/tutorPreferences.js'
 import { ApiError } from '../../src/utils/apiError.js'
 
 function review(response) {
@@ -11,7 +12,7 @@ function review(response) {
   const end = source.indexOf('</script>', start)
   const messages = []
   const context = { props: { submissionId: 1, problemId: 1 }, reviewContent: { value: '' },
-    reviewing: { value: false }, reviewIncomplete: { value: false },
+    reviewing: { value: false }, reviewIncomplete: { value: false }, reviewNotice: { value: '' }, question: { value: '' }, preferences: { value: defaultPreferences() }, lastAnswer: '', isContestScene,
     fetch: async () => response, useUserStore: () => ({ getAccessToken: () => 'synthetic' }),
     ElMessage: { error: text => messages.push(text) }, showApiError: (error, fallback) => { if (!error.notified && !error.authNotified) messages.push(error.message || fallback) }, console: { error() {} },
     TextDecoder, readAiResponse, AbortController, reviewController: null, reviewGeneration: 0 }
@@ -116,4 +117,13 @@ test('partial AI configuration save reads back committed values and does not rep
  vm.runInNewContext(source.slice(start,end)+'\nglobalThis.run = saveConfig',context)
  await assert.doesNotReject(context.run());assert.equal(reads,1);assert.equal(successes,0)
  assert.match(context.configSaveError.value,/未完整保存/);assert.equal(context.savingConfig.value,false)
+})
+
+
+test('finishing a review preserves a followup typed while the answer streams', async () => {
+  const page = review(new Response('data: 回答\n\nevent: done\ndata: \n\n', { headers: { 'Content-Type': 'text/event-stream' } }))
+  const pending = page.run()
+  page.context.question.value = '解释刚才提到的边界条件'
+  await pending
+  assert.equal(page.context.question.value, '解释刚才提到的边界条件')
 })

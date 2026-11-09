@@ -249,3 +249,8 @@ export function getMyCreatedProblemList(params) {
     params
   })
 }
+
+/** 当前用户本题最近保存的草稿，连同实际语言返回。 */
+export function getLatestDraftCode(problemId) {
+  return request({ url: '/problem/draft/latest', method: 'get', params: { problemId } })
+}

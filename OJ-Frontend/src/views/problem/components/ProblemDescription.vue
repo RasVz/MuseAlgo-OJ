@@ -3,7 +3,7 @@
     <div class="header-row">
       <h1 class="problem-title">{{ props.problem.title }}</h1> 
       <div class="button-group">
-        <el-button class="ai-helper-btn" @click="$emit('open-ai')">
+        <el-button class="ai-helper-btn" v-if="aiEnabled" @click="$emit('open-ai')">
           <span style="font-size: 15px; margin-right: 5px;">🤖</span> AI 助教
         </el-button>
         <el-button :type="isIdeMode ? 'danger' : 'primary'" 
@@ -70,6 +70,7 @@ import { createMarkdown } from '@/utils/markdown'
 import { sanitizeStatementMarkup } from '@/utils/statement-markup'
 
 const props = defineProps({
+  aiEnabled: { type: Boolean, default: true },
   problem: { type: Object, default: () => ({}) },
   simple: { type: Boolean, default: false },
   isIdeMode: { type: Boolean, default: false }

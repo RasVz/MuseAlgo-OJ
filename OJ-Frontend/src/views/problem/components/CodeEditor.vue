@@ -2,7 +2,7 @@
   <div class="editor-container">
     <div class="editor-toolbar">
       <div class="toolbar-left">
-        <el-select v-model="language" size="small" style="width: 120px" @change="handleLangChange">
+        <el-select v-model="language" aria-label="编程语言" size="small" style="width: 120px" @change="handleLangChange">
           <el-option label="C++14 (GCC 9)" value="cpp" />
           <el-option label="Java 8" value="java" />
           <el-option label="Python 3" value="python" />
@@ -38,6 +38,7 @@
         :language="monacoLang"
         :theme="editorSettings.theme" 
         :options="editorOptions"
+        @mount="handleEditorMount"
         @change="handleCodeChange"
       />
     </div>
@@ -65,24 +66,34 @@
 //
 // 代码按「题目 × 语言」维度自动存云端草稿（10 秒防抖），
 // 用户切题或关页面回来能接着写；编辑器偏好则登录用户存服务端、匿名用户存 localStorage。
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { VueMonacoEditor } from '@guolao/vue-monaco-editor' 
-import { getDraftCode, saveDraftCode, runCodeApi } from '@/api/problem'
+import { getDraftCode, getLatestDraftCode, saveDraftCode, runCodeApi } from '@/api/problem'
 import { getUserPreferences, updateUserPreferences } from '@/api/user'
 import { useUserStore } from '@/stores/userStore'
 import EditorSettingsDialog from './EditorSettingsDialog.vue'
 import DebugConsole from './DebugConsole.vue'
 
 const props = defineProps({
+  initialSnapshot: { type: Object, default: null },
   problemId: { type: [Number, String], required: true },
   submitting: { type: Boolean, default: false }
 })
 
-const emit = defineEmits(['submit'])
+const emit = defineEmits(['submit', 'snapshot'])
 
 // === 基础状态 ===
-const language = ref('cpp')
-const code = ref('')
+const pendingLanguage = props.initialSnapshot?.ready === false ? props.initialSnapshot.language : null
+const initialSnapshot = props.initialSnapshot && !pendingLanguage ? { ...props.initialSnapshot } : null
+const language = ref(initialSnapshot?.language || pendingLanguage || 'cpp')
+const code = ref(initialSnapshot?.code || '')
+const draftDirty = ref(false)
+let languageChanged = false
+let monacoEditor = null
+const handleEditorMount = editor => { monacoEditor = editor }
+const snapshotReady = ref(Boolean(initialSnapshot))
+const emitSnapshot = () => { if (snapshotReady.value) emit('snapshot', { code: code.value, language: language.value, ready: true }) }
+watch(code, emitSnapshot, { flush: 'sync' })
 const userInput = ref('')
 const expectedOutput = ref('')
 const saveStatusText = ref('') 
@@ -194,7 +205,7 @@ const loadSettings = async () => {
         }
         editorSettings.value.autoComplete = p.autoComplete !== false
         editorSettings.value.showLineNumbers = p.showLineNumbers !== false
-        if (['cpp', 'java', 'python'].includes(p.language)) {
+        if (!initialSnapshot && !pendingLanguage && !languageChanged && !draftDirty.value && ['cpp', 'java', 'python'].includes(p.language)) {
           language.value = p.language
         }
         return
@@ -239,23 +250,32 @@ const onSettingsChange = (patch) => {
   saveSettings()
 }
 
+let draftGeneration = 0
+const draftLoading = ref(!initialSnapshot)
 const loadCodeDraft = async () => {
   if (!props.problemId) return
+  const generation = ++draftGeneration
+  const selectedLanguage = language.value
+  const originalCode = code.value
+  snapshotReady.value = false
+  draftLoading.value = true
   try {
-    const res = await getDraftCode(props.problemId, language.value)
-    if (res.code === 200 && res.data && res.data.code) {
-      code.value = res.data.code
-      saveStatusText.value = '已恢复上次的代码'
-    } else {
-      code.value = templates[language.value] 
-    }
+    const res = await getDraftCode(props.problemId, selectedLanguage)
+    if (generation !== draftGeneration || selectedLanguage !== language.value || code.value !== originalCode || draftDirty.value) return
+    code.value = res.data?.code ?? templates[selectedLanguage]
+    saveStatusText.value = res.data?.code ? '已恢复上次的代码' : ''
   } catch {
-    code.value = templates[language.value]
+    if (generation === draftGeneration && selectedLanguage === language.value && code.value === originalCode && !draftDirty.value) code.value = templates[selectedLanguage]
+  } finally {
+    if (generation === draftGeneration) { draftLoading.value = false; snapshotReady.value = true; emitSnapshot() }
   }
 }
 
 // 草稿按题目 × 语言分别存储，所以切语言也要重新拉一次，否则会显示另一种语言的代码。
 const handleLangChange = async () => {
+  languageChanged = true
+  emit('snapshot', { language: language.value, code: '', ready: false })
+  draftDirty.value = false
   await loadCodeDraft()
 }
 
@@ -264,6 +284,9 @@ const handleLangChange = async () => {
 let saveTimeout = null
 let statusTimer = null
 const handleCodeChange = () => {
+  draftDirty.value = true
+  snapshotReady.value = true
+  emitSnapshot()
   saveStatusText.value = '编辑中...'
   if (saveTimeout) clearTimeout(saveTimeout)
   
@@ -340,19 +363,42 @@ const runCode = async () => {
 }
 
 // 暴露给父组件的两个能力：取提交数据（真正提交时用）与灌样例并试跑。
-// 不通过 props 传递代码，是因为父组件只需要在动作发生时取一次快照。
+// 当前模型供动作发生时读取；有效草稿同步给父组件，用于离开 IDE 后继续提问。
 defineExpose({ 
-  getSubmissionData: () => ({ language: language.value, code: code.value }), 
+  getSubmissionData: () => {
+    if (draftLoading.value && !draftDirty.value) throw new Error('代码草稿正在加载，请稍后再试')
+    return { language: language.value, code: monacoEditor?.getValue() ?? code.value }
+  },
   fillSampleAndRun 
 })
 
 onMounted(async () => {
   await loadSettings()
-  await loadCodeDraft()
+  if (languageChanged) return
+  if (initialSnapshot || draftDirty.value) draftLoading.value = false
+  if (pendingLanguage && !draftDirty.value) { await loadCodeDraft(); return }
+  if (!initialSnapshot && !draftDirty.value) {
+    const originalLanguage = language.value
+    const initialGeneration = draftGeneration
+    draftLoading.value = true
+    try {
+      const result = await getLatestDraftCode(props.problemId)
+      if (initialGeneration !== draftGeneration || draftDirty.value || language.value !== originalLanguage) return
+      if (result.data) {
+        language.value = result.data.language || 'cpp'
+        code.value = result.data.code || ''
+      } else code.value = templates[language.value]
+    } catch {
+      if (initialGeneration === draftGeneration && !draftDirty.value) code.value = templates[language.value]
+    } finally {
+      if (initialGeneration === draftGeneration) { draftLoading.value = false; snapshotReady.value = true; emitSnapshot() }
+    }
+  }
 })
 
 // 组件卸载时清理草稿保存与状态提示定时器，避免切页后幽灵请求
 onUnmounted(() => {
+  draftGeneration++
   if (saveTimeout) clearTimeout(saveTimeout)
   if (statusTimer) clearTimeout(statusTimer)
 })
