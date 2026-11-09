@@ -285,6 +285,13 @@ public class CoursewareController {
         // 越权防护：仅课件创建者或管理员可更新（P1 技术债修复）
         SecurityUtils.requireOwnerOrAdmin(existing.getTeacherId());
 
+        // 没有任何可更新字段时 updateById 会因空 SET 抛异常并被当成 500：这里按入参错误拒绝
+        if (courseware.getTitle() == null && courseware.getUrl() == null && courseware.getType() == null
+                && courseware.getProblemListId() == null && courseware.getContent() == null
+                && courseware.getDescription() == null && courseware.getPrivacy() == null) {
+            return ErrorResponses.failure(TeachingErrorCode.TEACHING_INPUT_INVALID, "没有可更新的字段");
+        }
+
         if (courseware.getUrl() != null) {
             String safeUrl = normalizeCoursewareUrl(courseware.getUrl());
             if (safeUrl == null) return ErrorResponses.failure(TeachingErrorCode.TEACHING_INPUT_INVALID, "课件地址无效");
