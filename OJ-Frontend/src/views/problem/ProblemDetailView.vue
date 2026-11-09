@@ -54,7 +54,6 @@
             @view-records="handleViewRecords"
             @view-my-submission="handleViewMySubmission"
             @view-solutions="viewSolutions"
-            @feedback="handleFeedback"
           />
         </div>
       </div>
@@ -220,7 +219,6 @@ const handleViewRecords = () => {
   const routeData = router.resolve({ name: 'Submission', query: { problemId: route.params.id } })
   window.open(routeData.href, '_blank')
 }
-const handleFeedback = () => ElMessage.info('题目反馈功能开发中')
 
 onMounted(fetchDetail)
 </script>

@@ -35,7 +35,6 @@
           <el-menu-item :index="`/contest/${contestId}/problem`">题目列表</el-menu-item>
           <el-menu-item :index="`/contest/${contestId}/submission`">评测记录</el-menu-item>
           <el-menu-item :index="`/contest/${contestId}/ranking`">排行榜</el-menu-item>
-          <!-- <el-menu-item :index="`/contest/${contestId}/editorial`">赛后题解</el-menu-item> -->
         </el-menu>
       </div>
     </div>

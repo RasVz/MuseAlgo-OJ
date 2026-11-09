@@ -83,8 +83,7 @@ const contestRoutes = [
       { path: 'problem', name: 'ContestProblem', component: () => import('@/views/contest/ContestProblemSetView.vue') },
       { path: 'submission', name: 'ContestSubmission', component: () => import('@/views/contest/ContestSubmissionView.vue') },
       { path: 'submit', name: 'ContestSubmit', redirect: { name: 'ContestProblem' } },
-      { path: 'ranking', name: 'ContestRanking', component: () => import('@/views/contest/ContestRankingView.vue') },
-      { path: 'editorial', name: 'ContestEditorial', component: () => import('@/views/contest/ContestEditorialView.vue') }
+      { path: 'ranking', name: 'ContestRanking', component: () => import('@/views/contest/ContestRankingView.vue') }
     ]
   }
 ]
