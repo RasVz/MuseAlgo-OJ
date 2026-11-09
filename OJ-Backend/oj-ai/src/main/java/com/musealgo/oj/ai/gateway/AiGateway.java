@@ -117,7 +117,7 @@ public class AiGateway {
             log.warn("【AI网关】协议 {} 流式失败 type={} emitted={}", provider.name(),
                     result == null ? "NULL" : result.errorType(),
                     result != null && result.emitted());
-            if ((result != null && result.emitted()) || "MANAGED".equals(snapshot.mode())) {
+            if ((result != null && (result.emitted() || "CANCELLED".equals(result.errorType()))) || "MANAGED".equals(snapshot.mode())) {
                 break;
             }
         }

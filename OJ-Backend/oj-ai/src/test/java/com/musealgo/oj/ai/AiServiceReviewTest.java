@@ -1,147 +1,52 @@
 package com.musealgo.oj.ai;
-
-import cn.hutool.json.JSONArray;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import com.musealgo.oj.ai.dto.AiAskOutcome;
-import com.musealgo.oj.ai.dto.AiStreamResult;
-import com.musealgo.oj.ai.gateway.AiGateway;
-import com.musealgo.oj.ai.gateway.PromptRegistry;
+import com.musealgo.oj.ai.dto.*;
+import com.musealgo.oj.ai.gateway.*;
 import com.musealgo.oj.ai.guard.AiContestGuard;
 import com.musealgo.oj.ai.quota.AiQuotaService;
+import com.musealgo.oj.ai.tutor.TutorMessageBuilder;
+import com.musealgo.oj.api.problem.ProblemTutoringQuery;
 import com.musealgo.oj.api.submission.SubmissionReviewQuery;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-
-/**
- * AI 代码复盘（seam：ReviewApplicationService.reviewSubmissionStream，2026-08-15 拆分后实测目标）。
- * 验证：评测特征进 prompt、比赛拦截、配额拒绝、成功路径。
- */
-@ExtendWith(MockitoExtension.class)
+import com.musealgo.oj.common.exception.BusinessException;
+import org.junit.jupiter.api.Test;
+import java.util.*;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.*;
 class AiServiceReviewTest {
-
-    @Mock
-    private AiGateway gateway;
-    @Mock
-    private PromptRegistry promptRegistry;
-    @Mock
-    private AiQuotaService quotaService;
-    @Mock
-    private AiContestGuard contestGuard;
-    @Mock
-    private SubmissionReviewQuery submissionReviewQuery;
-
-    private ReviewApplicationService newService() {
-        return new ReviewApplicationService(gateway, promptRegistry,
-                quotaService, contestGuard, submissionReviewQuery);
+    final AiGateway gateway=mock(AiGateway.class);
+    final AiQuotaService quota=mock(AiQuotaService.class);
+    final SubmissionReviewQuery submissions=mock(SubmissionReviewQuery.class);
+    final ProblemTutoringQuery problems=mock(ProblemTutoringQuery.class);
+    final ReviewApplicationService service=new ReviewApplicationService(gateway,quota,new AiContestGuard(),submissions,problems,new TutorMessageBuilder(mock(PromptRegistry.class)));
+    AiReviewRequest request() { var r=new AiReviewRequest();r.setSubmissionId(1L);return r; }
+    void data(Long contest, byte status) {
+        when(submissions.findById(1L)).thenReturn(Optional.of(new SubmissionReviewQuery.SubmissionReviewData(1L,10L,100L,status,"cpp","int main(){}",0,12,1024,"error",contest,List.of(new SubmissionReviewQuery.CaseStatusCount(2,1)))));
     }
-
-    private SubmissionReviewQuery.SubmissionReviewData waSubmission() {
-        return new SubmissionReviewQuery.SubmissionReviewData(
-                1L, 10L, 100L, (byte) 2, "cpp",
-                "int main(){ int a; return 0; }", 0, 12, 1024,
-                null, null,
-                List.of(new SubmissionReviewQuery.CaseStatusCount(1, 2),
-                        new SubmissionReviewQuery.CaseStatusCount(2, 1)));
+    @Test void reviewPromptContainsCodeFormalProblemAndStatsIncludingAC() {
+        data(null,(byte)1);when(problems.load(100L)).thenReturn(new ProblemTutoringQuery.Context(100L,"题","正式题面"));when(quota.tryAcquire(10L,false)).thenReturn(true);
+        when(gateway.stream(any(),any())).thenAnswer(i->{String prompt=i.getArgument(0).toString();assertTrue(prompt.contains("WA×1"));assertTrue(prompt.contains("状态: AC"));assertTrue(prompt.contains("正式题面"));assertTrue(prompt.contains("int main()"));return AiStreamResult.success("解释",null,null,true);});
+        var request=request();assertEquals("SUCCESS",service.stream(10L,request,service.prepare(10L,request),false,x->{}).status());
     }
-
-    @Test
-    void reviewPromptContainsCodeAndFailureStats() {
-        when(submissionReviewQuery.findById(1L))
-                .thenReturn(Optional.of(waSubmission()));
-        when(contestGuard.shouldBlock(anyLong(), anyBoolean())).thenReturn(false);
-        when(quotaService.tryAcquire(anyLong(), anyBoolean())).thenReturn(true);
-        when(gateway.stream(any(), any()))
-                .thenReturn(AiStreamResult.success(
-                        "第二组用例越界了，检查数组下标。", null, null, true));
-        List<String> chunks = new ArrayList<>();
-
-        AiAskOutcome outcome = newService().reviewSubmissionStream(10L, 1L, false, chunks::add);
-
-        assertEquals("SUCCESS", outcome.status());
-        ArgumentCaptor<JSONArray> messagesCaptor = ArgumentCaptor.forClass(JSONArray.class);
-        verify(gateway).stream(messagesCaptor.capture(), any());
-        String prompt = messagesCaptor.getValue().toString();
-        assertTrue(prompt.contains("WA×1"), "评测特征应包含用例状态计数");
-        assertTrue(prompt.contains("AC×2"));
-        assertTrue(prompt.contains("int main()"), "学生代码应进 prompt");
-        assertFalse(prompt.contains("测试点原文"));
+    @Test void actualContestSubmissionCannotBeSpoofedAsPracticeEvenAfterContest() {
+        data(99L,(byte)2);var request=request();var prepared=service.prepare(10L,request);
+        assertEquals("CONTEST_BLOCKED",service.stream(10L,request,prepared,true,x->{}).status());verifyNoInteractions(gateway,problems,quota);
     }
-
-    @Test
-    void reviewIsBlockedDuringContest() {
-        when(submissionReviewQuery.findById(1L))
-                .thenReturn(Optional.of(waSubmission()));
-        when(contestGuard.shouldBlock(anyLong(), anyBoolean())).thenReturn(true);
-        List<String> chunks = new ArrayList<>();
-
-        AiAskOutcome outcome = newService().reviewSubmissionStream(10L, 1L, false, chunks::add);
-
-        assertEquals("CONTEST_BLOCKED", outcome.status());
-        verify(gateway, org.mockito.Mockito.never()).stream(any(), any());
+    @Test void explicitContestContextAlsoBlocksPracticeSubmission() {
+        data(null,(byte)2);var request=request();request.setContestId(99L);
+        assertEquals("CONTEST_BLOCKED",service.stream(10L,request,service.prepare(10L,request),false,x->{}).status());verifyNoInteractions(gateway,problems);
     }
-
-    @Test
-    void reviewRespectsQuota() {
-        when(submissionReviewQuery.findById(1L))
-                .thenReturn(Optional.of(waSubmission()));
-        when(contestGuard.shouldBlock(anyLong(), anyBoolean())).thenReturn(false);
-        when(quotaService.tryAcquire(anyLong(), anyBoolean())).thenReturn(false);
-        List<String> chunks = new ArrayList<>();
-
-        AiAskOutcome outcome = newService().reviewSubmissionStream(10L, 1L, false, chunks::add);
-
-        assertEquals("QUOTA_REJECTED", outcome.status());
-        verify(gateway, org.mockito.Mockito.never()).stream(any(), any());
+    @Test void quotaRejectsWithoutModel() {
+        data(null,(byte)2);var request=request();var prepared=service.prepare(10L,request);
+        assertEquals("QUOTA_REJECTED",service.stream(10L,request,prepared,false,x->{}).status());verifyNoInteractions(gateway);
     }
-
-    @Test
-    void missingSubmissionFails() {
-        when(submissionReviewQuery.findById(99L)).thenReturn(Optional.empty());
-        List<String> chunks = new ArrayList<>();
-
-        var failure = org.junit.jupiter.api.Assertions.assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
-                () -> newService().reviewSubmissionStream(1L, 99L, false, chunks::add));
-        assertEquals("AI_REVIEW_SUBMISSION_NOT_FOUND", failure.getErrorCode().key());
-        assertTrue(chunks.isEmpty());
+    @Test void missingAndOtherUsersSubmissionRemainRejected() {
+        assertEquals("AI_REVIEW_SUBMISSION_NOT_FOUND",assertThrows(BusinessException.class,()->service.prepare(10L,request())).getErrorCode().key());
+        data(null,(byte)2);assertEquals("ACCESS_DENIED",assertThrows(BusinessException.class,()->service.prepare(20L,request())).getErrorCode().key());verifyNoInteractions(problems,gateway);
     }
-
-    @Test
-    void userCannotReviewAnotherUsersSubmission() {
-        when(submissionReviewQuery.findById(1L))
-                .thenReturn(Optional.of(waSubmission()));
-        List<String> chunks = new ArrayList<>();
-
-        var failure = org.junit.jupiter.api.Assertions.assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
-                () -> newService().reviewSubmissionStream(20L, 1L, false, chunks::add));
-        assertEquals("ACCESS_DENIED", failure.getErrorCode().key());
-        assertTrue(chunks.isEmpty());
-        verify(gateway, org.mockito.Mockito.never()).stream(any(), any());
-        verify(quotaService, org.mockito.Mockito.never()).tryAcquire(anyLong(), anyBoolean());
+    @Test void pendingSubmissionCannotBeReviewed() { data(null,(byte)0);assertThrows(BusinessException.class,()->service.prepare(10L,request())); }
+    @Test void followupTreatsClientPreviousAnswerAsUntrustedMaterial() {
+        data(null,(byte)2);when(problems.load(100L)).thenReturn(new ProblemTutoringQuery.Context(100L,"题","内容"));when(quota.tryAcquire(10L,false)).thenReturn(true);
+        when(gateway.stream(any(),any())).thenAnswer(i->{var m=(cn.hutool.json.JSONArray)i.getArgument(0);assertEquals("user",m.getJSONObject(1).getStr("role"));assertTrue(m.getJSONObject(1).getStr("content").contains("前次分析"));assertFalse(m.getJSONObject(0).getStr("content").contains("前次分析"));return AiStreamResult.success("解释",null,null,true);});
+        var request=request();request.setPreviousAnswer("前次分析");request.setStudentQuestion("解释第二点");service.stream(10L,request,service.prepare(10L,request),false,x->{});
     }
-    @Test void reviewMissingAndForbiddenHaveExplicitBusinessReasons() {
-        when(submissionReviewQuery.findById(99L)).thenReturn(Optional.empty());
-        var missing = org.junit.jupiter.api.Assertions.assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
-                () -> newService().reviewSubmissionStream(10L, 99L, false, value -> {}));
-        assertEquals("AI_REVIEW_SUBMISSION_NOT_FOUND", missing.getErrorCode().key());
-        when(submissionReviewQuery.findById(1L)).thenReturn(Optional.of(waSubmission()));
-        var denied = org.junit.jupiter.api.Assertions.assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
-                () -> newService().reviewSubmissionStream(20L, 1L, false, value -> {}));
-        assertEquals("ACCESS_DENIED", denied.getErrorCode().key());
-    }
-
 }

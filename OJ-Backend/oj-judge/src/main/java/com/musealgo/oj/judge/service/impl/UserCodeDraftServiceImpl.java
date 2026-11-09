@@ -35,6 +35,13 @@ public class UserCodeDraftServiceImpl extends ServiceImpl<UserCodeDraftMapper, U
     }
 
     @Override
+    public UserCodeDraft getLatestDraft(Long userId, Long problemId) {
+        return getOne(new LambdaQueryWrapper<UserCodeDraft>()
+                .eq(UserCodeDraft::getUserId, userId).eq(UserCodeDraft::getProblemId, problemId)
+                .orderByDesc(UserCodeDraft::getUpdateTime, UserCodeDraft::getId).last("LIMIT 1"));
+    }
+
+    @Override
     public boolean saveOrUpdateDraft(Long userId, Long problemId, String language, String code) {
         // 先查询是否已经有草稿了
         UserCodeDraft existDraft = getDraft(userId, problemId, language);

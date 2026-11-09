@@ -20,7 +20,7 @@ class TeacherWorkbenchErrorTest {
         var workbench = mock(TeacherWorkbenchService.class);
         when(workbench.teacherWorkbenchJsonDetailed(anyString(), anyString()))
                 .thenReturn(AiCompletionResult.failure(AiCallSource.off(), failureType, "synthetic vendor secret"));
-        var controller = new TeacherAiController(workbench, mock(AiUsageRecorder.class), mock(HintLadderQueryService.class));
+        var controller = new TeacherAiController(workbench, mock(AiUsageRecorder.class));
         var response = controller.wbStatement(Map.of("knowledgePoint", "synthetic addition"));
         assertEquals(502, response.getCode());
         assertEquals("AI_RESPONSE_INVALID", response.getErrorCode());
@@ -31,7 +31,7 @@ class TeacherWorkbenchErrorTest {
         var workbench = mock(TeacherWorkbenchService.class);
         when(workbench.teacherWorkbenchJsonDetailed(anyString(), anyString()))
                 .thenReturn(AiCompletionResult.failure(AiCallSource.off(), "TIMEOUT", "synthetic vendor secret"));
-        var controller = new TeacherAiController(workbench, mock(AiUsageRecorder.class), mock(HintLadderQueryService.class));
+        var controller = new TeacherAiController(workbench, mock(AiUsageRecorder.class));
         var response = controller.wbStatement(Map.of("knowledgePoint", "synthetic addition"));
         assertEquals(504, response.getCode());
         assertEquals("UPSTREAM_TIMEOUT", response.getErrorCode());
@@ -43,7 +43,7 @@ class TeacherWorkbenchErrorTest {
         var workbench = mock(TeacherWorkbenchService.class);
         when(workbench.teacherWorkbenchJsonDetailed(anyString(), anyString()))
                 .thenReturn(AiCompletionResult.success("broken-output", null, AiCallSource.off()));
-        var controller = new TeacherAiController(workbench, mock(AiUsageRecorder.class), mock(HintLadderQueryService.class));
+        var controller = new TeacherAiController(workbench, mock(AiUsageRecorder.class));
         var response = controller.wbStatement(Map.of("knowledgePoint", "synthetic addition"));
         assertEquals(502, response.getCode());
         assertEquals("AI_RESPONSE_INVALID", response.getErrorCode());

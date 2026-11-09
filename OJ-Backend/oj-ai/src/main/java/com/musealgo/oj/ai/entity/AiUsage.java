@@ -22,6 +22,7 @@ public class AiUsage implements Serializable {
     private static final long serialVersionUID = 1L;
 
     public static final String STATUS_SUCCESS = "SUCCESS";
+    public static final String STATUS_CANCELLED = "CANCELLED";
     public static final String STATUS_FAIL = "FAIL";
     public static final String STATUS_QUOTA_REJECTED = "QUOTA_REJECTED";
     public static final String STATUS_CONTEST_BLOCKED = "CONTEST_BLOCKED";
@@ -71,7 +72,7 @@ public class AiUsage implements Serializable {
     @TableField("latency_ms")
     private Long latencyMs;
 
-    /** SUCCESS / FAIL / QUOTA_REJECTED / CONTEST_BLOCKED */
+    /** SUCCESS / FAIL / CANCELLED / QUOTA_REJECTED / CONTEST_BLOCKED */
     @TableField("status")
     private String status;
 

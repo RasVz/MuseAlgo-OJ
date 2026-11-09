@@ -43,6 +43,47 @@ class ChatCompletionsClientTest {
     }
 
     @Test
+    void legacyStreamingSendsConfiguredOutputLimitAndDetectsTruncation() throws Exception {
+        AtomicReference<String> body = new AtomicReference<>();
+        start(exchange -> {
+            body.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            respond(exchange, 200, "data: {\"choices\":[{\"delta\":{\"content\":\"片段\"},\"finish_reason\":\"length\"}]}\n\ndata: [DONE]\n\n");
+        });
+        var endpoint = URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/v1/chat/completions");
+        var result = client(4096,65536,2048).stream(AiServiceSnapshot.legacy(endpoint,"legacy","sk-test",false,1024),messages(), x -> {});
+        assertFalse(result.success()); assertEquals("OUTPUT_LIMIT",result.errorType()); assertEquals("片段",result.content());
+        assertTrue(body.get().contains("\"max_tokens\":1024"));
+    }
+
+    @Test
+    void providerContentFilterIsNotReportedAsTokenLimit() throws Exception {
+        start(exchange -> respond(exchange, 200, "data: {\"choices\":[{\"delta\":{\"content\":\"片段\"},\"finish_reason\":\"content_filter\"}]}\n\ndata: [DONE]\n\n"));
+        var result = client(4096,65536,2048).stream(snapshot(false,true),messages(),x -> {});
+        assertFalse(result.success()); assertEquals("CONTENT_FILTER",result.errorType());
+    }
+
+    @Test
+    void cancellationPreservesPartialUsageWithoutWaitingForNextDelta() throws Exception {
+        CountDownLatch first = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        start(exchange -> {
+            exchange.getResponseHeaders().add("Content-Type","text/event-stream");exchange.sendResponseHeaders(200,0);
+            exchange.getResponseBody().write("data: {\"choices\":[{\"delta\":{\"content\":\"已收到\"}}],\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":2,\"total_tokens\":6}}\n\n".getBytes(StandardCharsets.UTF_8));exchange.getResponseBody().flush();
+            try { release.await(10,TimeUnit.SECONDS); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+            exchange.close();
+        });
+        var control = new AiStreamControl(text -> first.countDown());
+        var worker = Executors.newSingleThreadExecutor();
+        try {
+            var result = worker.submit(() -> client(4096,65536,2048).stream(snapshot(false,true),messages(),control));
+            assertTrue(first.await(5,TimeUnit.SECONDS)); control.cancel();
+            var cancelled = result.get(3,TimeUnit.SECONDS);
+            assertEquals("CANCELLED",cancelled.errorType()); assertFalse(cancelled.success());
+            assertEquals("已收到",cancelled.content());assertEquals(4,cancelled.usage().promptTokens());
+        } finally { release.countDown();worker.shutdownNow(); }
+    }
+
+    @Test
     void completeSendsSnapshotAuthModelAndParamsAndParsesUsage() throws Exception {
         AtomicReference<String> body = new AtomicReference<>();
         AtomicReference<String> auth = new AtomicReference<>();

@@ -29,11 +29,11 @@ class AiStreamErrorContractTest {
     void failedOrBlockedOutcomeCannotSendSuccessDone(String outcome, String expected) throws Exception {
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(new Actor(7L), null, List.of()));
         AiService ai = mock(AiService.class);
-        when(ai.streamChatGuarded(anyLong(), anyLong(), anyString(), any(), any(), anyString(), anyInt(), anyBoolean(), any()))
+        when(ai.streamChatGuarded(anyLong(), any(), any(), anyBoolean(), any()))
                 .thenReturn(new AiAskOutcome(outcome, "回答", null, "", null));
         ExecutorService executor = mock(ExecutorService.class);
         doAnswer(invocation -> { ((Runnable) invocation.getArgument(0)).run(); return null; }).when(executor).execute(any());
-        var controller = new AiController(ai, mock(AiQuotaService.class), mock(AiUsageRecorder.class), mock(AiChatSessionService.class), executor);
+        var controller = new AiController(ai, mock(AiQuotaService.class), mock(AiUsageRecorder.class), mock(AiChatSessionService.class), executor, mock(com.musealgo.oj.api.problem.ProblemTutoringQuery.class));
         var mvc = MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(new GlobalExceptionHandler()).build();
         var initial = mvc.perform(post("/ai/ask/stream").contentType(MediaType.APPLICATION_JSON)
                 .content("{\"problemId\":1,\"problemTitle\":\"测试\",\"studentQuestion\":\"如何思考\"}")).andReturn();
