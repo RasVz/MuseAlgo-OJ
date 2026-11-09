@@ -132,6 +132,13 @@ public class ClassController {
     @Operation(summary = "教师创建的班级列表")
     @GetMapping("/list")
     public Result<List<Class>> listCreated(@RequestParam Long teacherId) {
+        // 班级列表含邀请码，只允许本人或管理员按 teacherId 查询，避免跨教师枚举
+        SecurityUtils.requireTeacherOrAdmin();
+        Long actorId = SecurityUtils.getUserId();
+        if (!SecurityUtils.isAdmin() && !java.util.Objects.equals(actorId, teacherId)) {
+            throw new com.musealgo.oj.common.exception.ForbiddenException("只能查看自己创建的班级");
+        }
+
         LambdaQueryWrapper<Class> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Class::getTeacherId, teacherId);
         wrapper.orderByDesc(Class::getCreateTime); // 按创建时间倒序
@@ -314,6 +321,15 @@ public class ClassController {
         Class Class = ClassService.getById(id);
         if (Class == null) {
             return ErrorResponses.failure(TeachingErrorCode.CLASS_NOT_FOUND, "班级不存在");
+        }
+        // 阅读范围与班级其他资源一致：管理员、班主任、班级成员；非成员不得按 ID 探测
+        classMembershipApplicationService.requireClassReader(id);
+        // 邀请码只对班主任和管理员可见，成员可看班级信息但不能代传播加入凭据
+        Long actorId = SecurityUtils.getUserId();
+        boolean ownerOrAdmin = SecurityUtils.isAdmin()
+                || (actorId != null && java.util.Objects.equals(actorId, Class.getTeacherId()));
+        if (!ownerOrAdmin) {
+            Class.setInviteCode(null);
         }
         return Result.success(Class);
     }

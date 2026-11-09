@@ -65,7 +65,7 @@ public class ClassMembershipApplicationService {
         if (SecurityUtils.isAdmin() || (SecurityUtils.isTeacherOrAdmin() && actor != null && actor.equals(info.getTeacherId()))) return true;
         if (actor != null && classStudentService.count(new LambdaQueryWrapper<ClassStudent>()
                 .eq(ClassStudent::getClassId, classId).eq(ClassStudent::getStudentId, actor)) > 0) return false;
-        throw new com.musealgo.oj.common.exception.ForbiddenException("无权查看该班级课件");
+        throw new com.musealgo.oj.common.exception.ForbiddenException("无权查看该班级");
     }
 
     public void requireClassManager(Long classId) {
