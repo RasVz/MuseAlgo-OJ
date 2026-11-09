@@ -2,6 +2,7 @@ package com.musealgo.oj.controller;
 
 import com.musealgo.oj.common.exception.ForbiddenException;
 import com.musealgo.oj.system.entity.User;
+import com.musealgo.oj.teaching.application.ClassMembershipApplicationService;
 import com.musealgo.oj.teaching.controller.ClassController;
 import com.musealgo.oj.teaching.entity.Class;
 import com.musealgo.oj.teaching.service.ClassService;
@@ -25,7 +26,8 @@ import static org.mockito.Mockito.when;
 
 class ClassOwnershipAuthorizationTest {
     private final ClassService classes = mock(ClassService.class);
-    private final ClassController controller = new ClassController(classes, null, null, null, null, null);
+    private final ClassMembershipApplicationService membership = mock(ClassMembershipApplicationService.class);
+    private final ClassController controller = new ClassController(classes, null, null, null, null, membership);
 
     @AfterEach
     void clearSecurityContext() {
@@ -116,6 +118,64 @@ class ClassOwnershipAuthorizationTest {
         controller.getInviteCode(3L);
 
         verify(classes, never()).createInviteCode(3L);
+    }
+
+    @Test
+    void teacherCannotReadAnotherTeachersClassDetail() {
+        login(7L, "TEACHER");
+        Class target = classOf(3L, 8L, "654321");
+        when(classes.getById(3L)).thenReturn(target);
+        org.mockito.Mockito.doThrow(new ForbiddenException("无权查看该班级"))
+                .when(membership).requireClassReader(3L);
+
+        assertThrows(ForbiddenException.class, () -> controller.getDetail(3L));
+    }
+
+    @Test
+    void classMemberReadsDetailWithoutInviteCode() {
+        login(4L, "STUDENT");
+        when(classes.getById(3L)).thenReturn(classOf(3L, 8L, "654321"));
+        when(membership.requireClassReader(3L)).thenReturn(false);
+
+        var response = controller.getDetail(3L);
+
+        assertEquals(3L, response.getData().getId());
+        assertNull(response.getData().getInviteCode());
+    }
+
+    @Test
+    void classOwnerReadsDetailWithInviteCode() {
+        login(7L, "TEACHER");
+        when(classes.getById(3L)).thenReturn(classOf(3L, 7L, "123456"));
+
+        var response = controller.getDetail(3L);
+
+        assertEquals("123456", response.getData().getInviteCode());
+    }
+
+    @Test
+    void teacherCannotListAnotherTeachersClasses() {
+        login(7L, "TEACHER");
+
+        assertThrows(ForbiddenException.class, () -> controller.listCreated(8L));
+        verify(classes, never()).list(any(com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper.class));
+    }
+
+    @Test
+    void teacherListsOwnClasses() {
+        login(7L, "TEACHER");
+
+        controller.listCreated(7L);
+
+        verify(classes).list(any(com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper.class));
+    }
+
+    private static Class classOf(Long id, Long teacherId, String inviteCode) {
+        Class target = new Class();
+        target.setId(id);
+        target.setTeacherId(teacherId);
+        target.setInviteCode(inviteCode);
+        return target;
     }
 
     private static Class classRequest(Long teacherId) {
