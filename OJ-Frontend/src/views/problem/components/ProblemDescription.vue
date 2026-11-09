@@ -67,6 +67,7 @@ import { computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Monitor, CloseBold } from '@element-plus/icons-vue' 
 import { createMarkdown } from '@/utils/markdown'
+import { sanitizeStatementMarkup } from '@/utils/statement-markup'
 
 const props = defineProps({
   problem: { type: Object, default: () => ({}) },
@@ -99,12 +100,14 @@ const handleRunSample = (sample) => {
   })
 }
 
-// 统一走全站 Markdown 工厂：放行 HTML + LaTeX + 代码高亮
+// 统一走全站 Markdown 工厂：放行 HTML + LaTeX + 代码高亮。
+// 放行 HTML 是因为 FPS 导入的题面以 HTML 存储；因此渲染前先按白名单消毒，
+// 保证历史数据里残留的 script/onerror 等内容不会被 v-html 执行。
 const md = createMarkdown({ html: true, math: true })
 
 const renderMarkdown = (text) => {
   if (!text) return ''
-  return md.render(text)
+  return md.render(sanitizeStatementMarkup(text))
 }
 
 const copy = (text) => {

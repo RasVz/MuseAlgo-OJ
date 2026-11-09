@@ -193,10 +193,10 @@ public class ProblemFormatApplicationService {
         if (title.isEmpty()) throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "格式化结果缺少题目名称");
 
         problem.setTitle(truncateCodePoints(title, 128));
-        problem.setContent(sanitizeImportedStatement(nullToEmpty(formatted.content())));
-        problem.setInputDesc(sanitizeImportedStatement(nullToEmpty(formatted.inputDesc())));
-        problem.setOutputDesc(sanitizeImportedStatement(nullToEmpty(formatted.outputDesc())));
-        problem.setHint(sanitizeImportedStatement(nullToEmpty(formatted.hint())));
+        problem.setContent(StatementSanitizer.sanitize(nullToEmpty(formatted.content())));
+        problem.setInputDesc(StatementSanitizer.sanitize(nullToEmpty(formatted.inputDesc())));
+        problem.setOutputDesc(StatementSanitizer.sanitize(nullToEmpty(formatted.outputDesc())));
+        problem.setHint(StatementSanitizer.sanitize(nullToEmpty(formatted.hint())));
 
         // 时限不低于 1000ms；内存不低于 16MB；AI 未给出时用平台默认值 1000ms / 512MB
         int timeLimit = formatted.timeLimitMs() == null || formatted.timeLimitMs() <= 0
@@ -389,14 +389,5 @@ public class ProblemFormatApplicationService {
     private String truncateCodePoints(String value, int maxCodePoints) {
         if (value.codePointCount(0, value.length()) <= maxCodePoints) return value;
         return value.substring(0, value.offsetByCodePoints(0, maxCodePoints));
-    }
-
-    static String sanitizeImportedStatement(String statement) {
-        if (!StringUtils.hasText(statement)) return "";
-        org.jsoup.safety.Safelist safelist = org.jsoup.safety.Safelist.relaxed()
-                .addTags("table", "thead", "tbody", "tfoot", "tr", "th", "td")
-                .addAttributes("th", "colspan", "rowspan")
-                .addAttributes("td", "colspan", "rowspan");
-        return org.jsoup.Jsoup.clean(statement, safelist);
     }
 }

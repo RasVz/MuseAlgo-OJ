@@ -4,8 +4,6 @@ import com.musealgo.oj.common.exception.BusinessException;
 import com.musealgo.oj.problem.error.ProblemErrorCode;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import org.jsoup.Jsoup;
-import org.jsoup.safety.Safelist;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -113,10 +111,10 @@ public class ProblemManagementApplicationService {
 
         Problem problem = new Problem();
         problem.setTitle(imported.title());
-        problem.setContent(sanitizeImportedStatement(imported.description()));
-        problem.setInputDesc(sanitizeImportedStatement(imported.inputDescription()));
-        problem.setOutputDesc(sanitizeImportedStatement(imported.outputDescription()));
-        problem.setHint(sanitizeImportedStatement(imported.hint()));
+        problem.setContent(StatementSanitizer.sanitize(imported.description()));
+        problem.setInputDesc(StatementSanitizer.sanitize(imported.inputDescription()));
+        problem.setOutputDesc(StatementSanitizer.sanitize(imported.outputDescription()));
+        problem.setHint(StatementSanitizer.sanitize(imported.hint()));
         problem.setTimeLimit(imported.timeLimitMillis());
         problem.setMemoryLimit(imported.memoryLimitMegabytes());
         problem.setDifficulty(800);
@@ -322,25 +320,16 @@ public class ProblemManagementApplicationService {
     private void applyEditableFields(Problem target, Problem source) {
         target.setTitle(source.getTitle());
         target.setContestId(source.getContestId());
-        target.setContent(source.getContent());
-        target.setInputDesc(source.getInputDesc());
-        target.setOutputDesc(source.getOutputDesc());
-        target.setHint(source.getHint());
+        // 题面是教师可控的自由文本，学生端按 HTML 渲染：写入侧统一消毒，避免存储型 XSS
+        target.setContent(StatementSanitizer.sanitize(source.getContent()));
+        target.setInputDesc(StatementSanitizer.sanitize(source.getInputDesc()));
+        target.setOutputDesc(StatementSanitizer.sanitize(source.getOutputDesc()));
+        target.setHint(StatementSanitizer.sanitize(source.getHint()));
         target.setTimeLimit(source.getTimeLimit());
         target.setMemoryLimit(source.getMemoryLimit());
         target.setDifficulty(source.getDifficulty());
         target.setTags(source.getTags());
         target.setSource(source.getSource());
         target.setIsPublic(source.getIsPublic());
-    }
-
-    /** HTML 消毒（FPS 导入与格式化落库共用；格式化服务同包直接复用）。 */
-    static String sanitizeImportedStatement(String statement) {
-        if (!StringUtils.hasText(statement)) return "";
-        Safelist safelist = Safelist.relaxed()
-                .addTags("table", "thead", "tbody", "tfoot", "tr", "th", "td")
-                .addAttributes("th", "colspan", "rowspan")
-                .addAttributes("td", "colspan", "rowspan");
-        return Jsoup.clean(statement, safelist);
     }
 }
