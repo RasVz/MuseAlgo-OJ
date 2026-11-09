@@ -40,7 +40,7 @@ public class ClassMembershipApplicationService {
         ClassStudent membership = findMembership(classId, studentId);
         membership.setRemark(remark);
         if (!classStudentService.updateById(membership)) {
-            throw new IllegalStateException("备注更新失败");
+            throw new BusinessException(TeachingErrorCode.TEACHING_WRITE_FAILED, "备注更新失败");
         }
     }
 

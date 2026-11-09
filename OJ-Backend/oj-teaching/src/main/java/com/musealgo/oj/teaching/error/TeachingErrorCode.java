@@ -15,7 +15,9 @@ public enum TeachingErrorCode implements ErrorCode {
     COURSEWARE_BUILD_TIMEOUT(504, "课件构建超时"),
     COURSEWARE_NOT_FOUND(404, "课件不存在"),
     PROBLEM_LIST_NOT_FOUND(404, "题单不存在"),
-    TEACHING_INPUT_INVALID(400, "请求参数不合法");
+    TEACHING_INPUT_INVALID(400, "请求参数不合法"),
+    /** 关联/课件写入未生效属于服务端故障，保留 500 语义并给出可定位业务码。 */
+    TEACHING_WRITE_FAILED(500, "教学资源写入失败，请稍后重试");
 
     private final int status;
     private final String message;

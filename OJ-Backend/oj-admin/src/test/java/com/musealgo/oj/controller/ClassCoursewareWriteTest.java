@@ -28,7 +28,10 @@ class ClassCoursewareWriteTest {
 
     @Test void failedCoursewareInsertCannotCreateABindingWithNullId() {
         when(coursewares.save(any())).thenReturn(false);
-        assertThrows(IllegalStateException.class,()->service.addCoursewareToClass(2L,"Synthetic","/synthetic.html",null,null));
+        var error=assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
+                ()->service.addCoursewareToClass(2L,"Synthetic","/synthetic.html",null,null));
+        assertEquals("TEACHING_WRITE_FAILED",error.getErrorCode().key());
+        assertEquals(500,error.getErrorCode().status());
         verify(relations,never()).insert(any(ClassCourseware.class));
     }
     @Test void failedBindingInsertIsNotASuccessfulAddition() {
@@ -36,6 +39,9 @@ class ClassCoursewareWriteTest {
         when(coursewares.getOne(any())).thenReturn(courseware);
         when(relations.selectCount(any())).thenReturn(0L);
         when(relations.insert(any(ClassCourseware.class))).thenReturn(0);
-        assertThrows(IllegalStateException.class,()->service.addCoursewareToClass(2L,"Synthetic","/synthetic.html",null,null));
+        var error=assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
+                ()->service.addCoursewareToClass(2L,"Synthetic","/synthetic.html",null,null));
+        assertEquals("TEACHING_WRITE_FAILED",error.getErrorCode().key());
+        assertEquals(500,error.getErrorCode().status());
     }
 }

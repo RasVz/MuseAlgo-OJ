@@ -1,5 +1,7 @@
 package com.musealgo.oj.teaching.service.impl;
 
+import com.musealgo.oj.teaching.error.TeachingErrorCode;
+import com.musealgo.oj.common.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import com.musealgo.oj.teaching.entity.ClassStudent;
@@ -84,7 +86,7 @@ public class ClassServiceImpl extends ServiceImpl<ClassMapper, Class> implements
         classStudent.setClassId(classId);
         classStudent.setStudentId(userId);
         classStudent.setJoinTime(LocalDateTime.now());
-        if (classStudentMapper.insert(classStudent) != 1) throw new IllegalStateException("班级成员保存失败");
+        if (classStudentMapper.insert(classStudent) != 1) throw new BusinessException(TeachingErrorCode.TEACHING_WRITE_FAILED, "班级成员保存失败");
 
         refreshStudentCount(classId);
         // 2 - "加入班级成功"
@@ -92,7 +94,7 @@ public class ClassServiceImpl extends ServiceImpl<ClassMapper, Class> implements
     }
     @Override public Class getByIdForUpdate(Long id) { return baseMapper.selectByIdForUpdate(id); }
     @Override public void refreshStudentCount(Long id) {
-        if (baseMapper.refreshStudentCount(id) != 1) throw new IllegalStateException("班级人数更新失败");
+        if (baseMapper.refreshStudentCount(id) != 1) throw new BusinessException(TeachingErrorCode.TEACHING_WRITE_FAILED, "班级人数更新失败");
     }
     @Override public java.util.Map<Long,Long> studentCounts(java.util.List<Long> ids) {
         if (ids == null || ids.isEmpty()) return java.util.Map.of();
