@@ -21,7 +21,7 @@ class ProblemManagementApplicationServiceTest {
 
     @Test
     void importedStatementsRemoveExecutableHtml() {
-        String sanitized = ProblemManagementApplicationService.sanitizeImportedStatement(
+        String sanitized = StatementSanitizer.sanitize(
                 "<p onclick=\"alert(1)\">safe</p><script>alert(2)</script>");
 
         assertThat(sanitized).contains("<p>safe</p>").doesNotContain("onclick", "script", "alert");
@@ -29,7 +29,7 @@ class ProblemManagementApplicationServiceTest {
 
     @Test
     void importedStatementsKeepStructuredAdditionalSamples() {
-        String sanitized = ProblemManagementApplicationService.sanitizeImportedStatement(
+        String sanitized = StatementSanitizer.sanitize(
                 "<section><h3>样例 2</h3><p>输入</p><pre><code>&lt;tag&gt;\n2</code></pre>"
                         + "<p>输出</p><pre><code>two</code></pre></section>");
 
