@@ -32,7 +32,7 @@ public class CodeExecutionAdapter implements CodeExecutionGateway {
             String message = Objects.toString(raw.get("message"), "");
             boolean truncated = stdout.length() > 8192 || stderr.length() > 4096 || compile.length() > 4096 || message.length() > 2048;
             var result = new Observation(UUID.randomUUID().toString(), request.input(), clip(stdout,8192), clip(stderr,4096), clip(compile,4096),
-                    status, Objects.toString(raw.get("time"), null), raw.get("memory") instanceof Number n ? n.intValue() : null, truncated, clip(message,2048));
+                    status, Objects.toString(raw.get("time"), null), memoryKb(raw.get("memory")), truncated, clip(message,2048));
             metric(com.musealgo.oj.judge.domain.SubmissionStatus.isInfrastructureFailure(status) ? "run.service-error" : status == 3 ? "run.completed" : status == 5 ? "run.timeout" : "run.code-error", request.userId(), 1);
             receipts.save(request.userId(), request.problemId(), request.code(), request.language(), result);
             return result;
@@ -65,7 +65,12 @@ public class CodeExecutionAdapter implements CodeExecutionGateway {
         if (expected == null && suggestedExpected != null) { expected = suggestedExpected; source = "AI_GUESS"; }
         boolean confirmed = observation.status() == 3 && !observation.truncated() && !"NONE".equals(source) && !"AI_GUESS".equals(source)
                 && !observation.stdout().stripTrailing().equals(expected.stripTrailing());
-        return new Verification(observation, expected, source, confirmed, confirmed ? "该输入已实测输出不匹配，期望来自" + source : "仅报告运行事实；未确认输出错误");
+        return new Verification(observation, expected, source, confirmed, confirmed ? "该输入已实测输出不匹配，期望来自" + ("OFFICIAL_SAMPLE".equals(source) ? "官方样例" : "已验证参考程序") : "仅报告运行事实；未确认输出错误");
+    }
+    private static Integer memoryKb(Object raw) {
+        if (raw == null) return null;
+        try { return Integer.valueOf(raw.toString()); }
+        catch (NumberFormatException unavailable) { return null; }
     }
     private void metric(String name, Long user, long amount) { try { telemetry.ifAvailable(sink -> sink.add(name,user,amount)); } catch(RuntimeException ignored) { /* 资源统计不阻止学生试跑。 */ } }
     private static String clip(String value, int max) { return value.length() <= max ? value : value.substring(0,max); }

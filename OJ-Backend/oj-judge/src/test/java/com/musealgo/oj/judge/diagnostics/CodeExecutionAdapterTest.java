@@ -17,6 +17,7 @@ class CodeExecutionAdapterTest {
     final CodeExecutionGateway.Request request=new CodeExecutionGateway.Request(7L,1L,"student","cpp","0","DIAGNOSTIC");
     Map<String,Object> output(String text,int status){return Map.of("status",status,"raw_stdout",text);}
     @BeforeEach void prepare(){when(references.find(1L,"0")).thenReturn(new ProblemDebugReferenceQuery.Reference(null,null));when(runner.executeCode(anyString(),anyString(),anyString())).thenReturn(output("1",3));}
+    @Test void realJudgeMemoryStringIsPreserved(){when(runner.executeCode(anyString(),anyString(),anyString())).thenReturn(Map.of("status",3,"raw_stdout","1","memory","1280"));assertEquals(1280,adapter.run(request).memory());}
     @Test void judgeInfrastructureErrorIsNeverAStudentCounterexample(){for(int status:List.of(13,14)){when(runner.executeCode(anyString(),anyString(),anyString())).thenReturn(output("",status));assertFalse(adapter.verify(request,null).confirmedFailure());}verifyNoInteractions(references);}
     @Test void messageOnlyErrorSurvivesEvidence(){when(runner.executeCode(anyString(),anyString(),anyString())).thenReturn(Map.of("status",5,"raw_stdout","","message","CPU time limit exceeded"));assertEquals("CPU time limit exceeded",adapter.verify(request,null).run().message());}
     @Test void legacyLongOfficialSampleCanBeRunManually(){assertEquals(3,adapter.run(new CodeExecutionGateway.Request(7L,1L,"student","cpp","0".repeat(5000),"MANUAL")).status());}
