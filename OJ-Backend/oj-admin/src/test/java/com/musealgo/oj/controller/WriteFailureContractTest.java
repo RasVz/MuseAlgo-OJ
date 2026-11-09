@@ -123,7 +123,9 @@ class WriteFailureContractTest {
         when(relations.getById(3L)).thenReturn(relation);
         var controller=new ClassCoursewareController(relations,mock(CoursewareService.class),mock(ClassMembershipApplicationService.class));
         when(relations.update(any())).thenReturn(false);
-        assertThrows(IllegalStateException.class,()->controller.updateSortBatch(List.of(Map.of("id",3,"sort",4))));
+        var error=assertThrows(BusinessException.class,()->controller.updateSortBatch(List.of(Map.of("id",3,"sort",4))));
+        assertEquals("TEACHING_WRITE_FAILED",error.getErrorCode().key());
+        assertEquals(500,error.getErrorCode().status());
     }
 
     private static void assertListWriteFailed(org.junit.jupiter.api.function.Executable executable) {

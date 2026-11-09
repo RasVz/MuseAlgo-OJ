@@ -129,17 +129,13 @@ public class ClassCoursewareController {
     @AuditLog(module = "class", action = "add_class_courseware")
     @PostMapping("/add")
     public Result<?> addCoursewareToClass(@RequestBody Map<String, Object> params) {
-        try {
-            classCoursewareService.addCoursewareToClass(
-                    RequestValues.longValue(params.get("classId"), "classId"),
-                    (String) params.get("title"),
-                    (String) params.get("url"),
-                    params.get("problemListId") != null ? RequestValues.longValue(params.get("problemListId"), "problemListId") : null,
-                    (String) params.get("description"));
-            return Result.success("添加成功");
-        } catch (IllegalStateException e) {
-            throw e;
-        }
+        classCoursewareService.addCoursewareToClass(
+                RequestValues.longValue(params.get("classId"), "classId"),
+                (String) params.get("title"),
+                (String) params.get("url"),
+                params.get("problemListId") != null ? RequestValues.longValue(params.get("problemListId"), "problemListId") : null,
+                (String) params.get("description"));
+        return Result.success("添加成功");
     }
 
     /**
@@ -188,7 +184,7 @@ public class ClassCoursewareController {
             LambdaUpdateWrapper<ClassCourseware> updateWrapper = new LambdaUpdateWrapper<>();
             updateWrapper.eq(ClassCourseware::getId, id)
                     .set(ClassCourseware::getSort, sort);
-            if (!classCoursewareService.update(updateWrapper)) throw new IllegalStateException("班级课件排序更新失败");
+            if (!classCoursewareService.update(updateWrapper)) throw new BusinessException(TeachingErrorCode.TEACHING_WRITE_FAILED, "班级课件排序更新失败");
         }
         return Result.success("排序更新成功");
     }

@@ -85,7 +85,7 @@ public class ClassCoursewareServiceImpl
             ncw.setTitle(title); ncw.setUrl(url);
             ncw.setProblemListId(problemListId); ncw.setDescription(description);
             ncw.setTeacherId(com.musealgo.oj.common.utils.SecurityUtils.getUserId());
-            if (!coursewareService.save(ncw)) throw new IllegalStateException("课件保存失败");
+            if (!coursewareService.save(ncw)) throw new BusinessException(TeachingErrorCode.TEACHING_WRITE_FAILED, "课件保存失败");
             coursewareId = ncw.getId();
         }
 
@@ -105,6 +105,6 @@ public class ClassCoursewareServiceImpl
         ClassCourseware rel = new ClassCourseware();
         rel.setClassId(classId); rel.setCoursewareId(coursewareId);
         rel.setSort(sort); rel.setIsVisible(true);
-        if (!this.save(rel)) throw new IllegalStateException("班级课件关联保存失败");
+        if (!this.save(rel)) throw new BusinessException(TeachingErrorCode.TEACHING_WRITE_FAILED, "班级课件关联保存失败");
     }
 }
