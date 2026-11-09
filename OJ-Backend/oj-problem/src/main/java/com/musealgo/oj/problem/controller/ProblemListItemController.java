@@ -129,14 +129,14 @@ public class ProblemListItemController {
         item.setSort(0);
 
         boolean saved = problemListItemService.save(item);
-        if (!saved) throw new IllegalStateException("题单题目保存失败");
+        if (!saved) throw new BusinessException(ProblemErrorCode.PROBLEM_LIST_WRITE_FAILED, "题单题目保存失败");
 
         // 【新增逻辑】如果保存成功，更新主表计数 +1
         if (saved) {
             UpdateWrapper<ProblemList> updateWrapper = new UpdateWrapper<>();
             updateWrapper.eq("id", listId)
                     .setSql("problem_count = problem_count + 1");
-            if (!problemListService.update(updateWrapper)) throw new IllegalStateException("题单题目计数更新失败");
+            if (!problemListService.update(updateWrapper)) throw new BusinessException(ProblemErrorCode.PROBLEM_LIST_WRITE_FAILED, "题单题目计数更新失败");
         }
 
         return Result.success("添加成功");
@@ -179,7 +179,7 @@ public class ProblemListItemController {
             UpdateWrapper<ProblemList> updateWrapper = new UpdateWrapper<>();
             updateWrapper.eq("id", listId)
                     .setSql("problem_count = problem_count - 1");
-            if (!problemListService.update(updateWrapper)) throw new IllegalStateException("题单题目计数更新失败");
+            if (!problemListService.update(updateWrapper)) throw new BusinessException(ProblemErrorCode.PROBLEM_LIST_WRITE_FAILED, "题单题目计数更新失败");
 
             return Result.success("移除成功");
         }

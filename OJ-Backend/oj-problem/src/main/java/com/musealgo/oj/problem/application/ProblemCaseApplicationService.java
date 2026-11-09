@@ -259,7 +259,7 @@ public class ProblemCaseApplicationService {
                 c.setScore(importedCaseScore(order - 1, total));
             }
             if (!problemCaseService.updateById(c)) {
-                throw new IllegalStateException("测试用例更新失败");
+                throw new BusinessException(ProblemErrorCode.PROBLEM_CASE_WRITE_FAILED, "测试用例更新失败");
             }
         }
         updateTestCaseCount(problemId, total);
@@ -331,7 +331,7 @@ public class ProblemCaseApplicationService {
                 ProblemCase pc = existing.get(i);
                 pc.setScore(importedCaseScore(i, total));
                 if (!problemCaseService.updateById(pc)) {
-                    throw new IllegalStateException("测试用例分值更新失败");
+                    throw new BusinessException(ProblemErrorCode.PROBLEM_CASE_WRITE_FAILED, "测试用例分值更新失败");
                 }
             }
             for (int i = 0; i < toAdd.size(); i++) {
@@ -371,13 +371,13 @@ public class ProblemCaseApplicationService {
         pc.setStatus((byte) 1);
         pc.setScore(score);
         if (!problemCaseService.save(pc)) {
-            throw new IllegalStateException("测试用例保存失败");
+            throw new BusinessException(ProblemErrorCode.PROBLEM_CASE_WRITE_FAILED, "测试用例保存失败");
         }
         createdCaseIds.add(pc.getId());
         pc.setInputFilePath(testCaseStorageService.writeInput(problemId, pc.getId(), source.input()));
         pc.setOutputFilePath(testCaseStorageService.writeOutput(problemId, pc.getId(), source.output()));
         if (!problemCaseService.updateById(pc)) {
-            throw new IllegalStateException("测试用例文件路径保存失败");
+            throw new BusinessException(ProblemErrorCode.PROBLEM_CASE_WRITE_FAILED, "测试用例文件路径保存失败");
         }
     }
 
@@ -483,7 +483,7 @@ public class ProblemCaseApplicationService {
             problemCase.setStatus((byte) 1);
             problemCase.setScore(importedCaseScore(index, cases.size()));
             if (!problemCaseService.save(problemCase)) {
-                throw new IllegalStateException("测试用例保存失败");
+                throw new BusinessException(ProblemErrorCode.PROBLEM_CASE_WRITE_FAILED, "测试用例保存失败");
             }
             // 先登记再写文件：写文件失败时这一条也要能被回滚清理
             createdCaseIds.add(problemCase.getId());
@@ -493,7 +493,7 @@ public class ProblemCaseApplicationService {
             problemCase.setOutputFilePath(testCaseStorageService.writeOutput(
                     problemId, problemCase.getId(), importedCase.output()));
             if (!problemCaseService.updateById(problemCase)) {
-                throw new IllegalStateException("测试用例文件路径保存失败");
+                throw new BusinessException(ProblemErrorCode.PROBLEM_CASE_WRITE_FAILED, "测试用例文件路径保存失败");
             }
         }
     }
@@ -504,7 +504,7 @@ public class ProblemCaseApplicationService {
         update.setId(problemId);
         update.setTestCaseCount(testCaseCount);
         if (!problemService.updateById(update)) {
-            throw new IllegalStateException("测试用例数量更新失败");
+            throw new BusinessException(ProblemErrorCode.PROBLEM_CASE_WRITE_FAILED, "测试用例数量更新失败");
         }
     }
 

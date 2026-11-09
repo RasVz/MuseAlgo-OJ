@@ -60,12 +60,12 @@ class WriteFailureContractTest {
 
     @Test void failedItemInsertCannotReturnSuccessOrChangeTheCount() {
         existingProblem(); when(items.save(any())).thenReturn(false);
-        assertThrows(IllegalStateException.class, () -> itemController.addProblem(Map.of("problemListId",3,"problemDisplayId","11")));
+        assertListWriteFailed(() -> itemController.addProblem(Map.of("problemListId",3,"problemDisplayId","11")));
         verify(lists, never()).update(any());
     }
     @Test void failedCountIncrementAbortsTheItemOperation() {
         existingProblem(); when(items.save(any())).thenReturn(true); when(lists.update(any())).thenReturn(false);
-        assertThrows(IllegalStateException.class, () -> itemController.addProblem(Map.of("problemListId",3,"problemDisplayId","11")));
+        assertListWriteFailed(() -> itemController.addProblem(Map.of("problemListId",3,"problemDisplayId","11")));
     }
     @Test void missingListItemIsNotBadInput() {
         ownedList(); when(items.remove(any())).thenReturn(false);
@@ -75,15 +75,15 @@ class WriteFailureContractTest {
     }
     @Test void failedCountDecrementAbortsRemoval() {
         ownedList(); when(items.remove(any())).thenReturn(true); when(lists.update(any())).thenReturn(false);
-        assertThrows(IllegalStateException.class, () -> itemController.removeProblem(Map.of("problemListId",3,"problemId",11)));
+        assertListWriteFailed(() -> itemController.removeProblem(Map.of("problemListId",3,"problemId",11)));
     }
     @Test void failedListCreateCannotReturnAnEmptySuccessfulId() {
         ProblemList input = new ProblemList(); input.setTitle("Synthetic list");
-        assertThrows(IllegalStateException.class, () -> listController.add(input));
+        assertListWriteFailed(() -> listController.add(input));
     }
     @Test void failedListEditCannotReturnSuccess() {
         ownedList(); ProblemList input = new ProblemList(); input.setId(3L); input.setTitle("Updated");
-        assertThrows(IllegalStateException.class, () -> listController.update(input));
+        assertListWriteFailed(() -> listController.update(input));
     }
     @Test void failedListDeleteCannotReturnSuccess() {
         ownedList(); when(lists.removeById(3L)).thenReturn(false);
@@ -125,6 +125,13 @@ class WriteFailureContractTest {
         when(relations.update(any())).thenReturn(false);
         assertThrows(IllegalStateException.class,()->controller.updateSortBatch(List.of(Map.of("id",3,"sort",4))));
     }
+
+    private static void assertListWriteFailed(org.junit.jupiter.api.function.Executable executable) {
+        BusinessException error = assertThrows(BusinessException.class, executable);
+        assertEquals("PROBLEM_LIST_WRITE_FAILED", error.getErrorCode().key());
+        assertEquals(500, error.getErrorCode().status());
+    }
+
     @Test void preferenceDependencyFailureMustReachTheAvailabilityHandler() {
         var users=mock(UserService.class);var controller=new UserController();
         ReflectionTestUtils.setField(controller,"userService",users);ReflectionTestUtils.setField(controller,"objectMapper",new ObjectMapper());

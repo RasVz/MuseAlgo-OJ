@@ -1,5 +1,6 @@
 package com.musealgo.oj.problem.controller;
 
+import com.musealgo.oj.common.exception.BusinessException;
 import com.musealgo.oj.common.exception.ErrorResponses;
 import com.musealgo.oj.common.exception.CommonErrorCode;
 import com.musealgo.oj.problem.error.ProblemErrorCode;
@@ -122,7 +123,7 @@ public class ProblemListController {
         if (problemList.getFavoriteCount() == null) problemList.setFavoriteCount(0);
         if (problemList.getPrivacy() == null) problemList.setPrivacy(0);
 
-        if (!problemListService.save(problemList)) throw new IllegalStateException("题单保存失败");
+        if (!problemListService.save(problemList)) throw new BusinessException(ProblemErrorCode.PROBLEM_LIST_WRITE_FAILED, "题单保存失败");
 
         // 返回新增的题单 ID 给前端，解决页面跳转到 /创建成功/edit 的 Bug
         return Result.success("创建成功", problemList.getId());
@@ -153,7 +154,7 @@ public class ProblemListController {
         problemList.setClassId(null);
         problemList.setCreateTime(null);
 
-        if (!problemListService.updateById(problemList)) throw new IllegalStateException("题单更新失败");
+        if (!problemListService.updateById(problemList)) throw new BusinessException(ProblemErrorCode.PROBLEM_LIST_WRITE_FAILED, "题单更新失败");
         return Result.success("更新成功");
     }
 

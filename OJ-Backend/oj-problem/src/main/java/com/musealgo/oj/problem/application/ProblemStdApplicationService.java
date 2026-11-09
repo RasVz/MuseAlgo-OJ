@@ -70,7 +70,7 @@ public class ProblemStdApplicationService {
         // 覆盖掉并发用例写入刚提交的计数
         if (!problemService.updateStd(problem.getId(), code,
                 explanation == null ? "" : explanation, 1)) {
-            throw new IllegalStateException("标准答案保存失败");
+            throw new BusinessException(ProblemErrorCode.PROBLEM_STD_WRITE_FAILED, "标准答案保存失败");
         }
     }
 
@@ -80,7 +80,7 @@ public class ProblemStdApplicationService {
             throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "标准答案代码不能为空");
         }
         if (!problemService.updateStd(problemId, code, explanation == null ? "" : explanation, tested)) {
-            throw new IllegalStateException("标准答案保存失败");
+            throw new BusinessException(ProblemErrorCode.PROBLEM_STD_WRITE_FAILED, "标准答案保存失败");
         }
     }
 
@@ -100,7 +100,7 @@ public class ProblemStdApplicationService {
         accessGuard.requireManagedProblem(problemId);
         // 代码已清空后「已测试」不再有意义，一并归零，避免界面出现「已测试但没有代码」
         if (!problemService.updateStd(problemId, null, null, 0)) {
-            throw new IllegalStateException("标准答案清除失败");
+            throw new BusinessException(ProblemErrorCode.PROBLEM_STD_WRITE_FAILED, "标准答案清除失败");
         }
     }
 
@@ -121,7 +121,7 @@ public class ProblemStdApplicationService {
             throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "标准答案代码不能为空");
         }
         if (!problemService.updateStd(problemId, code, explanation == null ? "" : explanation, 0)) {
-            throw new IllegalStateException("标准答案保存失败");
+            throw new BusinessException(ProblemErrorCode.PROBLEM_STD_WRITE_FAILED, "标准答案保存失败");
         }
         caseApplicationService.clearCases(problemId);
     }

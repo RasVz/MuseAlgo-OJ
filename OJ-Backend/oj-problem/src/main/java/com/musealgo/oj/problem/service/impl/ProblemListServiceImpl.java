@@ -1,5 +1,7 @@
 package com.musealgo.oj.problem.service.impl;
 
+import com.musealgo.oj.common.exception.BusinessException;
+import com.musealgo.oj.problem.error.ProblemErrorCode;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -205,7 +207,7 @@ public class ProblemListServiceImpl extends ServiceImpl<ProblemListMapper, Probl
                     .eq(ProblemList::getId, distinctIds.get(i))
                     .set(ProblemList::getSortOrder, i)
                     .update();
-            if (!updated) throw new IllegalStateException("题单排序更新失败");
+            if (!updated) throw new BusinessException(ProblemErrorCode.PROBLEM_LIST_WRITE_FAILED, "题单排序更新失败");
         }
     }
 }
