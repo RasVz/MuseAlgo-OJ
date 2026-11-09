@@ -1,6 +1,7 @@
 package com.musealgo.oj.common.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -97,6 +98,12 @@ public class SecurityConfig {
                 )
 
                 .authorizeHttpRequests(auth -> auth
+                        // 这两个 SSE 请求已在原始 REQUEST 中鉴权；这里只完成响应的容器内部 ASYNC 分派。
+                        // JWT 过滤器会清理请求线程身份，若在收尾时再鉴权会截断已提交的 HTTP chunked 响应。
+                        // 不放行原始请求、其他 AI 路径或其他异步端点。
+                        .requestMatchers(request -> request.getDispatcherType() == DispatcherType.ASYNC
+                                && ("/ai/ask/stream".equals(request.getServletPath())
+                                || "/ai/review".equals(request.getServletPath()))).permitAll()
                         // === 白名单配置 (允许匿名访问) ===
                         .requestMatchers("/auth/login", "/auth/register").permitAll() // 登录注册
                         .requestMatchers("/auth/refresh").permitAll()
