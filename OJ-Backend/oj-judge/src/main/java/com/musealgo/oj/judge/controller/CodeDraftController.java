@@ -50,6 +50,18 @@ public class CodeDraftController {
         return Result.success(draft);
     }
 
+    public record DraftSnapshot(String language, String code) { }
+
+    @Operation(summary = "获取当前用户本题最近保存的草稿及语言")
+    @GetMapping("/latest")
+    public Result<DraftSnapshot> latestDraft(@RequestParam Long problemId) {
+        Long userId = SecurityUtils.getUserId();
+        if (userId == null) throw new com.musealgo.oj.common.exception.BusinessException(CommonErrorCode.AUTH_REQUIRED);
+        if (problemId == null || problemId <= 0) throw new com.musealgo.oj.common.exception.BusinessException(JudgeErrorCode.JUDGE_INPUT_INVALID);
+        var draft = draftService.getLatestDraft(userId, problemId);
+        return Result.success(draft == null ? null : new DraftSnapshot(draft.getLanguage(), draft.getCode()));
+    }
+
     /**
      * 保存代码草稿 (防抖自动调用)
      */

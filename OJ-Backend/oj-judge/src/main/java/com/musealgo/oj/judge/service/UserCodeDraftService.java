@@ -20,6 +20,9 @@ public interface UserCodeDraftService extends IService<UserCodeDraft> {
     // 获取草稿
     UserCodeDraft getDraft(Long userId, Long problemId, String language);
 
+    /** 按更新时间、ID 倒序读取当前用户本题最近保存的语言与代码。 */
+    UserCodeDraft getLatestDraft(Long userId, Long problemId);
+
     // 保存或更新草稿
     boolean saveOrUpdateDraft(Long userId, Long problemId, String language, String code);
 }

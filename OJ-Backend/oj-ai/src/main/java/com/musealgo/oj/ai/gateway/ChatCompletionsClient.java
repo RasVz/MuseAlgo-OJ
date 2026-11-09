@@ -159,6 +159,7 @@ public class ChatCompletionsClient {
 
         JSONObject requestBody = baseRequest(snapshot, messages, false);
         requestBody.set("stream", true);
+        requestBody.set("max_tokens", snapshot.maxTokens());
         if (snapshot.streamIncludeUsage()) {
             JSONObject streamOptions = new JSONObject();
             streamOptions.set("include_usage", true);
@@ -179,17 +180,24 @@ public class ChatCompletionsClient {
         AiTokenUsage usage = null;
         boolean emitted = false;
         boolean finished = false;
+        boolean outputLimited = false;
+        boolean contentFiltered = false;
         long totalBytes = 0;
-        try (Response response = clientForEndpoint(endpoint).newCall(request).execute()) {
+        var requestSent = new java.util.concurrent.atomic.AtomicBoolean();
+        var call = clientForEndpoint(endpoint).newBuilder().eventListener(new okhttp3.EventListener() {
+            @Override public void requestBodyEnd(okhttp3.Call call, long byteCount) { requestSent.set(true); }
+        }).build().newCall(request);
+        if (onChunk instanceof AiStreamControl control) control.onCancel(call::cancel);
+        try (Response response = call.execute()) {
             if (!response.isSuccessful()) {
                 String type = classifyHttpStatus(response.code());
                 log.warn("【AI上游】流式非成功响应 status={} type={} serviceId={} reason={}",
                         response.code(), type, snapshot.serviceId(), upstreamReason(response));
-                return AiStreamResult.failure(source, false, type, httpErrorMessage(type));
+                return partial(full, usage, source, false, requestSent.get(), type, httpErrorMessage(type));
             }
             ResponseBody body = response.body();
             if (body == null) {
-                return AiStreamResult.failure(source, false, "INVALID_RESPONSE", "上游返回空响应");
+                return partial(full, usage, source, false, requestSent.get(), "INVALID_RESPONSE", "上游返回空响应");
             }
             BufferedSource input = body.source();
             while (true) {
@@ -215,7 +223,7 @@ public class ChatCompletionsClient {
                 try {
                     JSONObject chunk = new JSONObject(data);
                     if (chunk.containsKey("error")) {
-                        return AiStreamResult.failure(source, emitted, "MODEL_UNAVAILABLE", "上游返回流式错误");
+                        return partial(full, usage, source, emitted, requestSent.get(), "MODEL_UNAVAILABLE", "上游返回流式错误");
                     }
                     chunkUsage = extractUsage(chunk);
                     delta = extractDeltaContent(chunk);
@@ -223,9 +231,11 @@ public class ChatCompletionsClient {
                     if (choices != null && !choices.isEmpty()) {
                         String reason = choices.getJSONObject(0).getStr("finish_reason");
                         finished |= reason != null && !reason.isBlank();
+                        outputLimited |= "length".equals(reason);
+                        contentFiltered |= "content_filter".equals(reason);
                     }
                 } catch (RuntimeException e) {
-                    return AiStreamResult.failure(source, emitted, "INVALID_RESPONSE", "上游流式响应格式无效");
+                    return partial(full, usage, source, emitted, requestSent.get(), "INVALID_RESPONSE", "上游流式响应格式无效");
                 }
                 if (chunkUsage != null) {
                     usage = chunkUsage;
@@ -236,24 +246,37 @@ public class ChatCompletionsClient {
                     onChunk.accept(delta);
                 }
             }
+            if (contentFiltered) return partial(full, usage, source, emitted, requestSent.get(), "CONTENT_FILTER", "供应商未能完成本次回复，请调整问题后重试");
             if (full.isEmpty()) {
-                return AiStreamResult.failure(source, false, "INVALID_RESPONSE", "上游流式响应缺少有效内容");
+                return partial(full, usage, source, false, requestSent.get(), "INVALID_RESPONSE", "上游流式响应缺少有效内容");
             }
             if (!finished) {
-                return AiStreamResult.failure(source, emitted, "NETWORK", "上游流式连接未完整结束");
+                return partial(full, usage, source, emitted, requestSent.get(), "NETWORK", "上游流式连接未完整结束");
             }
+            if (outputLimited) return partial(full, usage, source, emitted, requestSent.get(), "OUTPUT_LIMIT", "回复达到输出上限，尚未完成");
             return AiStreamResult.success(full.toString(), usage, source, emitted);
+        } catch (AiStreamControl.Cancelled e) {
+            return partial(full, usage, source, emitted, requestSent.get(), "CANCELLED", "用户已停止生成，最终供应商成本未知");
         } catch (ResponseTooLargeException e) {
-            return AiStreamResult.failure(source, emitted, "RESPONSE_TOO_LARGE", "上游流式响应超过大小限制");
+            return partial(full, usage, source, emitted, requestSent.get(), "RESPONSE_TOO_LARGE", "上游流式响应超过大小限制");
         } catch (SocketTimeoutException e) {
-            return AiStreamResult.failure(source, emitted, "TIMEOUT", "上游流式请求超时");
+            return partial(full, usage, source, emitted, requestSent.get(), "TIMEOUT", "上游流式请求超时");
         } catch (InterruptedIOException e) {
-            return AiStreamResult.failure(source, emitted, "TIMEOUT", "上游流式请求超时");
+            if (onChunk instanceof AiStreamControl control && control.isCancelled())
+                return partial(full, usage, source, emitted, requestSent.get(), "CANCELLED", "用户已停止生成，最终供应商成本未知");
+            return partial(full, usage, source, emitted, requestSent.get(), "TIMEOUT", "上游流式请求超时");
         } catch (IOException e) {
+            if (onChunk instanceof AiStreamControl control && control.isCancelled())
+                return partial(full, usage, source, emitted, requestSent.get(), "CANCELLED", "用户已停止生成，最终供应商成本未知");
             log.warn("【AI上游】流式网络失败 serviceId={} exception={}",
                     snapshot.serviceId(), e.getClass().getSimpleName());
-            return AiStreamResult.failure(source, emitted, "NETWORK", "上游流式连接中断");
+            return partial(full, usage, source, emitted, requestSent.get(), "NETWORK", "上游流式连接中断");
         }
+    }
+
+    private static AiStreamResult partial(StringBuilder content, AiTokenUsage usage, AiCallSource source,
+                                          boolean emitted, boolean requestSent, String type, String notice) {
+        return new AiStreamResult(content.toString(), usage, source, false, emitted, type, notice, requestSent);
     }
 
     private OkHttpClient clientForEndpoint(URI endpoint) {

@@ -5,10 +5,12 @@ import com.musealgo.oj.common.exception.ErrorCode;
 /** Stable public reasons owned by this module. */
 public enum AiErrorCode implements ErrorCode {
     AI_QUOTA_EXCEEDED(429, "今日 AI 使用额度已用完"),
-    AI_CONTEST_BLOCKED(403, "比赛进行中，暂不能使用 AI 助手"),
+    AI_CONTEST_BLOCKED(403, "比赛场景不提供 AI 教学帮助，请到普通练习中使用"),
     AI_UPSTREAM_FAILED(503, "AI 服务暂时不可用，请稍后重试"),
     AI_RESPONSE_INVALID(502, "AI 返回内容格式不正确，请重试"),
     AI_STREAM_BUSY(503, "AI 请求较多，请稍后重试"),
+    AI_RESPONSE_FILTERED(502, "供应商未能完成本次回复，请调整问题后重试"),
+    AI_OUTPUT_LIMIT(502, "回复达到输出上限，尚未完成，请缩小问题范围或调整输出上限"),
     AI_STREAM_FAILED(500, "AI 回复中断，请重试"),
     AI_REVIEW_SUBMISSION_NOT_FOUND(404, "提交不存在"),
     AI_INPUT_INVALID(400, "请求参数不合法"),

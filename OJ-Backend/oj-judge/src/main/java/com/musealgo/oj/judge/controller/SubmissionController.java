@@ -233,6 +233,7 @@ public class SubmissionController {
         UserDisplayInfo author = userQuery.findDisplayInfo(submission.getUserId()).orElse(null);
 
         SubmissionDetailVO vo = new SubmissionDetailVO();
+        vo.setContestId(submission.getContestId());
         BeanUtils.copyProperties(submission, vo);
 
         vo.setProblemTitle(problemTitle);

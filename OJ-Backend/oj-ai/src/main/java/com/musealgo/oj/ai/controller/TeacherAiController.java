@@ -15,11 +15,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import com.musealgo.oj.ai.AiService;
 import com.musealgo.oj.ai.TeacherWorkbenchService;
-import com.musealgo.oj.ai.HintLadderQueryService;
 import com.musealgo.oj.ai.dto.AiCallSource;
 import com.musealgo.oj.ai.dto.AiCompletionResult;
 import com.musealgo.oj.ai.dto.AiTokenUsage;
-import com.musealgo.oj.ai.dto.HintLevelVo;
 import com.musealgo.oj.ai.entity.AiUsage;
 import com.musealgo.oj.ai.usage.AiUsageRecorder;
 import com.musealgo.oj.common.api.Result;
@@ -43,22 +41,6 @@ public class TeacherAiController {
 
     private final TeacherWorkbenchService teacherWorkbenchService;
     private final AiUsageRecorder usageRecorder;
-    private final HintLadderQueryService hintLadderQueryService;
-
-    /**
-     * 班级 × 题目的 Hint Ladder 解锁情况：每位学生的最高解锁级别。
-     * <p>
-     * 权限：@PreAuthorize 已限定教师/管理员，班级归属（班主任本人）由
-     * {@link HintLadderQueryService} 校验。级别 = Redis 当前值 ∪ 轨迹表历史，取高。
-     * </p>
-     */
-    @Operation(summary = "查询班级内每位学生对某题的 Hint Ladder 解锁级别")
-    @GetMapping("/hint/levels")
-    public Result<List<HintLevelVo>> hintLevels(@RequestParam Long classId,
-                                                @RequestParam Long problemId) {
-        return Result.success(hintLadderQueryService.classHintLevels(classId, problemId));
-    }
-
     @Operation(summary = "题面草稿生成")
     @PostMapping("/draft-problem")
     public Result<String> draftProblem(@RequestBody Map<String, String> body) {

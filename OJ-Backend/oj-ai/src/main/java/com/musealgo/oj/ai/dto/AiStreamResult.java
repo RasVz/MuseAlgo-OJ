@@ -13,13 +13,18 @@ public record AiStreamResult(
         boolean success,
         boolean emitted,
         String errorType,
-        String errorMessage) {
+        String errorMessage,
+        boolean requestSent) {
+    public AiStreamResult(String content, AiTokenUsage usage, AiCallSource source, boolean success,
+                          boolean emitted, String errorType, String errorMessage) {
+        this(content, usage, source, success, emitted, errorType, errorMessage, success || emitted || usage != null);
+    }
 
     public static AiStreamResult success(String content, AiTokenUsage usage, AiCallSource source, boolean emitted) {
         return new AiStreamResult(content, usage, source, true, emitted, null, null);
     }
 
     public static AiStreamResult failure(AiCallSource source, boolean emitted, String errorType, String errorMessage) {
-        return new AiStreamResult(null, null, source, false, emitted, errorType, errorMessage);
+        return new AiStreamResult(null, null, source, false, emitted, errorType, errorMessage, false);
     }
 }

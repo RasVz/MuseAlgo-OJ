@@ -69,7 +69,6 @@ public class AiAdminController {
     /** 允许后台修改的配置键 */
     private static final java.util.Set<String> CONFIG_KEYS = java.util.Set.of(
             "ai.quota.enabled", "ai.quota.daily-tokens", "ai.quota.exempt-teacher-admin",
-            "ai.contest-guard.enabled", "ai.contest-guard.cache-seconds",
             "ai.model", "ai.max-tokens", "ai.json-mode");
 
     /** MANAGED 下服务级生成参数来自当前服务，旧全局写入必须拒绝，避免两处互相覆盖。 */
@@ -81,7 +80,7 @@ public class AiAdminController {
     public Result<Map<String, Object>> overview(@RequestParam(defaultValue = "7") int days) {
         LocalDateTime[] window = window(days);
         List<Map<String, Object>> rows = aiUsageQueryService.selectStatusSummary(window[0], window[1]);
-        long calls = 0, tokens = 0, success = 0, fail = 0, quotaBlocked = 0, contestBlocked = 0;
+        long calls = 0, tokens = 0, success = 0, fail = 0, quotaBlocked = 0, contestBlocked = 0, cancelled = 0;
         for (Map<String, Object> row : rows) {
             long cnt = ((Number) row.get("cnt")).longValue();
             calls += cnt;
@@ -89,6 +88,7 @@ public class AiAdminController {
             switch (String.valueOf(row.get("status"))) {
                 case "SUCCESS" -> success = cnt;
                 case "FAIL" -> fail = cnt;
+                case "CANCELLED" -> cancelled = cnt;
                 case "QUOTA_REJECTED" -> quotaBlocked = cnt;
                 case "CONTEST_BLOCKED" -> contestBlocked = cnt;
                 default -> { }
@@ -100,6 +100,7 @@ public class AiAdminController {
         data.put("tokens", tokens);
         data.put("success", success);
         data.put("fail", fail);
+        data.put("cancelled", cancelled);
         data.put("failRate", calls == 0 ? 0 : Math.round(fail * 1000.0 / calls) / 10.0);
         data.put("quotaBlocked", quotaBlocked);
         data.put("contestBlocked", contestBlocked);
@@ -174,8 +175,7 @@ public class AiAdminController {
         data.put("quotaEnabled", aiConfig.quotaEnabled());
         data.put("dailyTokens", aiConfig.dailyTokens());
         data.put("exemptTeacherAdmin", aiConfig.exemptTeacherAdmin());
-        data.put("contestGuardEnabled", aiConfig.contestGuardEnabled());
-        data.put("contestGuardCacheSeconds", aiConfig.contestGuardCacheSeconds());
+        data.put("contestPolicy", "CONTEXT_DISABLED_PRACTICE_OPEN");
         data.put("model", aiConfig.model());
         data.put("maxTokens", aiConfig.maxTokens());
         data.put("jsonMode", aiConfig.jsonMode());
