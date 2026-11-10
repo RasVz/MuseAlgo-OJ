@@ -54,7 +54,7 @@ class OpenTutorHttpTest {
     final HttpClient client=HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).connectTimeout(Duration.ofSeconds(3)).build();
     @BeforeEach void resetFixture(){state.history.clear();state.requests.clear();clearInvocations(state.usage);}
     @Test void httpConversationContestReviewAndOutputLimit() throws Exception {
-        var complete=call("POST","/ai/ask/stream","{\"problemId\":1,\"studentQuestion\":\"完整讲解\",\"helpDirection\":\"FULL_SOLUTION\",\"studentCode\":\"int x = 7;\"}");
+        var complete=call("POST","/ai/ask/stream","{\"problemId\":1,\"studentQuestion\":\"完整讲解\",\"helpMode\":\"FULL_SOLUTION\",\"studentCode\":\"int x = 7;\"}");
         assertTrue(complete.contains("event:done"),complete);assertTrue(complete.contains("参考实现"));
         var upstream=state.requests.get(0);assertEquals(512,upstream.getInt("max_tokens"));assertEquals("system",upstream.getJSONArray("messages").getJSONObject(0).getStr("role"));
         assertFalse(upstream.getJSONArray("messages").getJSONObject(0).getStr("content").contains("int x = 7"));assertTrue(upstream.toString().contains("服务端正式题面"));
@@ -66,7 +66,7 @@ class OpenTutorHttpTest {
         var ac=call("POST","/ai/review","{\"submissionId\":1}");assertTrue(ac.contains("event:done"));
         var truncated=call("POST","/ai/ask/stream","{\"problemId\":1,\"studentQuestion\":\"truncate\"}");assertTrue(truncated.contains("AI_OUTPUT_LIMIT"));assertFalse(truncated.contains("event:done"));
         var denied=call("POST","/ai/ask/stream","{\"problemId\":999,\"studentQuestion\":\"问题\"}");assertTrue(denied.contains("ACCESS_DENIED"));
-        var invalid=call("POST","/ai/ask/stream","{\"problemId\":1,\"studentQuestion\":\"问题\",\"helpDirection\":\"UNKNOWN\"}");assertFalse(invalid.contains("event:done"));
+        var invalid=call("POST","/ai/ask/stream","{\"problemId\":1,\"studentQuestion\":\"问题\",\"helpMode\":\"UNKNOWN\"}");assertFalse(invalid.contains("event:done"));
         String output=System.getenv("OJ_TEST_OUTPUT_DIR");
         if(output!=null){var directory=Path.of(output);Files.createDirectories(directory);Files.writeString(directory.resolve("http-success.sse"),complete);Files.writeString(directory.resolve("http-contest-blocked.sse"),blocked);Files.writeString(directory.resolve("http-output-limit.sse"),truncated);Files.writeString(directory.resolve("http-review-ac.sse"),ac);Files.writeString(directory.resolve("http-upstream-requests.json"),state.requests.toString());}
     }

@@ -6,7 +6,7 @@ import lombok.EqualsAndHashCode;
 
 @Data
 @EqualsAndHashCode(callSuper = true)
-public class AiReviewRequest extends AiTeachingPreferences {
+public class AiReviewRequest extends AiTeachingOptions {
     @NotNull @Positive private Long submissionId;
     @Positive private Long contestId;
     @Size(max = 11000) private String previousAnswer;

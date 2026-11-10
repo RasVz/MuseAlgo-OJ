@@ -164,7 +164,7 @@ public class AiService implements AiAssistant {
             return AiAskOutcome.blocked(AiUsage.STATUS_QUOTA_REJECTED, QUOTA_EXCEEDED_NOTICE);
         try (var lease = sessionService.lock(userId, request.getProblemId())) {
             JSONArray conversation = messages.build("tutor-open", problem, request.getStudentCode(), request.getLanguage(),
-                    request.getStudentQuestion(), request, diagnosis == null ? ragContextService.buildReference(request.getProblemId()) : teachingReference(request.getProblemId()),
+                    request.getStudentQuestion(), request.getHelpMode(), diagnosis == null ? ragContextService.buildReference(request.getProblemId()) : teachingReference(request.getProblemId()),
                     sessionService.loadHistory(userId, request.getProblemId()), diagnosis == null ? null : diagnosis.assessment(userId, request));
             String prompt = com.musealgo.oj.ai.tutor.TutorMessageBuilder.flatten(conversation);
             AiStreamResult result = diagnosis == null ? aiGateway.stream(conversation, onChunk) : diagnosis.stream(userId, request, conversation, onChunk);

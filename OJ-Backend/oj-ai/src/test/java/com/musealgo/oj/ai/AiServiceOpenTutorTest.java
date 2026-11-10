@@ -19,7 +19,7 @@ class AiServiceOpenTutorTest {
             new AiContestGuard(), mock(TeacherWorkbenchService.class), mock(ReviewApplicationService.class), builder);
     AiAskRequest request() {
         var request = new AiAskRequest(); request.setProblemId(10L); request.setStudentCode("int x = 1;");
-        request.setStudentQuestion("请给完整代码"); request.setHelpDirection(AiTeachingPreferences.HelpDirection.FULL_SOLUTION);
+        request.setStudentQuestion("请给完整代码"); request.setHelpMode(AiTeachingOptions.HelpMode.FULL_SOLUTION);
         return request;
     }
     @Test void firstFullSolutionIsAllowedAndNeverReadsOrWritesUnlocks() {
