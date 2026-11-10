@@ -11,6 +11,9 @@
       </div>
 
       <div class="toolbar-right">
+        <el-button v-if="testCollapsed" size="small" @click="emit('toggle-test')">
+          <el-icon class="el-icon--left"><Tickets /></el-icon> 自测
+        </el-button>
         <el-button icon="Refresh" circle size="small" @click="resetCode" title="重置代码为初始模板" />
         <el-button icon="Setting" circle size="small" @click="settingVisible = true" title="编辑器设置" />
 
@@ -20,11 +23,15 @@
           @change="onSettingsChange"
         />
 
+        <el-button size="small" :disabled="submitting" @click="running ? emit('stop') : emit('run')">
+          <el-icon class="el-icon--left"><component :is="running ? VideoPause : VideoPlay" /></el-icon>
+          {{ running ? '停止' : '运行' }}
+        </el-button>
         <el-button
           type="primary"
           size="small"
           :loading="submitting"
-          :disabled="submitting"
+          :disabled="submitting || running"
           @click="handleSubmitClick"
         >
           提交代码
@@ -42,9 +49,6 @@
         @change="handleCodeChange"
       />
     </div>
-
-    <div class="editor-test-cases"><TestCasePanel :cases="cases" :model="caseModel" :snapshot="snapshot" :running="running"
-      @run="emit('run', $event)" @run-all="emit('run-all')" @stop="emit('stop')" /></div>
   </div>
 </template>
 
@@ -59,20 +63,21 @@
 // 用户切题或关页面回来能接着写；编辑器偏好则登录用户存服务端、匿名用户存 localStorage。
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { VueMonacoEditor } from '@guolao/vue-monaco-editor' 
+import { Tickets, VideoPause, VideoPlay } from '@element-plus/icons-vue'
 import { getDraftCode, getLatestDraftCode, saveDraftCode } from '@/api/problem'
 import { getUserPreferences, updateUserPreferences } from '@/api/user'
 import { useUserStore } from '@/stores/userStore'
 import EditorSettingsDialog from './EditorSettingsDialog.vue'
-import TestCasePanel from './TestCasePanel.vue'
 
 const props = defineProps({
-  cases: { type: Array, default: () => [] }, caseModel: { type: Object, default: null }, snapshot: { type: Object, default: null }, running: Boolean,
   initialSnapshot: { type: Object, default: null },
   problemId: { type: [Number, String], required: true },
-  submitting: { type: Boolean, default: false }
+  submitting: { type: Boolean, default: false },
+  running: { type: Boolean, default: false },
+  testCollapsed: { type: Boolean, default: false }
 })
 
-const emit = defineEmits(['submit', 'snapshot', 'run', 'run-all', 'stop'])
+const emit = defineEmits(['submit', 'run', 'stop', 'snapshot', 'toggle-test'])
 
 // === 基础状态 ===
 const pendingLanguage = props.initialSnapshot?.ready === false ? props.initialSnapshot.language : null
@@ -300,8 +305,7 @@ onUnmounted(() => {
   align-items: center; background: var(--bg-input); border-bottom: 1px solid var(--border-light);
 }
 
-.editor-test-cases { max-height: 42%; overflow-y: auto; }
-.monaco-wrapper { min-height: 180px; flex: 1; border-bottom: 2px solid var(--border-light); overflow: hidden; }
+.monaco-wrapper { min-height: 180px; flex: 1; overflow: hidden; }
 
 .save-status { font-size: 12px; color: var(--text-secondary); margin-left: 10px; }
 </style>

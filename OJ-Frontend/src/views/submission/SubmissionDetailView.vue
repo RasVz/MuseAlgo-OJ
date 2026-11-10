@@ -117,7 +117,7 @@ import {
 } from '@element-plus/icons-vue'
 import NavbarContext from '@/components/NavbarContext.vue'
 import SubmissionStatusBanner from './components/SubmissionStatusBanner.vue'
-import { canReviewSubmission } from '@/utils/tutorPreferences'
+import { canReviewSubmission } from '@/utils/tutorModes'
 import AiReviewDialog from './components/AiReviewDialog.vue'
 import hljs from '@/utils/highlight'
 import 'highlight.js/styles/atom-one-light.css'

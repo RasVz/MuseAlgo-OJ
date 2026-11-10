@@ -1,21 +1,31 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createTutorConversation } from '../../src/utils/tutorConversation.js'
-import { HELP_DIRECTIONS, defaultPreferences, canReviewSubmission } from '../../src/utils/tutorPreferences.js'
+import { AUTO_MODE, TUTOR_MODES, getTutorMode, appendTutorPrompt, canReviewSubmission } from '../../src/utils/tutorModes.js'
 const deferred = () => { let resolve, reject; const promise = new Promise((a,b) => { resolve=a; reject=b }); return { promise, resolve, reject } }
 function fixture(overrides = {}) {
   const errors=[];const changes=[]
   const model=createTutorConversation({ load: async () => [], clear: async () => {}, send: async (_,__,chunk) => { chunk('回答'); return '回答' }, onChange: state=>changes.push(state), onError: error=>errors.push(error), ...overrides })
   return { model, errors, changes }
 }
-test('all eight help directions are directly selectable and AC practice may be reviewed', () => {
-  assert.equal(HELP_DIRECTIONS.length,9)
-  assert.equal(new Set(HELP_DIRECTIONS.map(x=>x.value)).size,9)
-  assert.equal(defaultPreferences().answerStyle,'DIRECT')
+test('five learning modes are directly selectable and AC practice may be reviewed', () => {
+  assert.equal(TUTOR_MODES.length,5)
+  assert.equal(new Set(TUTOR_MODES.map(x=>x.value)).size,5)
+  assert.deepEqual(TUTOR_MODES.map(x=>x.value),['READ_PROBLEM','GET_HINT','CHECK_APPROACH','DEBUG_CODE','FULL_SOLUTION'])
+  assert.ok(TUTOR_MODES.every(x=>x.question.trim()))
+  assert.equal(getTutorMode(AUTO_MODE),undefined)
+  assert.equal(getTutorMode('GET_HINT').label,'给我提示')
   assert.equal(canReviewSubmission({status:1,code:'code'},null),true)
   assert.equal(canReviewSubmission({status:2,code:'code',contestId:9},null),false)
   assert.equal(canReviewSubmission({status:2,code:'code'},'9'),false)
   assert.equal(canReviewSubmission({status:0,code:'code'},null),false)
+})
+test('prompt buttons append without replacing or duplicating the student question', () => {
+  assert.equal(appendTutorPrompt('', '请只给提示。'),'请只给提示。')
+  assert.equal(appendTutorPrompt('我的思路是枚举。','请只给提示。'),'我的思路是枚举。请只给提示。')
+  assert.equal(appendTutorPrompt('还没想好','请只给提示。'),'还没想好 请只给提示。')
+  assert.equal(appendTutorPrompt('我的思路是枚举。请只给提示。','请只给提示。'),'我的思路是枚举。请只给提示。')
+  assert.equal(appendTutorPrompt('已有问题  ',''),'已有问题')
 })
 test('successful response is appended once and restored roles match display',async()=>{
   const {model}=fixture({load:async()=>[{role:'assistant',content:'历史'}]});await model.open('u:1',1)

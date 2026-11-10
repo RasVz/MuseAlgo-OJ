@@ -1,6 +1,5 @@
 <template>
-  <div class="problem-detail-view" v-loading="loading">
-    
+  <div ref="viewRoot" class="problem-detail-view" v-loading="loading">
     <NavBarContext>
       <div class="navbar-actions-wrapper">
         <template v-if="!isIdeMode">
@@ -30,12 +29,10 @@
       <div class="read-layout-wrapper">
         <div class="left-column">
           <el-card shadow="never" class="desc-card">
-            <ProblemDescription 
-              :problem="problem" 
-              :is-ide-mode="false"
+            <ProblemDescription
+              :problem="problem"
+              :samples="officialSamples"
               :ai-enabled="!isContestScene"
-              :cases="testCases" :case-model="caseModel" :snapshot="currentStudentContext" :running="runningCases"
-              @run="runCase" @run-all="runAllCases" @stop="stopCases"
               @toggle-ide="enterIde"
               @open-ai="handleOpenAi"
             />
@@ -52,8 +49,8 @@
         </div>
 
         <div class="right-column">
-          <ProblemInfoCards 
-            :problem="problem" 
+          <ProblemInfoCards
+            :problem="problem"
             @view-records="handleViewRecords"
             @view-my-submission="handleViewMySubmission"
             @view-solutions="viewSolutions"
@@ -64,36 +61,87 @@
 
     <div v-else class="ide-mode-container">
       <div class="ide-layout">
-        <div class="ide-left">
+        <section class="statement-pane" :style="statementStyle" aria-label="题面">
           <el-scrollbar>
-            <div class="ide-desc-wrapper">
-                <ProblemDescription 
-                  :problem="problem" 
-                  :simple="true" 
-                  :is-ide-mode="true"
-                  :ai-enabled="!isContestScene"
-              :cases="testCases" :case-model="caseModel" :snapshot="currentStudentContext" :running="runningCases"
-              @run="runCase" @run-all="runAllCases" @stop="stopCases"
-                  @toggle-ide="exitIde"
-                  @open-ai="handleOpenAi"
-                />
+            <div class="statement-body">
+              <ProblemDescription
+                :problem="problem"
+                :samples="officialSamples"
+                :is-ide-mode="true"
+                :ai-enabled="!isContestScene"
+                @toggle-ide="exitIde"
+                @open-ai="handleOpenAi"
+              />
             </div>
           </el-scrollbar>
-        </div>
-        
-        <div class="ide-right">
-          <CodeEditor
-            ref="editorRef"
-            :key="problem.id"
-            :initial-snapshot="currentStudentContext"
-            @snapshot="currentStudentContext = $event"
-            :problem-id="problem.id"
-            :cases="testCases" :case-model="caseModel" :snapshot="currentStudentContext" :running="runningCases"
-            @run="runCase" @run-all="runAllCases" @stop="stopCases"
-            :submitting="submitting"
-            @submit="handleRealSubmit"
+        </section>
+
+        <PaneSplitter
+          orientation="vertical"
+          :value="statementWidth"
+          :min="statementBounds.min"
+          :max="statementBounds.max"
+          label="题面宽度"
+          @update:value="onStatementResize"
+          @drag-end="persistLayout"
+          @reset="resetStatementWidth"
+        />
+
+        <section class="workbench" :class="`dock-${effectiveDock}`">
+          <div class="editor-pane">
+            <CodeEditor
+              ref="editorRef"
+              :key="problem.id"
+              :initial-snapshot="currentStudentContext"
+              :problem-id="problem.id"
+              :submitting="submitting"
+              :running="runningCases"
+              :test-collapsed="layout.collapsed"
+              @snapshot="currentStudentContext = $event"
+              @submit="handleRealSubmit"
+              @run="runSelectedCase"
+              @stop="stopCases"
+              @toggle-test="expandTestPanel"
+            />
+          </div>
+
+          <PaneSplitter
+            v-if="!layout.collapsed"
+            :orientation="effectiveDock === 'right' ? 'vertical' : 'horizontal'"
+            :value="testSize"
+            :min="testBounds.min"
+            :max="testBounds.max"
+            :label="effectiveDock === 'right' ? '自测宽度' : '自测高度'"
+            invert
+            @update:value="onTestResize"
+            @drag-end="persistLayout"
+            @reset="resetTestSize"
           />
-        </div>
+
+          <div class="test-pane" :class="[`dock-${effectiveDock}`, { collapsed: layout.collapsed }]" :style="testPaneStyle">
+            <TestCasePanel
+              v-if="!layout.collapsed"
+              :cases="testCases"
+              :model="caseModel"
+              :snapshot="currentStudentContext"
+              :running="runningCases"
+              :dock="effectiveDock"
+              @toggle-dock="toggleDock"
+              @toggle-collapse="collapseTestPanel"
+            />
+            <button
+              v-else
+              type="button"
+              class="collapsed-toggle"
+              :class="`dock-${effectiveDock}`"
+              aria-label="展开自测面板"
+              @click="expandTestPanel"
+            >
+              <el-icon><component :is="effectiveDock === 'right' ? DArrowLeft : ArrowUp" /></el-icon>
+              <span>自测</span>
+            </button>
+          </div>
+        </section>
       </div>
     </div>
 
@@ -121,19 +169,36 @@ import { showApiError } from '@/utils/errorFeedback'
 // 1. 写代码 → CodeEditor 本地草稿（按题目隔离）或正式提交；
 // 2. 官方、自定义与 AI 反例共用本页样例状态；试跑不产生正式提交；
 // 3. 每次发送 AI 提问读取当前代码；比赛场景不挂载 AI 助手。
-import { ref, computed, watch, onBeforeUnmount, markRaw } from 'vue'
+//
+// IDE 布局：题面 | 编辑器 | 自测 三区。题面与自测的宽度/高度都可拖动，
+// 自测可停靠底部或右侧，也可收起；布局偏好只存浏览器本地，不涉及题目数据。
+import { ref, computed, watch, onBeforeUnmount, onMounted, markRaw, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getProblemDetail, submitCode, getLatestDraftCode, getDraftCode, runCodeApi } from '@/api/problem'
 import { getRelatedArticles } from '@/api/post'
 import { useUserStore } from '@/stores/userStore'
 import { ElMessage } from 'element-plus'
-import { Monitor, Plus, Back, Upload, EditPen } from '@element-plus/icons-vue'
+import { Monitor, Plus, Back, Upload, EditPen, ArrowUp, DArrowLeft } from '@element-plus/icons-vue'
 import NavBarContext from '@/components/NavbarContext.vue'
 import ProblemDescription from './components/ProblemDescription.vue'
 import ProblemInfoCards from './components/ProblemInfoCards.vue'
 import CodeEditor from './components/CodeEditor.vue'
+import TestCasePanel from './components/TestCasePanel.vue'
+import PaneSplitter from './components/PaneSplitter.vue'
 import AiAssistant from './components/AiAssistant.vue'
 import { createLocalTestCases } from '@/utils/localTestCases'
+import { normalizeProblemSamples } from '@/utils/problemSamples'
+import {
+  DEFAULT_IDE_LAYOUT,
+  IDE_LAYOUT_LIMITS,
+  canDockRight,
+  loadIdeLayout,
+  resolveStatementWidth,
+  resolveTestSize,
+  saveIdeLayout,
+  statementWidthBounds,
+  testSizeBounds
+} from '@/utils/ideLayout'
 import AddToProblemListDialog from './components/AddToProblemListDialog.vue'
 
 const route = useRoute()
@@ -151,14 +216,15 @@ const addToListVisible = ref(false)
 
 const testCases = ref([])
 const caseModel = ref(markRaw(createLocalTestCases()))
+const officialSamples = ref([])
 const runningCases = ref(false)
 let runGeneration = 0
 let runController = null
 const stopCases = () => { runGeneration++; runController?.abort(); runningCases.value = false }
 const initializeCases = data => {
   stopCases()
-  const official = Array.isArray(data.samples) && data.samples.length ? data.samples
-    : data.inputSample != null || data.outputSample != null ? [{ input: data.inputSample || '', output: data.outputSample ?? '' }] : []
+  const official = normalizeProblemSamples(data)
+  officialSamples.value = official
   caseModel.value = markRaw(createLocalTestCases(official, items => { testCases.value = items }))
   testCases.value = [...caseModel.value.items]
 }
@@ -180,13 +246,17 @@ const runSelectedCases = async items => {
       const result = await runCodeApi({ ...snapshot, input: item.input, problemId }, signal)
       if (generation !== runGeneration) break
       if (result.code !== 200) throw new Error(result.message || '试跑失败')
-      if (model.items.some(existing => existing.id === item.id && existing.input === item.input && existing.hasExpected === item.hasExpected && existing.expectedOutput === item.expectedOutput)) model.record(item.id, snapshot, result.data)
+      if (model.items.some(existing => existing.id === item.id && existing.input === item.input)) model.record(item.id, snapshot, result.data)
     }
   } catch (error) { if (generation === runGeneration && !signal.aborted) showApiError(error, '样例运行失败') }
   finally { if (generation === runGeneration) runningCases.value = false }
 }
 const runCase = item => runSelectedCases([{ ...item }])
-const runAllCases = () => runSelectedCases(caseModel.value.items.map(item => ({ ...item })))
+const runSelectedCase = () => {
+  const item = caseModel.value.items.find(candidate => candidate.id === caseModel.value.selectedId)
+  if (!item) return ElMessage.info('请先选择或新增样例')
+  return runCase(item)
+}
 const appendCounterexample = event => {
   try {
     const id = caseModel.value.addCounterexample(event)
@@ -196,7 +266,6 @@ const appendCounterexample = event => {
 watch(() => [currentStudentContext.value?.code, currentStudentContext.value?.language], (value, previous) => {
   if (previous && previous[0] !== undefined && (value[0] !== previous[0] || value[1] !== previous[1])) stopCases()
 })
-onBeforeUnmount(stopCases)
 
 // 编辑器是当前代码真源；普通练习每次发送重新读取，比赛上下文不挂载 AI。
 const isContestScene = computed(() => route.query.contestId !== undefined)
@@ -219,6 +288,129 @@ const handleOpenAi = () => {
   if (!isContestScene.value) aiDrawerVisible.value = true
 }
 
+// === IDE 布局：容器测量 + 本地偏好 ===
+const viewRoot = ref(null)
+const containerWidth = ref(0)
+const containerHeight = ref(0)
+const browserStorage = () => {
+  try {
+    return window.localStorage
+  } catch {
+    return null
+  }
+}
+const layout = ref(loadIdeLayout(browserStorage()))
+let persistTimer = null
+let resizeObserver = null
+
+const measureContainer = () => {
+  const element = viewRoot.value
+  if (!element) return
+  containerWidth.value = element.clientWidth
+  containerHeight.value = element.clientHeight
+}
+
+const persistLayout = () => {
+  if (persistTimer) clearTimeout(persistTimer)
+  persistTimer = setTimeout(() => {
+    persistTimer = null
+    saveIdeLayout(browserStorage(), layout.value)
+  }, 120)
+}
+const saveLayoutNow = () => {
+  if (persistTimer) clearTimeout(persistTimer)
+  persistTimer = null
+  saveIdeLayout(browserStorage(), layout.value)
+}
+
+// 右侧停靠需要同时容纳题面、编辑器与自测的最小宽度；窗口变窄时自动回退底部。
+const effectiveDock = computed(() =>
+  layout.value.dock === 'right' && canDockRight(containerWidth.value) ? 'right' : 'bottom'
+)
+const requestedTestSize = computed(() =>
+  effectiveDock.value === 'right' ? layout.value.rightSize : layout.value.bottomSize
+)
+const statementBounds = computed(() =>
+  statementWidthBounds({
+    containerWidth: containerWidth.value,
+    dock: effectiveDock.value,
+    requestedTestSize: requestedTestSize.value,
+    collapsed: layout.value.collapsed
+  })
+)
+const statementWidth = computed(() => {
+  if (!containerWidth.value) return 0
+  return resolveStatementWidth({
+    containerWidth: containerWidth.value,
+    ratio: layout.value.statementRatio,
+    dock: effectiveDock.value,
+    requestedTestSize: requestedTestSize.value,
+    collapsed: layout.value.collapsed
+  })
+})
+const testBounds = computed(() =>
+  testSizeBounds({
+    dock: effectiveDock.value,
+    containerWidth: containerWidth.value,
+    containerHeight: containerHeight.value,
+    statementWidth: statementWidth.value
+  })
+)
+const testSize = computed(() =>
+  resolveTestSize({
+    requestedSize: requestedTestSize.value,
+    dock: effectiveDock.value,
+    containerWidth: containerWidth.value,
+    containerHeight: containerHeight.value,
+    statementWidth: statementWidth.value
+  })
+)
+
+const statementStyle = computed(() =>
+  containerWidth.value ? { width: `${statementWidth.value}px` } : { width: '42%' }
+)
+const testPaneStyle = computed(() => {
+  if (layout.value.collapsed) return effectiveDock.value === 'right' ? { width: '36px' } : { height: '36px' }
+  return effectiveDock.value === 'right' ? { width: `${testSize.value}px` } : { height: `${testSize.value}px` }
+})
+
+const onStatementResize = value => {
+  if (!containerWidth.value) return
+  layout.value.statementRatio = value / containerWidth.value
+  persistLayout()
+}
+const onTestResize = value => {
+  if (effectiveDock.value === 'right') layout.value.rightSize = value
+  else layout.value.bottomSize = value
+  persistLayout()
+}
+const resetStatementWidth = () => {
+  layout.value.statementRatio = DEFAULT_IDE_LAYOUT.statementRatio
+  saveLayoutNow()
+}
+const resetTestSize = () => {
+  if (effectiveDock.value === 'right') layout.value.rightSize = DEFAULT_IDE_LAYOUT.rightSize
+  else layout.value.bottomSize = DEFAULT_IDE_LAYOUT.bottomSize
+  saveLayoutNow()
+}
+const toggleDock = () => {
+  const nextDock = effectiveDock.value === 'right' ? 'bottom' : 'right'
+  if (nextDock === 'right' && !canDockRight(containerWidth.value)) {
+    ElMessage.info(`窗口宽度不足，右侧停靠至少需要 ${IDE_LAYOUT_LIMITS.minRightDockWidth}px`)
+    return
+  }
+  layout.value.dock = nextDock
+  persistLayout()
+}
+const collapseTestPanel = () => {
+  layout.value.collapsed = true
+  saveLayoutNow()
+}
+const expandTestPanel = () => {
+  layout.value.collapsed = false
+  saveLayoutNow()
+}
+
 let detailGeneration = 0
 const fetchDetail = async () => {
   const id = route.params.id
@@ -239,7 +431,11 @@ const fetchDetail = async () => {
   }
 }
 
-const enterIde = () => isIdeMode.value = true
+const enterIde = async () => {
+  isIdeMode.value = true
+  await nextTick()
+  measureContainer()
+}
 const exitIde = () => isIdeMode.value = false
 
 // 提交后直接跳判题进度页而不是原地轮询：
@@ -284,6 +480,23 @@ const handleViewRecords = () => {
   window.open(routeData.href, '_blank')
 }
 
+onMounted(() => {
+  measureContainer()
+  if (typeof ResizeObserver !== 'undefined') {
+    resizeObserver = new ResizeObserver(() => measureContainer())
+    if (viewRoot.value) resizeObserver.observe(viewRoot.value)
+  } else {
+    window.addEventListener('resize', measureContainer)
+  }
+})
+
+onBeforeUnmount(() => {
+  stopCases()
+  saveLayoutNow()
+  resizeObserver?.disconnect()
+  window.removeEventListener('resize', measureContainer)
+})
+
 watch(() => route.params.id, () => {
   aiDrawerVisible.value = false
   isIdeMode.value = false
@@ -296,7 +509,6 @@ watch(() => route.params.id, () => {
 </script>
 
 <style scoped>
-/* 你的原有样式完全不变 */
 .problem-detail-view {
   height: 100%; 
   background-color: var(--bg-app);
@@ -348,23 +560,57 @@ watch(() => route.params.id, () => {
 
 .right-column { width: 300px; flex-shrink: 0; }
 
-.ide-mode-container { height: 100%; }
-.ide-layout { display: flex; height: 100%; }
-.ide-left {
-  flex: 1;
-  background: var(--bg-surface);
-  border-right: 1px solid var(--border-hover);
-  max-width: 45%; 
-  display: flex;
-  flex-direction: column;
-}
-.ide-desc-wrapper {
-    padding: 20px;
-    padding-bottom: 60px; 
-}
-.ide-right {
-  flex: 1.2;
+/* === IDE 工作台 === */
+.ide-mode-container { height: 100%; min-height: 0; }
+.ide-layout { display: flex; height: 100%; min-height: 0; align-items: stretch; }
+.statement-pane {
+  flex: 0 0 auto;
+  min-width: 0;
   height: 100%;
   overflow: hidden;
+  background: var(--bg-surface);
 }
+.statement-pane :deep(.el-scrollbar) { height: 100%; }
+.statement-body { padding: 20px 20px 60px; }
+
+.workbench { flex: 1; min-width: 0; min-height: 0; display: flex; }
+.workbench.dock-bottom { flex-direction: column; }
+.workbench.dock-right { flex-direction: row; }
+
+.editor-pane {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-surface);
+}
+
+.test-pane {
+  flex: 0 0 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-surface);
+}
+.test-pane.dock-bottom { border-top: 1px solid var(--border-hover); }
+.test-pane.dock-right { border-left: 1px solid var(--border-hover); }
+.test-pane.collapsed { display: flex; }
+
+.collapsed-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: var(--bg-input);
+  color: var(--text-regular);
+  font-size: 12px;
+  cursor: pointer;
+}
+.collapsed-toggle:hover { color: var(--accent-primary); background: var(--bg-surface-hover); }
+.collapsed-toggle.dock-right { flex-direction: column; }
+.collapsed-toggle.dock-right span { writing-mode: vertical-rl; letter-spacing: 2px; }
 </style>

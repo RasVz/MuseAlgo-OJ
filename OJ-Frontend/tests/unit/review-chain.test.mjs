@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
 import { readAiResponse } from '../../src/utils/aiStream.js'
-import { defaultPreferences, isContestScene } from '../../src/utils/tutorPreferences.js'
+import { AUTO_MODE, isContestScene } from '../../src/utils/tutorModes.js'
 import { ApiError } from '../../src/utils/apiError.js'
 
 function review(response) {
@@ -12,7 +12,7 @@ function review(response) {
   const end = source.indexOf('</script>', start)
   const messages = []
   const context = { props: { submissionId: 1, problemId: 1 }, reviewContent: { value: '' },
-    reviewing: { value: false }, reviewIncomplete: { value: false }, reviewNotice: { value: '' }, question: { value: '' }, preferences: { value: defaultPreferences() }, lastAnswer: '', isContestScene,
+    reviewing: { value: false }, reviewIncomplete: { value: false }, reviewNotice: { value: '' }, question: { value: '' }, helpMode: { value: AUTO_MODE }, lastAnswer: '', isContestScene,
     fetch: async () => response, useUserStore: () => ({ getAccessToken: () => 'synthetic' }),
     ElMessage: { error: text => messages.push(text) }, showApiError: (error, fallback) => { if (!error.notified && !error.authNotified) messages.push(error.message || fallback) }, console: { error() {} },
     TextDecoder, readAiResponse, AbortController, reviewController: null, reviewGeneration: 0 }
@@ -67,15 +67,30 @@ test('late submission detail response cannot overwrite a newer route', async () 
   assert.equal(context.detail.value.id, 2)
 })
 
+function profileLoader(getUserInfo) {
+  const source = readFileSync(new URL('../../src/layout/ProfileLayout.vue', import.meta.url), 'utf8')
+  const start = source.indexOf('async function loadUser()')
+  const end = source.indexOf("provide('profileContext'", start)
+  const context = { route: { params: { id: '1' } }, loading: { value: true }, hidden: { value: false }, generation: 0,
+    error: { value: '' }, displayUser: { value: {} }, coverFailed: { value: false }, getUserInfo }
+  vm.runInNewContext(source.slice(start, end) + '\nglobalThis.run = loadUser', context)
+  return context
+}
 test('private profile stops loading after access is denied', async () => {
-  const source = readFileSync(new URL('../../src/views/user/ProfileView.vue', import.meta.url), 'utf8')
-  const start = source.indexOf('const fetchData =')
-  const end = source.indexOf('// 四组数据', start)
-  const context = { route: { params: { id: '1' } }, loading: { value: true }, profileHidden: { value: false }, loadGeneration: 0,
-    stats: { value: {} }, radarData: { value: [] }, recentAC: { value: [] }, ratingHistory: { value: [] },
-    console: { error() {} }, getUserInfo: async () => { throw { response: { data: { code: 403 } } } } }
-  vm.runInNewContext(source.slice(start, end) + '\nglobalThis.run = fetchData', context)
-  await context.run(); assert.equal(context.profileHidden.value, true); assert.equal(context.loading.value, false)
+  const context = profileLoader(async () => { throw { response: { data: { code: 403 } } } })
+  await context.run()
+  assert.equal(context.hidden.value, true)
+  assert.equal(context.loading.value, false)
+  assert.match(context.error.value, /未公开主页/)
+})
+test('late profile response cannot replace another users identity or cover', async () => {
+  const pending = new Map()
+  const context = profileLoader(id => new Promise(resolve => pending.set(id, resolve)))
+  const old = context.run(); context.route.params.id = '2'; const current = context.run()
+  pending.get('2')({code:200,data:{id:2,coverUrl:'/uploads/new.png'}}); await current
+  pending.get('1')({code:200,data:{id:1,coverUrl:'/uploads/old.png'}}); await old
+  assert.equal(context.displayUser.value.id,2)
+  assert.equal(context.displayUser.value.coverUrl,'/uploads/new.png')
 })
 
 test('settings do not repeat an error already shown by the shared request layer', async () => {

@@ -1,68 +1,359 @@
 <template>
-  <section class="test-case-panel" aria-label="样例测试区">
-    <div class="case-heading"><strong>样例与自定义测试</strong><el-button size="small" @click="openEditor()">新增样例</el-button></div>
-    <div class="case-tabs">
-      <el-button v-for="(item, index) in cases" :key="item.id" size="small" :type="item.id === model?.selectedId ? 'primary' : 'default'"
-        @click="model.select(item.id)">样例 {{ index + 1 }}<span class="case-source">{{ sourceLabel(item.source) }}</span></el-button>
-    </div>
-    <div v-if="selected" class="case-detail">
-      <div class="case-actions">
-        <el-button type="primary" size="small" :loading="running" @click="emit('run', selected)">运行当前样例</el-button>
-        <el-button size="small" :disabled="running || !cases.length" @click="emit('run-all')">运行全部样例</el-button>
-        <el-button v-if="running" size="small" @click="emit('stop')">停止后续运行</el-button>
-        <el-button v-if="selected.source !== 'OFFICIAL'" size="small" :disabled="running" @click="openEditor(selected)">编辑样例</el-button>
-        <el-button v-if="selected.source !== 'OFFICIAL'" size="small" :disabled="running" @click="model.remove(selected.id)">删除样例</el-button>
+  <section class="test-case-panel" :class="`dock-${dock}`" aria-label="自测">
+    <header class="panel-header">
+      <div class="panel-title">
+        <strong>自测</strong>
+        <span class="panel-hint">仅本页保存</span>
       </div>
+      <div class="panel-actions">
+        <el-button
+          v-if="selected && selected.source !== 'OFFICIAL'"
+          text
+          type="danger"
+          size="small"
+          :disabled="running"
+          @click="removeCase"
+        >
+          删除样例
+        </el-button>
+        <el-button text size="small" @click="emit('toggle-dock')">
+          <el-icon class="el-icon--left"><component :is="dock === 'right' ? Bottom : Right" /></el-icon>
+          {{ dock === 'right' ? '停靠底部' : '停靠右侧' }}
+        </el-button>
+        <el-button
+          text
+          size="small"
+          :icon="ArrowDown"
+          title="收起自测面板"
+          aria-label="收起自测面板"
+          @click="emit('toggle-collapse')"
+        />
+      </div>
+    </header>
+
+    <div class="case-tabs" role="tablist" aria-label="样例列表">
+      <button
+        v-for="(item, index) in cases"
+        :key="item.id"
+        type="button"
+        class="case-tab"
+        :class="{ active: item.id === model?.selectedId }"
+        role="tab"
+        :aria-selected="item.id === model?.selectedId"
+        @click="model?.select(item.id)"
+      >
+        <span>样例 {{ index + 1 }}</span>
+        <span class="case-source" :class="sourceClass(item)">{{ sourceLabel(item) }}</span>
+      </button>
+      <button type="button" class="case-tab add-case" @click="addCase">＋ 新增样例</button>
+    </div>
+
+    <div v-if="selected" class="case-body">
       <p v-if="selected.note" class="case-note">{{ selected.note }}</p>
-      <div class="case-columns"><div><span>输入</span><pre>{{ selected.input || '（空输入）' }}</pre></div>
-        <div><span>期望输出<span v-if="selected.source === 'AI_VERIFIED'"> · {{ expectedLabel }}</span></span><pre>{{ selected.hasExpected ? (selected.expectedOutput || '（空输出）') : '未设置' }}</pre></div></div>
-      <div v-if="result" class="case-result" role="status">
-        <strong>{{ resultLabel }}</strong><pre>{{ result.actual || result.stderr || result.compile_output || result.message || '（程序无输出）' }}</pre>
-        <small v-if="result.time != null">耗时 {{ result.time }} 秒</small>
+
+      <div class="case-columns">
+        <div class="case-field" :class="{ 'locked-input': selected.source === 'OFFICIAL' }">
+          <label :for="`case-input-${selected.id}`" class="case-label">输入</label>
+          <el-input
+            :id="`case-input-${selected.id}`"
+            ref="inputRef"
+            :model-value="selected.input"
+            type="textarea"
+            :rows="4"
+            :maxlength="4096"
+            :readonly="selected.source === 'OFFICIAL'"
+            :disabled="running"
+            :title="selected.source === 'OFFICIAL' ? '官方样例的输入不可修改' : undefined"
+            :placeholder="selected.source === 'OFFICIAL' ? '官方样例输入' : '输入可以为空'"
+            resize="none"
+            @update:model-value="value => patch('input', value)"
+          />
+        </div>
+        <div class="case-field">
+          <label :for="`case-output-${selected.id}`" class="case-label">输出</label>
+          <el-input
+            :id="`case-output-${selected.id}`"
+            :model-value="outputText"
+            type="textarea"
+            :rows="4"
+            readonly
+            placeholder="运行后在此显示输出"
+            resize="none"
+          />
+        </div>
       </div>
-      <p v-else class="case-note">{{ snapshot?.code ? '此版本尚未运行，或代码/样例已修改。' : '进入编辑器后可运行；新增样例仅在当前页面保留。' }}</p>
+
+      <div v-if="result" class="case-result" role="status">
+        <strong>{{ resultLabel }}</strong>
+        <small v-if="result.time != null">耗时 {{ result.time }} 秒</small>
+        <pre v-if="diagnosticText">{{ diagnosticText }}</pre>
+      </div>
     </div>
-    <p v-else class="case-note">点击新增样例，输入可以留空。</p>
-    <el-dialog v-model="editing" :title="editingId ? '编辑临时样例' : '新增临时样例'" width="min(640px, 94vw)" append-to-body>
-      <label for="case-input">样例输入</label><el-input id="case-input" v-model="form.input" type="textarea" :rows="4" :maxlength="4096" />
-      <el-checkbox v-model="form.hasExpected">设置期望输出（可以为空字符串）</el-checkbox>
-      <template v-if="form.hasExpected"><label for="case-expected">期望输出</label><el-input id="case-expected" v-model="form.expectedOutput" type="textarea" :rows="3" :maxlength="4096" /></template>
-      <label for="case-note">备注</label><el-input id="case-note" v-model="form.note" :maxlength="200" />
-      <template #footer><el-button @click="editing = false">取消</el-button><el-button type="primary" @click="save">保存到当前页面</el-button></template>
-    </el-dialog>
+    <p v-else class="case-empty">还没有样例，点击「新增样例」开始自测。</p>
   </section>
 </template>
 <script setup>
-import { computed, ref, reactive } from 'vue'
+// 自测面板：官方、自定义与 AI 反例共用一份页面级样例状态。
+//
+// 本组件只做展示和编辑，不做运行与持久化：
+// - 样例直接原地编辑；官方样例的输入只读，自定义样例可改可删；
+// - 输出栏只读，展示当前代码最近一次运行的真实输出，不做期望值比较；
+// - 运行入口位于编辑器工具栏，由父级触发当前选中样例；
+// - 运行结果由父级通过 snapshot + model 计算，内容修改后自动失效。
+import { computed, nextTick, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-const props = defineProps({ cases: { type: Array, default: () => [] }, model: { type: Object, default: null }, snapshot: { type: Object, default: null }, running: Boolean })
-const emit = defineEmits(['run','run-all','stop'])
-const selected = computed(() => props.cases.find(item => item.id === props.model?.selectedId))
-const result = computed(() => { const item = props.cases.find(value => value.id === props.model?.selectedId); return item && props.snapshot ? props.model.result(item.id, props.snapshot) : null })
-const resultLabel = computed(() => result.value?.truncated ? '输出已截断，无法完整比较' : [13,14].includes(Number(result.value?.status)) ? '运行服务异常，请稍后重试' : Number(result.value?.status) !== 3 ? ({5:'运行超时',6:'编译错误',7:'运行错误',8:'运行错误',9:'运行错误',10:'运行错误',11:'运行错误',12:'运行错误'}[Number(result.value?.status)] || '运行未完成')
-  : result.value.matches === null ? '运行完成，未比较期望输出' : result.value.matches ? '输出匹配' : '输出不匹配')
-const expectedLabel = '来自已验证反例'
-const sourceLabel = source => ({ OFFICIAL: '官方', CUSTOM: '自定义', AI_VERIFIED: 'AI 实测' }[source] || source)
-const editing = ref(false), editingId = ref(null)
-const form = reactive({ input: '', expectedOutput: '', hasExpected: false, note: '' })
-const openEditor = item => { editingId.value = item?.id ?? null; Object.assign(form, { input: item?.input ?? '', expectedOutput: item?.expectedOutput ?? '', hasExpected: item?.hasExpected ?? false, note: item?.note ?? '' }); editing.value = true }
-const save = () => {
-  try { if (editingId.value) props.model.edit(editingId.value, { ...form }); else props.model.add({ ...form }); editing.value = false }
-  catch (error) { ElMessage.error(error.message) }
+import { ArrowDown, Bottom, Right } from '@element-plus/icons-vue'
+
+const props = defineProps({
+  cases: { type: Array, default: () => [] },
+  model: { type: Object, default: null },
+  snapshot: { type: Object, default: null },
+  running: Boolean,
+  dock: { type: String, default: 'bottom' }
+})
+
+const emit = defineEmits(['toggle-dock', 'toggle-collapse'])
+
+const inputRef = ref(null)
+
+const selected = computed(() => props.cases.find(item => item.id === props.model?.selectedId) ?? null)
+// 直接依赖 props.cases，而不是只依赖 selected：
+// 运行结果写回后数组会被替换、样例对象引用不变，只依赖 selected 时 computed 不会重算。
+const result = computed(() => {
+  const item = props.cases.find(candidate => candidate.id === props.model?.selectedId)
+  if (!item || !props.snapshot || !props.model) return null
+  return props.model.result(item.id, props.snapshot)
+})
+
+const STATUS_LABELS = {
+  5: '运行超时',
+  6: '编译错误',
+  7: '运行错误',
+  8: '运行错误',
+  9: '运行错误',
+  10: '运行错误',
+  11: '运行错误',
+  12: '运行错误'
+}
+
+const resultLabel = computed(() => {
+  const value = result.value
+  if (!value) return ''
+  if (value.truncated) return '输出已截断，无法完整比较'
+  if ([13, 14].includes(Number(value.status))) return '运行服务异常，请稍后重试'
+  if (Number(value.status) !== 3) return STATUS_LABELS[Number(value.status)] || '运行未完成'
+  return '运行完成'
+})
+
+const outputText = computed(() => result.value?.actual ?? '')
+const diagnosticText = computed(() => {
+  const value = result.value
+  if (!value) return ''
+  return value.stderr || value.compile_output || value.message || ''
+})
+
+const sourceLabel = item => {
+  if (item.source === 'OFFICIAL') return '官方'
+  if (item.source === 'AI_VERIFIED') return 'AI 实测'
+  return '自定义'
+}
+
+const sourceClass = item => ({ OFFICIAL: 'official', CUSTOM: 'custom', AI_VERIFIED: 'ai' })[item.source] || 'custom'
+
+const patch = (field, value) => {
+  if (!selected.value || props.running || !props.model) return
+  try {
+    props.model.patch(selected.value.id, { [field]: value })
+  } catch (error) {
+    ElMessage.error(error.message)
+  }
+}
+
+const addCase = () => {
+  if (!props.model) return
+  try {
+    props.model.add()
+    nextTick(() => inputRef.value?.focus())
+  } catch (error) {
+    ElMessage.info(error.message)
+  }
+}
+
+const removeCase = () => {
+  if (!selected.value || !props.model) return
+  const index = props.cases.findIndex(item => item.id === selected.value.id)
+  try {
+    props.model.remove(selected.value.id)
+    ElMessage.success(`已删除样例 ${index + 1}`)
+  } catch (error) {
+    ElMessage.error(error.message)
+  }
 }
 </script>
 <style scoped>
-.test-case-panel { padding: 14px; border: 1px solid var(--border-light); border-radius: 8px; background: var(--bg-surface); }
-.case-heading,.case-actions,.case-tabs { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.case-heading { justify-content: space-between; margin-bottom: 10px; }
-.case-tabs { margin-bottom: 12px; }
-.case-tabs :deep(.el-button + .el-button) { margin-left: 0; }
-.case-source { margin-left: 6px; font-size: 11px; opacity: .75; }
-.case-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
-.case-columns > div { min-width: 0; }
-.case-columns span, .case-note, small { color: var(--text-secondary); font-size: 12px; }
-pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 160px; overflow-y: auto; background: var(--bg-app); padding: 10px; font-family: monospace; }
-.case-result { border-top: 1px solid var(--border-light); padding-top: 12px; }
-label { display: block; margin: 12px 0 6px; }
-@media (max-width: 600px) { .case-columns { grid-template-columns: 1fr; } }
+.test-case-panel {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-surface);
+}
+.panel-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--bg-input);
+  border-bottom: 1px solid var(--border-light);
+}
+.panel-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.panel-title strong {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+.panel-hint {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.panel-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.panel-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+.dock-right .panel-hint {
+  display: none;
+}
+.case-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px 7px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border-light);
+  scrollbar-width: thin;
+}
+.case-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 3px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: 14px;
+  background: var(--bg-input);
+  color: var(--text-regular);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.case-tab:hover {
+  border-color: var(--border-hover);
+}
+.case-tab.active {
+  border-color: var(--accent-primary);
+  background: var(--accent-primary-light);
+  color: var(--accent-primary-dark);
+}
+/* 深色主题下浅蓝底会变成一块亮色，改用深色输入底 + 主色文字保持可读性。 */
+.dark .case-tab.active {
+  background: var(--bg-input);
+  color: var(--accent-primary);
+}
+.case-tab.add-case {
+  border-style: dashed;
+  background: transparent;
+  color: var(--accent-primary);
+}
+.case-source {
+  font-size: 11px;
+  opacity: 0.72;
+}
+.case-source.official {
+  color: var(--accent-success);
+}
+.case-source.ai {
+  color: var(--accent-info);
+}
+.case-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px 12px 14px;
+}
+.case-note {
+  margin: 0 0 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.case-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+.case-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.case-label {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.case-field :deep(.el-textarea__inner) {
+  min-height: 104px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.case-field.locked-input :deep(.el-textarea__inner) {
+  background: var(--bg-input);
+  color: var(--text-regular);
+  cursor: default;
+}
+.case-result {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-light);
+}
+.case-result strong {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+.case-result pre {
+  margin: 8px 0 4px;
+  max-height: 180px;
+  overflow: auto;
+  padding: 10px;
+  background: var(--bg-app);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.case-result small {
+  margin-left: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.case-empty {
+  padding: 16px 12px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
 </style>

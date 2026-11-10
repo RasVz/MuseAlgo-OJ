@@ -6,7 +6,7 @@
       <div v-else-if="reviewing" role="status" class="review-thinking">正在分析代码、题目与评测结果…</div>
     </div>
     <p v-if="reviewIncomplete" class="review-incomplete" role="status">{{ reviewNotice || '回复未完成，请重试' }}</p>
-    <TutorPreferenceControls v-model="preferences" id-prefix="review" :disabled="reviewing" />
+    <TutorModeControls v-model="helpMode" :disabled="reviewing" @append="appendMode" />
     <label for="review-question">继续提问</label>
     <el-input id="review-question" v-model="question" type="textarea" :rows="2" :maxlength="2000" placeholder="描述你想进一步了解的地方" />
     <template #footer>
@@ -24,8 +24,8 @@ import { showApiError } from '@/utils/errorFeedback'
 import { useUserStore } from '@/stores/userStore'
 import { createMarkdown } from '@/utils/markdown'
 import { readAiResponse } from '@/utils/aiStream'
-import { defaultPreferences, isContestScene } from '@/utils/tutorPreferences'
-import TutorPreferenceControls from '@/views/problem/components/TutorPreferenceControls.vue'
+import { AUTO_MODE, appendTutorPrompt, isContestScene } from '@/utils/tutorModes'
+import TutorModeControls from '@/views/problem/components/TutorModeControls.vue'
 const props = defineProps({ visible: Boolean, submissionId: { type: [Number, String], default: null }, contestId: { type: [Number, String], default: null } })
 const emit = defineEmits(['update:visible'])
 const md = createMarkdown({ html: false, math: true, breaks: true })
@@ -35,7 +35,7 @@ const reviewing = ref(false)
 const reviewIncomplete = ref(false)
 const reviewNotice = ref('')
 const question = ref('')
-const preferences = ref(defaultPreferences())
+const helpMode = ref(AUTO_MODE)
 let lastAnswer = ''
 let reviewController = null
 let reviewGeneration = 0
@@ -44,12 +44,13 @@ const stopReview = () => { lastAnswer = reviewContent.value ? '【前次回复�
 onBeforeUnmount(cancelReview)
 watch(() => [props.visible, props.submissionId, props.contestId], ([visible, id], previous) => {
   cancelReview()
-  if (previous && id !== previous[1]) { lastAnswer = ''; question.value = ''; preferences.value = defaultPreferences(); reviewContent.value = '' }
+  if (previous && id !== previous[1]) { lastAnswer = ''; question.value = ''; helpMode.value = AUTO_MODE; reviewContent.value = '' }
   dialogVisible.value = visible && !isContestScene(props.contestId)
   if (dialogVisible.value) startReview()
 })
 watch(dialogVisible, value => { if (!value) cancelReview(); emit('update:visible', value) })
 const renderMarkdown = text => text ? md.render(text) : ''
+const appendMode = mode => { question.value = appendTutorPrompt(question.value, mode.question) }
 const startReview = async () => {
   if (!props.submissionId || isContestScene(props.contestId)) return
   reviewController?.abort()
@@ -66,7 +67,7 @@ const startReview = async () => {
     const resp = await fetch('/api/ai/review', {
       method: 'POST', signal: controller.signal,
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      body: JSON.stringify({ submissionId: Number(props.submissionId), ...preferences.value,
+      body: JSON.stringify({ submissionId: Number(props.submissionId), helpMode: helpMode.value,
         studentQuestion: followup || undefined,
         previousAnswer: followup && lastAnswer ? (lastAnswer.length <= 11000 ? lastAnswer : '【前次回复过长，以下为开头节选】\n' + lastAnswer.slice(0, 10900)) : undefined })
     })
