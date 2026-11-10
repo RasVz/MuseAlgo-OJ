@@ -6,19 +6,19 @@
       </div>
     </NavbarContext>
 
-    <el-row :gutter="20" class="full-height-row">
-      <el-col :span="17" class="left-col">
+    <div class="dashboard-grid">
+      <section class="left-col" aria-label="我的班级">
         <MyClassList />
-      </el-col>
-      <el-col :span="7" class="right-col">
+      </section>
+      <aside class="right-col" aria-label="学习提醒与推荐">
         <div class="sidebar-item">
           <PendingHomework />
         </div>
-        <div class="sidebar-item flex-fill">
+        <div class="sidebar-item">
           <SmartRecommendations />
         </div>
-      </el-col>
-    </el-row>
+      </aside>
+    </div>
   </div>
 </template>
 
@@ -34,9 +34,8 @@
  * 待办计数要在交完作业后尽快更新、推荐列表只在进入时取一次、班级列表还要支持切换班级，
  * 收在一个组件里会导致任何一个变化都要重拉全部。
  *
- * 右栏用 flex + overflow-y: auto 而非固定高度，
- * 是因为待办卡与推荐卡的内容高度随数据变化（0 条待办时卡片会变矮），
- * 写死高度会出现内容被裁切或下方留大片空白。
+ * 桌面右栏限制宽度，为班级列表保留空间；窄屏改为纵向排列。
+ * 桌面两栏各自滚动，避免较矮窗口裁掉推荐题目或班级列表。
  */
 import NavbarContext from '@/components/NavbarContext.vue'
 import MyClassList from '@/components/MyClassList.vue'
@@ -46,32 +45,34 @@ import SmartRecommendations from '@/components/SmartRecommendations.vue'
 
 <style scoped>
 .dashboard-content {
+  font-family: var(--font-family);
   height: calc(100vh - 85px - 40px);
   overflow: hidden;
 }
-.full-height-row {
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(288px, 22vw, 320px);
+  gap: 20px;
   height: 100%;
 }
 .left-col, .right-col {
+  min-width: 0;
+  min-height: 0;
   height: 100%;
   display: flex;
   flex-direction: column;
 }
-.right-col { 
-  margin-bottom: 0; 
+.right-col {
   overflow-y: auto;
-  padding-right: 4px;
+  gap: 20px;
 }
-
-.sidebar-top { min-height: 250px; }
-
 .sidebar-item {
-  margin-bottom: 20px;
+  flex-shrink: 0;
 }
-
-.flex-fill {
-  flex: 1;
-  min-height: 0;
-  margin-bottom: 0;
+@media (max-width: 1050px) {
+  .dashboard-content { height: auto; overflow: visible; }
+  .dashboard-grid { grid-template-columns: minmax(0, 1fr); height: auto; }
+  .left-col, .right-col { height: auto; }
+  .right-col { overflow: visible; }
 }
 </style>
