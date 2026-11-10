@@ -87,7 +87,7 @@ const isActive = (path) => {
 
 .sidebar-brand {
   width: 100%; 
-  height: 84px; 
+  height: calc(var(--app-header-height) - 1px);
   background: var(--bg-sidebar-brand); 
   display: flex;
   justify-content: center;

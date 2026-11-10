@@ -133,7 +133,7 @@ onMounted(fetchData)
 .problem-list-page {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 125px); 
+  height: calc(100vh - var(--app-header-height) - 40px);
   background: var(--bg-surface);
   border-radius: 12px;
   overflow: hidden; 

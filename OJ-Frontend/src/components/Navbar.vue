@@ -25,7 +25,7 @@ const contextComp = inject('navbarContext', null)
 .app-navbar {
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border-light);
-  height: 85px;
+  height: var(--app-header-height);
   display: flex;
   align-items: center;
   justify-content: space-between;
