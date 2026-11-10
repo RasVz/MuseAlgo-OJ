@@ -121,17 +121,19 @@ for (const [file, name, next, api] of [
   })
 }
 
-test('partial AI configuration save reads back committed values and does not report success', async () => {
- const source=readFileSync(new URL('../../src/views/admin/AdminAiView.vue',import.meta.url),'utf8')
- const start=source.indexOf('const saveConfig =');const end=source.indexOf('const queryQuota',start)
- let writes=0,reads=0,successes=0
- const context={savingConfig:{value:false},editableConfig:{value:{first:'new',second:'new'}},serviceManaged:{value:false},config:{value:{}},configSaveError:{value:''},
-  updateAiConfig:async()=>{if(++writes===2)throw Object.assign(new Error('合成保存失败'),{notified:true});return {code:200}},
-  getAiConfig:async()=>{reads++;return {code:200,data:{quotaEnabled:false}}},isResultSuccess:res=>res.code===200,unwrapResultData:res=>res.data,
-  getResultMessage:res=>res.message, syncEditableConfig(){},showApiError(){},ElMessage:{error(){},success(){successes++}}}
- vm.runInNewContext(source.slice(start,end)+'\nglobalThis.run = saveConfig',context)
- await assert.doesNotReject(context.run());assert.equal(reads,1);assert.equal(successes,0)
- assert.match(context.configSaveError.value,/未完整保存/);assert.equal(context.savingConfig.value,false)
+test('partial AI configuration group save requests a config reload and does not report success', async () => {
+ // 配置保存随 AI 管理页 Tab 重构迁移到 AiConfigPanel.vue，并改为分组保存。
+ // 失败后由 emit('saved') 通知父组件回读实际配置，等价于原实现的回读语义。
+ const source=readFileSync(new URL('../../src/views/admin/components/AiConfigPanel.vue',import.meta.url),'utf8')
+ const start=source.indexOf('const saveGroup =');const end=source.indexOf('const promptKey =',start)
+ let writes=0,reloads=0,successes=0
+ const context={savingGroup:{value:''},configError:{value:''},editable:{first:'new',second:'new'},
+  updateAiConfig:async()=>{if(++writes===2)throw new Error('合成保存失败');return {code:200}},
+  isResultSuccess:res=>res.code===200,getResultMessage:res=>res.message,
+  emit:event=>{if(event==='saved')reloads++},showApiError(){},ElMessage:{error(){},success(){successes++}}}
+ vm.runInNewContext(source.slice(start,end)+'\nglobalThis.run = saveGroup',context)
+ await assert.doesNotReject(context.run(['first','second'],'quota'));assert.equal(reloads,1);assert.equal(successes,0)
+ assert.match(context.configError.value,/未完整保存/);assert.equal(context.savingGroup.value,'')
 })
 
 
