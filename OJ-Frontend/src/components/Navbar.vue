@@ -41,6 +41,17 @@ const contextComp = inject('navbarContext', null)
   align-items: center;
   margin-right: 20px;
   min-width: 0;
+  /* 注入的筛选栏含固定宽度控件，窄屏下会远宽于可用空间。
+     收口为可横向滚动，避免撑破顶栏、挤走右侧用户区。 */
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.context-container::-webkit-scrollbar { display: none; }
+
+@media (max-width: 600px) {
+  .app-navbar { padding: 0 12px; }
+  .context-container { margin-right: 10px; }
 }
 
 .fade-enter-active, .fade-leave-active { transition: opacity 0.3s; }
