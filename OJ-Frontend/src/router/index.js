@@ -160,7 +160,8 @@ const adminLayoutRoutes = [
       { path: 'audit-logs', name: 'AdminAuditLogs', component: () => import('@/views/admin/AdminAuditLogsView.vue'), meta: { title: '审计日志', requiresAuth: true } },
       { path: 'community', name: 'AdminCommunity', component: () => import('@/views/admin/AdminCommunityView.vue'), meta: { title: '社区治理', requiresAuth: true } },
       { path: 'community/reports/:id', name: 'AdminReportDetail', component: () => import('@/views/admin/AdminReportDetailView.vue'), meta: { title: '举报详情', requiresAuth: true } },
-      { path: 'tools', name: 'AdminTools', component: () => import('@/views/admin/AdminToolsView.vue'), meta: { title: '站内工具', requiresAuth: true } },
+      // 站内工具聚合页已撤销，旧地址回管理中心首页
+      { path: 'tools', redirect: '/admin' },
       { path: 'tools/draft', name: 'AdminToolDraft', component: () => import('@/views/teacher/tools/DraftToolView.vue'), meta: { title: '题面生成', requiresAuth: true } },
       { path: 'plagiarism', name: 'AdminPlagiarism', component: () => import('@/views/teacher/PlagiarismReportView.vue'), meta: { title: '查重报告', requiresAuth: true } }
     ]
