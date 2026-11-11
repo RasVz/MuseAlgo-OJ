@@ -8,6 +8,11 @@ public class AiAdminException extends com.musealgo.oj.common.exception.BusinessE
 
     private final int code;
 
+    public AiAdminException(int code, String errorCode, String message) {
+        super(new com.musealgo.oj.common.exception.ErrorDefinition(errorCode, code, message));
+        this.code = code;
+    }
+
     public AiAdminException(int code, String message) {
         super(new com.musealgo.oj.common.exception.ErrorDefinition(switch (code) {
             case 400 -> "AI_SERVICE_INPUT_INVALID";

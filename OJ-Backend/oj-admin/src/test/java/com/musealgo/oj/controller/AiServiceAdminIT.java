@@ -47,6 +47,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -423,6 +424,28 @@ class AiServiceAdminIT {
         mockMvc.perform(get("/admin/ai/services"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value(403));
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void diagnosisChecksAddressWithoutCallingModelOrChangingRuntime() throws Exception {
+        int version = catalogService.runtimeView().runtimeVersion();
+        mockMvc.perform(post("/admin/ai/services/diagnose").contentType("application/json")
+                        .content(objectMapper.writeValueAsString(java.util.Map.of("apiUrl", UPSTREAM_URL))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.masterKeyReady").value(true));
+        assertEquals(0, REQUEST_COUNT.get());
+        assertEquals(version, catalogService.runtimeView().runtimeVersion());
+        mockMvc.perform(get("/admin/ai/runtime")).andExpect(jsonPath("$.data.masterKey.ready").value(true));
+    }
+
+    @Test
+    @WithMockUser(roles = "TEACHER")
+    void teacherCannotUseDiagnosisEndpoint() throws Exception {
+        mockMvc.perform(post("/admin/ai/services/diagnose").contentType("application/json")
+                        .content(objectMapper.writeValueAsString(java.util.Map.of("apiUrl", UPSTREAM_URL))))
+                .andExpect(status().isForbidden());
+        assertEquals(0, REQUEST_COUNT.get());
     }
 
     private AiServiceAdminDtos.ServiceVo create(String name, String model, String key) {

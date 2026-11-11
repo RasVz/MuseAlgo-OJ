@@ -64,6 +64,8 @@ public class ChatCompletionsClient {
         this.maxStreamBytes = maxStreamBytes;
         this.maxLineBytes = maxLineBytes;
         this.client = new OkHttpClient.Builder()
+                .proxy(java.net.Proxy.NO_PROXY)
+                .protocols(java.util.List.of(okhttp3.Protocol.HTTP_1_1))
                 .connectTimeout(connectSeconds, TimeUnit.SECONDS)
                 .readTimeout(readSeconds, TimeUnit.SECONDS)
                 .writeTimeout(30, TimeUnit.SECONDS)
@@ -90,6 +92,8 @@ public class ChatCompletionsClient {
         URI endpoint;
         try {
             endpoint = resolveEndpoint(snapshot);
+        } catch (com.musealgo.oj.ai.network.AiEndpointException e) {
+            return AiCompletionResult.failure(source, e.errorCode(), e.getMessage());
         } catch (IllegalArgumentException e) {
             return AiCompletionResult.failure(source, "NETWORK", "接口地址未通过安全检查");
         }
@@ -110,8 +114,8 @@ public class ChatCompletionsClient {
         try (Response response = clientForEndpoint(endpoint).newCall(request).execute()) {
             if (!response.isSuccessful()) {
                 String type = classifyHttpStatus(response.code());
-                log.warn("【AI上游】非成功响应 status={} type={} serviceId={} reason={}",
-                        response.code(), type, snapshot.serviceId(), upstreamReason(response));
+                log.warn("【AI上游】非成功响应 status={} type={} serviceId={}",
+                        response.code(), type, snapshot.serviceId());
                 return AiCompletionResult.failure(source, type, httpErrorMessage(type));
             }
             ResponseBody body = response.body();
@@ -137,7 +141,8 @@ public class ChatCompletionsClient {
             return AiCompletionResult.failure(source, "TIMEOUT", "上游请求超时");
         } catch (IOException e) {
             log.warn("【AI上游】网络失败 serviceId={} exception={}", snapshot.serviceId(), e.getClass().getSimpleName());
-            return AiCompletionResult.failure(source, "NETWORK", "无法连接上游服务");
+            var failure = networkFailure(e);
+            return AiCompletionResult.failure(source, failure.type(), failure.message());
         } catch (RuntimeException e) {
             log.warn("【AI上游】响应解析失败 serviceId={} exception={}", snapshot.serviceId(), e.getClass().getSimpleName());
             return AiCompletionResult.failure(source, "INVALID_RESPONSE", "上游响应格式无效");
@@ -157,6 +162,8 @@ public class ChatCompletionsClient {
         URI endpoint;
         try {
             endpoint = resolveEndpoint(snapshot);
+        } catch (com.musealgo.oj.ai.network.AiEndpointException e) {
+            return AiStreamResult.failure(source, false, e.errorCode(), e.getMessage());
         } catch (IllegalArgumentException e) {
             return AiStreamResult.failure(source, false, "NETWORK", "接口地址未通过安全检查");
         }
@@ -202,8 +209,8 @@ public class ChatCompletionsClient {
                 String type = tools != null && (response.code() == 400 || response.code() == 422)
                         && (reason.toLowerCase(java.util.Locale.ROOT).contains("tool") || reason.toLowerCase(java.util.Locale.ROOT).contains("function"))
                         ? "TOOLS_UNSUPPORTED" : classifyHttpStatus(response.code());
-                log.warn("【AI上游】流式非成功响应 status={} type={} serviceId={} reason={}",
-                        response.code(), type, snapshot.serviceId(), reason);
+                log.warn("【AI上游】流式非成功响应 status={} type={} serviceId={}",
+                        response.code(), type, snapshot.serviceId());
                 return partial(full, usage, source, false, requestSent.get(), type, httpErrorMessage(type));
             }
             ResponseBody body = response.body();
@@ -288,7 +295,8 @@ public class ChatCompletionsClient {
                 return partial(full, usage, source, emitted, requestSent.get(), "CANCELLED", "用户已停止生成，最终供应商成本未知");
             log.warn("【AI上游】流式网络失败 serviceId={} exception={}",
                     snapshot.serviceId(), e.getClass().getSimpleName());
-            return partial(full, usage, source, emitted, requestSent.get(), "NETWORK", "上游流式连接中断");
+            var failure = networkFailure(e);
+            return partial(full, usage, source, emitted, requestSent.get(), failure.type(), failure.message());
         }
     }
 
@@ -318,12 +326,27 @@ public class ChatCompletionsClient {
         return new AiStreamResult(content.toString(), usage, source, false, emitted, type, notice, requestSent);
     }
 
+    private record NetworkFailure(String type, String message) { }
+
+    private static NetworkFailure networkFailure(IOException error) {
+        Throwable cause = error;
+        for (int depth = 0; cause != null && depth < 8; depth++, cause = cause.getCause()) {
+            if (cause instanceof com.musealgo.oj.ai.network.AiEndpointException rejected) {
+                return new NetworkFailure(rejected.errorCode(), rejected.getMessage());
+            }
+        }
+        return new NetworkFailure("AI_TARGET_UNREACHABLE", "后端无法连接目标服务，请检查后端出站网络后重试");
+    }
+
     private OkHttpClient clientForEndpoint(URI endpoint) {
         // 普通公网调用复用同一 DNS 策略和连接池；私网例外必须绑定完整请求地址。
         if (!endpointGuard.isExactPrivateTarget(endpoint.toString())) {
             return client;
         }
-        return client.newBuilder().dns(endpointGuard.guardedDns(endpoint)).build();
+        // Private permissions belong to one full URL. Never share these sockets with public requests.
+        return client.newBuilder()
+                .connectionPool(new okhttp3.ConnectionPool(0, 1, TimeUnit.MILLISECONDS))
+                .dns(endpointGuard.guardedDns(endpoint)).build();
     }
 
     private SseLine readStreamLine(BufferedSource input, long remainingBytes) throws IOException {

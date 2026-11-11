@@ -131,7 +131,8 @@ public final class AiServiceAdminDtos {
             Integer currentServiceVersion,
             boolean currentServiceReady,
             int runtimeVersion,
-            String legacyModel) {
+            String legacyModel,
+            com.musealgo.oj.ai.crypto.AiKeyCipher.Readiness masterKey) {
     }
 
     public record TestCheck(

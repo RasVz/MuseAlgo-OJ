@@ -78,6 +78,7 @@ async function installMockApi(page) {
   }
 
   await page.route('**/api/**', async (route) => {
+    if (!new URL(route.request().url()).pathname.startsWith('/api/')) return route.fallback()
     const request = route.request()
     const url = new URL(request.url())
     const path = url.pathname
@@ -297,7 +298,8 @@ test('管理员完成添加、测试、切换、改 Key 与停用流程（UI 替
 
   await page.goto('/admin/ai')
   await expect(page).toHaveURL(/\/admin\/ai$/, { timeout: 15000 })
-  await expect(page.getByText('当前由后台服务提供 AI')).toBeVisible(SLOW)
+  await page.getByRole('tab', { name: '配置与模板' }).click()
+  await expect(page.getByText('当前由后台服务提供 AI', { exact: false })).toBeVisible(SLOW)
   const modelInput = page.locator('.el-form-item').filter({ hasText: '模型' }).locator('input').first()
   await expect(modelInput).toBeDisabled()
   await page.goto('/admin/ai-services')
@@ -337,4 +339,49 @@ test('教师直接输入 AI 服务地址被前端守卫挡回管理中心', asyn
   await installMockApi(page)
   await page.goto('/admin/ai-services')
   await expect(page).toHaveURL(/\/admin$/, { timeout: 15000 })
+})
+
+
+test('环境失败与表单错误可区分且没有未处理 Promise', async ({ page }) => {
+  const errors = []
+  page.on('pageerror', error => errors.push(error.message))
+  await installAdminAuth(page)
+  await installMockApi(page)
+  await page.route('**/api/admin/ai/runtime', route => route.fulfill({
+    status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200, data: {
+      mode: 'LEGACY', runtimeVersion: 1, masterKey: { ready: false, message: 'AI 主密钥未配置' }
+    } })
+  }))
+  await page.goto('/admin/ai-services')
+  await expect(page.getByText('需要部署初始化：AI 主密钥尚未就绪')).toBeVisible(SLOW)
+  await page.getByRole('button', { name: '查看初始化方法' }).click()
+  await expect(page.getByText('python3 scripts/ai-services-init.py --start')).toBeVisible(SLOW)
+  await page.locator('.el-dialog').filter({ hasText: '初始化 AI 主密钥' }).locator('.el-dialog__headerbtn').click()
+  await page.getByRole('button', { name: '添加服务', exact: true }).click()
+  const drawer = page.locator('.el-drawer')
+  await drawer.getByPlaceholder('例如：教学主服务').fill('失败分类测试')
+  await drawer.getByPlaceholder('https://api.example.com/v1/chat/completions').fill(UPSTREAM)
+  await drawer.getByPlaceholder('服务商要求的精确模型 ID').fill('test-model')
+  await drawer.getByPlaceholder('输入服务商 API Key').fill('synthetic-key')
+  for (const [errorCode, message, expected] of [
+    ['AI_MASTER_KEY_NOT_READY', 'AI 主密钥未配置', '需要部署初始化：AI 主密钥不可用'],
+    ['AI_DNS_UNAVAILABLE', '域名无法解析', '环境未就绪：后端无法完成公网地址解析'],
+    ['AI_SERVICE_INPUT_INVALID', '模型名称不能为空', '模型名称不能为空']
+  ]) {
+    await page.route('**/api/admin/ai/services', route => route.request().method() === 'POST'
+      ? route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 503, errorCode, message }) })
+      : route.fallback())
+    await drawer.getByRole('button', { name: '保存服务', exact: true }).click()
+    await expect(drawer.getByText(expected, { exact: false })).toBeVisible(SLOW)
+    await expect(drawer.getByPlaceholder('例如：教学主服务')).toHaveValue('失败分类测试')
+  }
+  await page.route('**/api/admin/ai/services/diagnose', route => route.fulfill({ status: 200,
+    contentType: 'application/json', body: JSON.stringify({ code: 200, data: { message: '地址解析与安全检查通过；尚未验证服务凭证及模型，请保存后测试连接' } }) }))
+  await drawer.getByRole('button', { name: '检查地址（不调用模型）' }).click()
+  await expect(drawer.getByText('地址解析与安全检查通过', { exact: false })).toBeVisible(SLOW)
+  await expect(page.locator('.el-message')).toHaveCount(0, { timeout: 6000 })
+  await screenshot(page, 'ai-services-environment-readiness.png')
+  await drawer.getByPlaceholder('https://api.example.com/v1/chat/completions').fill('https://other.example.com/v1/chat/completions')
+  await expect(drawer.getByText('地址解析与安全检查通过', { exact: false })).toBeHidden(SLOW)
+  expect(errors).toEqual([])
 })

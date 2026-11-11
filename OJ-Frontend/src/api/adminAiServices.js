@@ -1,48 +1,52 @@
 import request from '@/utils/request'
 
-// 三项探针各最多 30 秒；默认请求的 10 秒上限会让页面提前失败而后端仍在测试。
-const PROBE_TIMEOUT = 100000
+// 三项探针各最多 30 秒调用 + 8 秒地址检查；包含调度余量。
+const PROBE_TIMEOUT = 130000
 
 export function getAiServices() {
-  return request({ url: '/admin/ai/services', method: 'get' })
+  return request({ url: '/admin/ai/services', method: 'get', silent: true })
 }
 
 export function createAiService(data) {
-  return request({ url: '/admin/ai/services', method: 'post', data })
+  return request({ url: '/admin/ai/services', method: 'post', silent: true, data, timeout: 15000 })
 }
 
 export function updateAiService(id, data) {
-  return request({ url: `/admin/ai/services/${id}`, method: 'put', data, timeout: PROBE_TIMEOUT })
+  return request({ url: `/admin/ai/services/${id}`, method: 'put', silent: true, data, timeout: PROBE_TIMEOUT })
 }
 
 export function testAiService(id, version) {
-  return request({ url: `/admin/ai/services/${id}/test`, method: 'post', data: { version }, timeout: PROBE_TIMEOUT })
+  return request({ url: `/admin/ai/services/${id}/test`, method: 'post', silent: true, data: { version }, timeout: PROBE_TIMEOUT })
 }
 
 export function activateAiService(id, version, runtimeVersion) {
   return request({
     url: `/admin/ai/services/${id}/activate`,
-    method: 'post',
+    method: 'post', silent: true,
     data: { version, runtimeVersion }
   })
 }
 
 export function enableAiService(id, version) {
-  return request({ url: `/admin/ai/services/${id}/enable`, method: 'post', data: { version } })
+  return request({ url: `/admin/ai/services/${id}/enable`, method: 'post', silent: true, data: { version } })
 }
 
 export function disableAiService(id, version) {
-  return request({ url: `/admin/ai/services/${id}/disable`, method: 'post', data: { version } })
+  return request({ url: `/admin/ai/services/${id}/disable`, method: 'post', silent: true, data: { version } })
 }
 
 export function deleteAiService(id, version) {
-  return request({ url: `/admin/ai/services/${id}`, method: 'delete', data: { version } })
+  return request({ url: `/admin/ai/services/${id}`, method: 'delete', silent: true, data: { version } })
 }
 
 export function getAiRuntime() {
-  return request({ url: '/admin/ai/runtime', method: 'get' })
+  return request({ url: '/admin/ai/runtime', method: 'get', silent: true })
 }
 
 export function updateAiRuntime(mode, version) {
-  return request({ url: '/admin/ai/runtime', method: 'put', data: { mode, version } })
+  return request({ url: '/admin/ai/runtime', method: 'put', silent: true, data: { mode, version } })
+}
+
+export function diagnoseAiAddress(apiUrl) {
+  return request({ url: '/admin/ai/services/diagnose', method: 'post', silent: true, data: { apiUrl }, timeout: 15000 })
 }
