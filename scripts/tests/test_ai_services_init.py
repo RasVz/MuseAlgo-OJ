@@ -2,6 +2,7 @@ import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('ai_init', Path(__file__).parents[1] / 'ai-services-init.py')
 module = importlib.util.module_from_spec(spec)
@@ -9,6 +10,17 @@ spec.loader.exec_module(module)
 
 
 class KeyInitializationTest(unittest.TestCase):
+    def test_docker_desktop_mount_reuses_existing_host_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            key = Path(directory).resolve() / 'master'
+            module.initialize(key, lambda: None)
+            before = key.read_bytes()
+            with patch.object(module.sys, 'platform', 'darwin'):
+                mapped = module.host_mount_path('/host_mnt' + str(key))
+                self.assertEqual(mapped, key)
+                self.assertFalse(module.initialize(mapped, lambda: self.fail('must reuse mounted key')))
+            self.assertEqual(before, key.read_bytes())
+
     def test_create_and_repeat_preserve_key(self):
         with tempfile.TemporaryDirectory() as directory:
             key = Path(directory).resolve() / 'keys' / 'master'

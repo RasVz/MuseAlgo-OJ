@@ -30,6 +30,16 @@ def compose(*args):
     return ['docker', 'compose', '-f', 'compose.dev.yml', *args]
 
 
+def host_mount_path(source):
+    path = Path(source)
+    # Docker Desktop may report its VM path instead of the macOS host path.
+    if sys.platform == 'darwin' and source.startswith('/host_mnt/') and not path.exists():
+        translated = Path(source[len('/host_mnt'):])
+        if translated.exists():
+            return translated
+    return path
+
+
 def mounted_key():
     container = run(compose('ps', '-q', 'backend'))
     if not container:
@@ -39,7 +49,7 @@ def mounted_key():
         if mount.get('Destination') == TARGET:
             if mount.get('RW'):
                 raise RuntimeError('现有主密钥挂载可写，请先按文档改为只读。')
-            return Path(mount['Source'])
+            return host_mount_path(mount['Source'])
     return None
 
 
