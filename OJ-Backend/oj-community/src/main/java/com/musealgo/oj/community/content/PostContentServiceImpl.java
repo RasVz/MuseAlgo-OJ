@@ -35,7 +35,7 @@ import java.util.Optional;
  * </p>
  * <p>
  * <b>{@code type} 由服务端推断而非信任前端：</b>
- * {@link #classify} 依据 {@code classId}、{@code problemId}、{@code category}
+ * {@link PostContentRules} 依据 {@code classId}、{@code problemId}、{@code category}
  * 推导内容类型。前端传 {@code type=2}（知识文章）并不必然成立——
  * 只有真的带了关联题目才算。这是刻意的：文章与题解在评论体系里走的是
  * 不同分支（见 {@link com.musealgo.oj.community.post.PostTargetServiceImpl}），
@@ -74,7 +74,9 @@ class PostContentServiceImpl implements PostContentService {
         post.setIsOfficial(0); post.setIsEssence(0); post.setIsTop(0);
         post.setViews(0); post.setLikes(0); post.setCommentCount(0);
         post.setDislikes(0); post.setFavorites(0); post.setScore(0.0); post.setIsDeleted(0);
-        normalize(post); classify(post);
+        PostContentRules.applyForPublish(post);
+        normalizeTags(post);
+        requireProblemExists(post.getProblemId());
         if (postMapper.insert(post) != 1) return false;
         replaceRelations(post, true);
         notifyFollowers(post);
@@ -95,7 +97,9 @@ class PostContentServiceImpl implements PostContentService {
         post.setIsOfficial(previous.getIsOfficial());
         post.setIsEssence(previous.getIsEssence());
         post.setIsTop(previous.getIsTop());
-        normalize(post);
+        PostContentRules.applyForUpdate(post, previous);
+        normalizeTags(post);
+        requireProblemExists(post.getProblemId());
         boolean updated = postMapper.updateById(post) == 1;
         if (!updated) return false;
         Integer effectiveType = post.getType() == null ? previous.getType() : post.getType();
@@ -117,26 +121,20 @@ class PostContentServiceImpl implements PostContentService {
         return patch;
     }
 
-    private void normalize(Post post) { post.setTags(String.join(",", PostTagCatalog.normalizeAndValidate(post.getTags(), tags.enabledNames()))); }
+    private void normalizeTags(Post post) {
+        post.setTags(String.join(",", PostTagCatalog.normalizeAndValidate(post.getTags(), tags.enabledNames())));
+    }
 
     /**
-     * 推断并归一化内容的类型与分类。
-     * <p>
-     * 判定有优先级，不可调换：班级内容（{@code classId} 非空）压过一切；
-     * 其次是题解（绑定了题目，或分类已标为 solution）；
-     * 最后才是普通讨论。顺序颠倒会让「班级里发的题解」被归为班级内容，
-     * 从题解列表里消失。
-     * </p>
-     * <p>
-     * 最后一支把 {@code type=0} 且分类不在既有问答分类内的内容补成
-     * {@code question}——历史数据里有分类为空的动态，
-     * 不补的话它们在按分类筛选的页面上永远不出现。
-     * </p>
+     * 题解/文章的关联题目必须真实存在。
+     * 关联练习列表在 {@link #replaceRelations} 里批量校验，而主字段 problemId
+     * 以前只要求是整数，能写出指向不存在题目的题解。
      */
-    private void classify(Post post) {
-        if (post.getClassId() != null) post.setType(3);
-        else if (post.getProblemId() != null || "solution".equals(post.getCategory())) { post.setType(1); post.setCategory("solution"); }
-        else if (post.getType() != null && post.getType() == 0 && (post.getCategory() == null || !List.of("question", "experience", "contest-discussion").contains(post.getCategory()))) { post.setType(0); post.setCategory("question"); }
+    private void requireProblemExists(Long problemId) {
+        if (problemId == null) return;
+        if (problemQuery.findTitleById(problemId).isEmpty()) {
+            throw new BusinessException(CommunityErrorCode.COMMUNITY_INPUT_INVALID, "关联题目不存在");
+        }
     }
 
     /**
