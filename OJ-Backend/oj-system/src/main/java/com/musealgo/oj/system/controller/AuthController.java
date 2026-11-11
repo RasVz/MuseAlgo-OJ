@@ -218,6 +218,13 @@ public class AuthController {
 
         User authenticatedUser = (User) authentication.getPrincipal();
 
+        // 封禁判断放在密码校验之后：只有持正确密码的人才会看到明确原因，
+        // 错误密码在 Provider 内已抛 BadCredentials，无法借此枚举账号状态。
+        if (authenticatedUser.getIsBanned() != null && authenticatedUser.getIsBanned() == 1) {
+            log.info("封禁账号登录被拒: {}", authenticatedUser.getUsername());
+            return ErrorResponses.failure(CommonErrorCode.AUTH_ACCOUNT_DISABLED);
+        }
+
         // 2. 生成 Token
         long credentialVersion = credentialVersion(authenticatedUser);
         String accessToken = jwtUtils.generateAccessToken(authenticatedUser.getUsername(), credentialVersion);

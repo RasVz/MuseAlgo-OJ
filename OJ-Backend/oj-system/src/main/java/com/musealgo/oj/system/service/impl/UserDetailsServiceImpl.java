@@ -8,7 +8,6 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
-import org.springframework.security.authentication.DisabledException;
 import org.springframework.stereotype.Service;
 import com.musealgo.oj.api.report.ReportActorSnapshot;
 import com.musealgo.oj.system.entity.LoginUser;
@@ -48,10 +47,8 @@ public class UserDetailsServiceImpl implements UserDetailsService {
         if (user == null) {
             throw new UsernameNotFoundException("用户名或密码错误");
         }
-        // 禁用校验：登录与每请求的 JWT 校验都会走到这里（JwtAuthenticationTokenFilter）
-        if (user.getIsBanned() != null && user.getIsBanned() == 1) {
-            throw new DisabledException("该账号已被禁用");
-        }
+        // 封禁不再在加载阶段拒绝：登录流程需要先校验密码，再决定是否返回“账号已禁用”，
+        // 否则任意密码都能探知账号状态。JWT 过滤器会单独检查 isBanned。
 
         // 2. 设置权限
         List<SimpleGrantedAuthority> authorities = resolveAuthorities(user);

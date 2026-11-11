@@ -76,6 +76,23 @@ class JwtAuthenticationTokenFilterTest {
     }
 
     @Test
+    void bannedUserTokenIsNotAuthenticated() throws Exception {
+        LoginUser banned = currentUser(9L, 3L);
+        banned.setIsBanned((byte) 1);
+        when(jwtUtils.extractUsername("banned-access")).thenReturn("student");
+        when(userDetailsService.loadUserByUsername("student")).thenReturn(banned);
+        when(jwtUtils.validateAccessToken("banned-access", "student")).thenReturn(true);
+        when(jwtUtils.hasCurrentCredentialVersion("banned-access", 3L)).thenReturn(true);
+
+        boolean[] authenticatedDuringRequest = {false};
+        runFilter("banned-access", (request, response) -> authenticatedDuringRequest[0] =
+                SecurityContextHolder.getContext().getAuthentication() != null);
+
+        assertFalse(authenticatedDuringRequest[0]);
+        verifyNoInteractions(blacklistService);
+    }
+
+    @Test
     void acceptsScopedCoursewareCookieOnItsOutputPath() throws Exception {
         LoginUser current = currentUser(9L, 3L);
         when(jwtUtils.extractUsername("courseware-token")).thenReturn("student");

@@ -104,7 +104,10 @@ public class JwtAuthenticationTokenFilter extends OncePerRequestFilter {
                         if (jwtUtils.validateAccessToken(token, userDetails.getUsername())
                                 && userDetails instanceof User user
                                 && jwtUtils.hasCurrentCredentialVersion(token, user.getCredentialVersion())) {
-                            if (jwtBlacklistService.isRevoked(jwtUtils.extractJti(token))) {
+                            if (user.getIsBanned() != null && user.getIsBanned() == 1) {
+                                // 封禁账号的存量 token 一律视为失效；不在会话路径暴露“已封禁”，避免仅凭 token 探测账号状态。
+                                request.setAttribute(AUTH_ERROR_ATTRIBUTE, CommonErrorCode.AUTH_TOKEN_INVALID);
+                            } else if (jwtBlacklistService.isRevoked(jwtUtils.extractJti(token))) {
                                 request.setAttribute(AUTH_ERROR_ATTRIBUTE, CommonErrorCode.AUTH_TOKEN_REVOKED);
                             } else {
                             UsernamePasswordAuthenticationToken authentication =

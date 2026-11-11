@@ -5,7 +5,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.test.util.ReflectionTestUtils;
 import com.musealgo.oj.system.entity.LoginUser;
@@ -164,16 +163,18 @@ class RbacAuthorityResolutionTest {
     // ===== 账号状态与模式无关 =====
 
     @Test
-    void bannedUserIsRejectedInBothModes() {
+    void bannedUserLoadsWithDisabledFlagForLoginCheck() {
         User banned = role((byte) 3);
         banned.setIsBanned((byte) 1);
         givenUser(banned);
 
         setNormalized(false);
-        assertThrows(DisabledException.class, () -> userDetailsService.loadUserByUsername(USERNAME));
+        LoginUser legacy = (LoginUser) userDetailsService.loadUserByUsername(USERNAME);
+        assertEquals((byte) 1, legacy.getIsBanned());
 
         setNormalized(true);
-        assertThrows(DisabledException.class, () -> userDetailsService.loadUserByUsername(USERNAME));
+        LoginUser normalized = (LoginUser) userDetailsService.loadUserByUsername(USERNAME);
+        assertEquals((byte) 1, normalized.getIsBanned());
     }
 
     @Test

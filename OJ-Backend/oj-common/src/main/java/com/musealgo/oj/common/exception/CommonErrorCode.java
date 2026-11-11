@@ -9,6 +9,7 @@ public enum CommonErrorCode implements ErrorCode {
     VALIDATION_FAILED(400, "请求参数校验失败"),
     AUTH_REQUIRED(401, "请先登录"),
     AUTH_INVALID_CREDENTIALS(401, "用户名或密码错误"),
+    AUTH_ACCOUNT_DISABLED(403, "账号已被禁用"),
     AUTH_TOKEN_EXPIRED(401, "登录凭据已过期"),
     AUTH_TOKEN_INVALID(401, "登录凭据已失效，请重新登录"),
     AUTH_TOKEN_REVOKED(401, "登录已注销，请重新登录"),
