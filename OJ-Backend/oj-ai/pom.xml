@@ -13,6 +13,9 @@
         <dependency><groupId>cn.hutool</groupId><artifactId>hutool-all</artifactId><version>${hutool.version}</version></dependency>
         <dependency><groupId>com.squareup.okhttp3</groupId><artifactId>okhttp</artifactId><version>4.12.0</version></dependency>
         <dependency><groupId>com.github.xiaoymin</groupId><artifactId>knife4j-openapi3-jakarta-spring-boot-starter</artifactId><version>${knife4j.version}</version></dependency>
+        <!-- DNS wire parsing only; transport stays in the guarded OkHttp client. -->
+        <dependency><groupId>dnsjava</groupId><artifactId>dnsjava</artifactId><version>3.7.1</version></dependency>
+        <dependency><groupId>com.squareup.okhttp3</groupId><artifactId>okhttp-tls</artifactId><version>4.12.0</version><scope>test</scope></dependency>
         <!-- 可观测性：AI 用量指标 -->
         <dependency><groupId>io.micrometer</groupId><artifactId>micrometer-core</artifactId></dependency>
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>

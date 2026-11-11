@@ -55,7 +55,7 @@ public class AiKeyCipher {
             byte[] encrypted = cipher.doFinal(plaintext.getBytes(StandardCharsets.UTF_8));
             return ENVELOPE_VERSION + ":" + encode(nonce) + ":" + encode(encrypted);
         } catch (GeneralSecurityException e) {
-            throw new AiKeyException("AI 主密钥不可用，无法保存服务密钥");
+            throw AiKeyException.master("AI 主密钥不可用，无法保存服务密钥");
         }
     }
 
@@ -90,7 +90,7 @@ public class AiKeyCipher {
         } catch (AEADBadTagException e) {
             throw new AiKeyException("AI 服务密钥解密失败");
         } catch (GeneralSecurityException e) {
-            throw new AiKeyException("AI 主密钥不可用，无法读取服务密钥");
+            throw AiKeyException.master("AI 主密钥不可用，无法读取服务密钥");
         }
     }
 
@@ -98,28 +98,40 @@ public class AiKeyCipher {
         return keyFile != null;
     }
 
+    /** File readiness is separate from the ability to decrypt any existing service. */
+    public record Readiness(boolean ready, String message) { }
+
+    public Readiness readiness() {
+        try {
+            loadKey();
+            return new Readiness(true, "主密钥已就绪");
+        } catch (AiKeyException e) {
+            return new Readiness(false, e.getMessage());
+        }
+    }
+
     private SecretKeySpec loadKey() {
         if (keyFile == null) {
-            throw new AiKeyException("AI 主密钥未配置");
+            throw AiKeyException.master("AI 主密钥未配置");
         }
         try {
             if (!Files.isRegularFile(keyFile)) {
-                throw new AiKeyException("AI 主密钥文件不存在");
+                throw AiKeyException.master("AI 主密钥文件不存在");
             }
             long size = Files.size(keyFile);
             if (size <= 0 || size > MAX_KEY_FILE_BYTES) {
-                throw new AiKeyException("AI 主密钥文件大小无效");
+                throw AiKeyException.master("AI 主密钥文件大小无效");
             }
             String encoded = Files.readString(keyFile, StandardCharsets.US_ASCII).trim();
             byte[] key = Base64.getDecoder().decode(encoded);
             if (key.length != KEY_BYTES) {
-                throw new AiKeyException("AI 主密钥必须为 32 字节 Base64");
+                throw AiKeyException.master("AI 主密钥必须为 32 字节 Base64");
             }
             return new SecretKeySpec(key, "AES");
         } catch (IOException e) {
-            throw new AiKeyException("AI 主密钥文件不可读");
+            throw AiKeyException.master("AI 主密钥文件不可读");
         } catch (IllegalArgumentException e) {
-            throw new AiKeyException("AI 主密钥不是合法 Base64");
+            throw AiKeyException.master("AI 主密钥不是合法 Base64");
         }
     }
 

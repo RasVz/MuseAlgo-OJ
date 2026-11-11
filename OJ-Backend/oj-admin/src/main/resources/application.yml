@@ -224,6 +224,10 @@ oj:
     network:
       # 仅测试环境使用的精确完整 URL 白名单，逗号分隔；生产保持为空，管理页无绕过开关。
       private-targets: ${OJ_AI_PRIVATE_TARGETS:}
+      # 仅系统解析全部为 fake-ip 时恢复公网解析；不放行保留地址。
+      fake-ip-recovery: ${OJ_AI_FAKE_IP_RECOVERY:true}
+      doh-url: ${OJ_AI_DOH_URL:https://dns.alidns.com/dns-query}
+      doh-bootstrap: ${OJ_AI_DOH_BOOTSTRAP:223.5.5.5,223.6.6.6}
     quota:
       # 每用户每日 token 配额：超限后当日拒绝调用，次日自动重置
       enabled: ${OJ_AI_QUOTA_ENABLED:true}
