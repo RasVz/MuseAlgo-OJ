@@ -26,6 +26,14 @@ const standaloneRoutes = [
     name: 'AdminCoursewareCreate',
     component: () => import('@/views/admin/CoursewareEditorView.vue'),
     meta: { title: '录入新课件', requiresAuth: true }
+  },
+  {
+    // 通用写作台（方案 B 块编辑器）：顶层路由，不继承站内布局，
+    // 与旧编辑器 /post/editor 并存，验收后再切换入口。
+    path: '/editor',
+    name: 'ContentEditor',
+    component: () => import('@/views/editor/ContentEditorView.vue'),
+    meta: { title: '写作台', requiresAuth: true }
   }
 ]
 
@@ -66,7 +74,7 @@ const trainingRoutes = [
 const communityRoutes = [
   { path: 'post', name: 'Post', component: () => import('@/views/post/PostView.vue'), meta: { title: '动态' } },
   { path: 'discussion', name: 'Discussion', component: () => import('@/views/post/DiscussionView.vue'), meta: { title: '讨论广场' } },
-  { path: 'discussion/create', name: 'DiscussionCreate', component: () => import('@/views/post/PostEditorView.vue'), meta: { title: '发起讨论', breadcrumb: [{ label: '讨论广场', path: '/discussion' }], requiresAuth: true } },
+  { path: 'discussion/create', name: 'DiscussionCreate', redirect: () => ({ path: '/editor', query: { channel: 'discussion' } }) },
   { path: 'post/:id', name: 'PostDetail', component: () => import('@/views/post/PostDetailView.vue'), meta: { title: '动态详情', breadcrumb: [{ label: '动态', path: '/post' }] } },
   { path: 'post/editor', name: 'PostCreate', component: () => import('@/views/post/PostEditorView.vue'), meta: { title: '写文章', breadcrumb: [{ label: '动态', path: '/post' }], requiresAuth: true } },
   { path: 'post/editor/:id', name: 'PostEdit', component: () => import('@/views/post/PostEditorView.vue'), meta: { title: '编辑文章', breadcrumb: [{ label: '动态', path: '/post' }], requiresAuth: true } },

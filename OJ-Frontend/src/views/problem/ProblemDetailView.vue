@@ -472,7 +472,10 @@ const addToProblemList = () => {
   if (!problem.value?.id) return ElMessage.error('题目信息未加载完成')
   addToListVisible.value = true
 }
-const writeSolution = () => router.push({ name: 'PostCreate', query: { problemId: route.params.id, type: '2' } })
+const writeSolution = () => {
+  const target = router.resolve({ path: '/editor', query: { channel: 'solution', problemId: route.params.id } })
+  window.open(target.href, '_blank')
+}
 const viewSolutions = () => router.push({ name: 'ProblemSolutions', params: { id: route.params.id } })
 const goPost = (id) => router.push({ name: 'PostDetail', params: { id } })
 const handleViewRecords = () => {

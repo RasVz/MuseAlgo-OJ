@@ -64,7 +64,7 @@ const categoryLabel = (value) => ({ question: '提问', experience: '经验分�
 const categoryType = (value) => ({ question: 'warning', experience: 'success', 'contest-discussion': 'danger' }[value] || 'info')
 const formatTime = (value) => value ? dayjs(value).format('MM-DD HH:mm') : ''
 const reloadFromFirstPage = () => loadPosts(1)
-const createDiscussion = () => router.push({ name: 'DiscussionCreate' })
+const createDiscussion = () => window.open(router.resolve({ path: '/editor', query: { channel: 'discussion' } }).href, '_blank')
 const goPost = (id) => router.push({ name: 'PostDetail', params: { id } })
 onMounted(() => loadPosts())
 </script>
