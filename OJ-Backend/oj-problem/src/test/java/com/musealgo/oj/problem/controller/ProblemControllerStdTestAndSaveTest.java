@@ -4,6 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import com.musealgo.oj.common.api.Result;
 import com.musealgo.oj.problem.application.CaseSetChangedException;
+import com.musealgo.oj.problem.application.ProblemFormatJobService;
 import com.musealgo.oj.problem.application.ProblemManagementApplicationService;
 import com.musealgo.oj.problem.application.ProblemSearchService;
 import com.musealgo.oj.problem.application.TestDataGenerationService;
@@ -41,7 +42,8 @@ class ProblemControllerStdTestAndSaveTest {
         appService = mock(ProblemManagementApplicationService.class);
         testDataGenerationService = mock(TestDataGenerationService.class);
         controller = new ProblemController(problemService, appService,
-                mock(FpsImportService.class), mock(ProblemSearchService.class), testDataGenerationService);
+                mock(FpsImportService.class), mock(ProblemSearchService.class), testDataGenerationService,
+                mock(ProblemFormatJobService.class));
     }
 
     @SuppressWarnings("unchecked")

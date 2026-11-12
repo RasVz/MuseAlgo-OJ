@@ -136,6 +136,18 @@ public class AiService implements AiAssistant {
         return result.success()?result.content():null;
     }
 
+    @Override
+    public String chatJsonForUser(Long user, String systemPrompt, String userPrompt) {
+        JSONArray messages = new JSONArray();
+        messages.add(systemMessage(systemPrompt));
+        messages.add(userMessage(userPrompt));
+        // 后台任务没有请求上下文，显式用调用方传入的用户记录用量
+        long start = System.currentTimeMillis();
+        var result = aiGateway.completeDetailed(messages, true);
+        recordIndirect(user, "INDIRECT_JSON", result, messages.toString(), start);
+        return result.success() ? result.content() : null;
+    }
+
     @Override public String chatForUser(Long user, String systemPrompt, String userPrompt) {
         JSONArray request=new JSONArray();request.add(systemMessage(systemPrompt));request.add(userMessage(userPrompt));
         long start=System.currentTimeMillis();var result=aiGateway.completeDetailed(request,false);

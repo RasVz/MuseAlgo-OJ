@@ -183,32 +183,71 @@ export function importFpsProblemSet(data) {
   })
 }
 
-// 批量格式化题目（AI 整理并直接保存，不预览；ipMode=true 时同一次调用完成 IP 改名）
-export function formatProblems(problemIds, ipMode = false) {
+// 创建批量题面优化任务（异步）：HTTP 只受理，进度与逐项结果靠轮询
+export function createFormatJob(problemIds, { ipMode = false, autoApply = true } = {}) {
   return request({
-    url: '/problem/format',
+    url: '/problem/format/jobs',
     method: 'post',
-    data: { problemIds, ipMode },
-    timeout: 1800000
+    data: { problemIds, ipMode, autoApply }
   })
 }
 
-// 单题格式化预览（AI 整理但未保存；ipMode=true 时同一次调用完成 IP 改名）
+export function getFormatJob(jobId, config = {}) {
+  return request({
+    url: `/problem/format/jobs/${jobId}`,
+    method: 'get',
+    ...config
+  })
+}
+
+// 当前登录人正在跑的任务：面板关闭后重新进入靠它接回进度
+export function getActiveFormatJob(config = {}) {
+  return request({
+    url: '/problem/format/jobs/active',
+    method: 'get',
+    ...config
+  })
+}
+
+// 读取任务内单题提案：不重新调用 AI，直接返回任务生成时保存的快照
+export function getFormatJobItem(jobId, problemId) {
+  return request({
+    url: `/problem/format/jobs/${jobId}/items/${problemId}`,
+    method: 'get'
+  })
+}
+
+export function cancelFormatJob(jobId) {
+  return request({
+    url: `/problem/format/jobs/${jobId}/cancel`,
+    method: 'post'
+  })
+}
+
+export function retryFormatJob(jobId) {
+  return request({
+    url: `/problem/format/jobs/${jobId}/retry`,
+    method: 'post'
+  })
+}
+
+// 单题优化预览（AI 整理但未保存；ipMode=true 时同一次调用完成 IP 改名）
+// 服务端单次调用最长 150s，这里留出余量但不设 30 分钟那种无意义的等待
 export function previewFormatProblem(problemId, ipMode = false) {
   return request({
     url: '/problem/format/preview',
     method: 'post',
     data: { problemIds: [problemId], ipMode },
-    timeout: 1800000
+    timeout: 300000
   })
 }
 
-// 应用单题格式化预览结果
-export function applyFormatProblem(problemId, formatted) {
+// 应用整理结果：支持字段白名单与原文哈希校验
+export function applyFormatProblem(problemId, { baseHash, fields, formatted }) {
   return request({
     url: '/problem/format/apply',
     method: 'post',
-    data: { problemId, formatted }
+    data: { problemId, baseHash, fields, formatted }
   })
 }
 

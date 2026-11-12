@@ -51,11 +51,19 @@ public class ProblemSampleApplicationService {
         if (!rows.isEmpty()) problemSampleService.saveBatch(rows);
     }
 
-    /** 格式化结果落库用：把 AI 返回的 FormatSample 列表整体替换为公开样例。 */
+    /**
+     * 格式化结果落库用：把 AI 返回的 FormatSample 列表整体替换为公开样例。
+     * <p>
+     * 必须先删旧行再插入：早期实现只在「结果为空」时删除、非空时直接追加，
+     * 同一道题重复整理会累积重复样例（problem_sample 没有唯一约束兜底）。
+     * 「空结果不清空已有样例」的保护放在调用方（apply 路径），不放在这里，
+     * 以免这个方法同时承担「替换」和「保留」两种相反语义。
+     * </p>
+     */
     public void replaceFormatSamples(Long problemId, List<FormatSample> samples) {
+        problemSampleService.remove(new LambdaQueryWrapper<ProblemSample>()
+                .eq(ProblemSample::getProblemId, problemId));
         if (samples == null || samples.isEmpty()) {
-            problemSampleService.remove(new LambdaQueryWrapper<ProblemSample>()
-                    .eq(ProblemSample::getProblemId, problemId));
             return;
         }
         if (samples.size() > 50) throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "样例数量超过 50 组，请人工整理");

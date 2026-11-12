@@ -17,14 +17,12 @@
     <el-tabs v-model="activeTab" class="editor-tabs">
       <el-tab-pane label="基本信息" name="basic">
         <div class="basic-toolbar">
-          <el-button :icon="MagicStick" :disabled="!form.id" :loading="formatting" @click="handleFormatOneFromEdit">
-            AI 格式化
+          <el-button :icon="MagicStick" :disabled="!form.id" @click="openFormatWorkbench">
+            AI 优化题面
           </el-button>
-          <div class="ip-toggle">
-            <el-switch v-model="ipRenameEnabled" size="small" />
-            <span class="ip-toggle-label">IP 改名</span>
-          </div>
-          <span class="basic-toolbar-hint">AI 整理题面结构、抽取时限/输入输出格式/样例并翻译；勾选 IP 改名后与格式化一次调用完成，预览确认后才保存</span>
+          <span class="basic-toolbar-hint">
+            打开优化工作台：左右对照原文与整理结果、逐字段勾选采纳、可先修改再保存；未应用的改动不会写库
+          </span>
         </div>
         <el-card class="panel-card" shadow="never">
           <ProblemBasicForm ref="basicFormRef" :form="form" :rules="rules" @update:form="Object.assign(form, $event)" />
@@ -40,11 +38,10 @@
       </el-tab-pane>
     </el-tabs>
 
-    <FormatPreviewDialog
-      v-model="formatPreviewVisible"
-      :preview="formatPreview"
-      :applying="applyingFormat"
-      @apply="handleApplyFormatWithGuard"
+    <ProblemFormatWorkbench
+      v-model="formatWorkbenchVisible"
+      :problem-id="form.id"
+      @applied="refreshAfterFormat"
     />
   </div>
 </template>
@@ -68,8 +65,7 @@ import {
 import ProblemBasicForm from './components/ProblemBasicForm.vue'
 import ProblemCaseManager from './components/ProblemCaseManager.vue'
 import StdManagerPanel from './components/StdManagerPanel.vue'
-import FormatPreviewDialog from './components/FormatPreviewDialog.vue'
-import { useProblemFormat } from './composables/useProblemFormat'
+import ProblemFormatWorkbench from './problemFormat/ProblemFormatWorkbench.vue'
 import {
   changedFormattedFields,
   describeFieldChanges,
@@ -97,52 +93,45 @@ const stdPanelRef = ref(null)
 // 用于在应用格式化前判断用户是否还有未保存修改会被覆盖。
 const formatBaseline = ref(null)
 
-// ---- AI 格式化（单题，基本信息 tab 内；IP 改名在调用前选择，与格式化一次调用完成） ----
-const ipRenameEnabled = ref(false)
-// 格式化落库后只刷新「格式化负责的字段」，不再整体重载表单，
-// 否则用户在难度/来源/标签等字段上的未保存修改会被一起冲掉。
-const { formatting, formatPreviewVisible, formatPreview, applyingFormat, handleFormatOne, handleApplyFormat } =
-  useProblemFormat({ selectedProblems: ref([]), onChanged: refreshAfterFormat })
+// ---- AI 题面优化（单题工作台；IP 改名在工作台内即时切换） ----
+const formatWorkbenchVisible = ref(false)
 
-const handleFormatOneFromEdit = () => {
+// 打开工作台前先提醒：优化结果会直接写服务端，本地这些字段的未保存修改会被覆盖。
+// 不阻止打开——用户可能只想看差异——但必须在动手前说清楚。
+const openFormatWorkbench = async () => {
   if (!form.id) return
-  handleFormatOne({ id: form.id }, ipRenameEnabled.value)
+  const dirtyFields = changedFormattedFields(form, formatBaseline.value)
+  if (dirtyFields.length) {
+    try {
+      await ElMessageBox.confirm(
+        `以下字段有尚未保存的修改：${describeFieldChanges(dirtyFields)}。` +
+        '优化结果保存后会以服务端内容为准，这些修改将丢失，是否继续？',
+        '优化将覆盖未保存的修改',
+        { type: 'warning', confirmButtonText: '继续打开', cancelButtonText: '取消' }
+      )
+    } catch {
+      return
+    }
+  }
+  formatWorkbenchVisible.value = true
 }
 
-// 格式化结果落库后再回读服务端内容：服务端会做 HTML 消毒与字段裁剪，
+// 优化结果落库后再回读服务端内容：服务端会做 HTML 消毒与字段裁剪，
 // 直接拿预览对象回填会和数据库真实值不一致。
 async function refreshAfterFormat() {
   if (!form.id) return
   try {
     const res = await getProblemDetail(form.id)
     if (res.code !== 200 || !res.data) {
-      ElMessage.warning('格式化已保存，但刷新题目内容失败，请手动刷新页面确认')
+      ElMessage.warning('优化已保存，但刷新题目内容失败，请手动刷新页面确认')
       return
     }
     formatBaseline.value = mergeFormattedFields(form, res.data)
     stdPanelRef.value?.reloadProblem?.()
   } catch (e) {
     console.error(e)
-    ElMessage.warning('格式化已保存，但刷新题目内容失败，请手动刷新页面确认')
+    ElMessage.warning('优化已保存，但刷新题目内容失败，请手动刷新页面确认')
   }
-}
-
-// 应用格式化前先确认：格式化的字段上若有未保存修改，会被服务端结果覆盖。
-const handleApplyFormatWithGuard = async () => {
-  const dirtyFields = changedFormattedFields(form, formatBaseline.value)
-  if (dirtyFields.length) {
-    try {
-      await ElMessageBox.confirm(
-        `AI 格式化会覆盖以下字段中尚未保存的修改：${describeFieldChanges(dirtyFields)}。` +
-        '保存格式化结果后这些修改将丢失，是否继续？',
-        '格式化将覆盖未保存的修改',
-        { type: 'warning', confirmButtonText: '继续应用', cancelButtonText: '取消' }
-      )
-    } catch {
-      return // 用户取消
-    }
-  }
-  await handleApplyFormat()
 }
 
 // 用例增删改后，标准答案的「已测试」状态可能已失效：只刷新状态，不动编辑器内容。
@@ -219,7 +208,7 @@ const resetForm = () => {
   activeTab.value = 'basic'
 }
 
-// 函数声明（提升）：供上方 useProblemFormat 的 onChanged 引用，避免 TDZ 报错
+// 函数声明（提升）：onMounted 与优化完成回调都在下方引用，保持声明式写法避免 TDZ
 // 详情回填时把 isPublic 归一到 0/1：后端布尔与数字混用，
 // 归一后 el-switch 才能正确显示选中态，提交时也不用再特判。
 async function init() {
@@ -422,16 +411,5 @@ onMounted(() => init())
 .basic-toolbar-hint {
   font-size: 12px;
   color: var(--text-secondary);
-}
-
-.ip-toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.ip-toggle-label {
-  font-size: 13px;
-  color: var(--text-primary);
 }
 </style>
