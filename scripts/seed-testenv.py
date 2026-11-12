@@ -33,6 +33,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import random
 import subprocess
@@ -530,6 +531,7 @@ def build_submissions(plans, case_map, start_id=SUBMISSION_ID_BASE,
             dt(plan["create_time"]),
             q("FAILED" if status == 3 else "FINISHED"),
             "NULL" if plan["contest_id"] is None else str(plan["contest_id"]),
+            "NULL" if plan.get("vp_attempt_id") is None else str(plan["vp_attempt_id"]),
             q(error_message),
         ])
         code_rows.append([str(sub_id), q(code)])
@@ -564,11 +566,11 @@ def build_submissions(plans, case_map, start_id=SUBMISSION_ID_BASE,
         "submission",
         ["id", "problem_id", "user_id", "language", "score", "status",
          "run_time", "run_memory", "create_time", "judge_phase", "contest_id",
-         "error_message"],
+         "vp_attempt_id", "error_message"],
         sub_rows,
         update_columns=["problem_id", "user_id", "language", "score", "status",
                         "run_time", "run_memory", "create_time", "judge_phase",
-                        "contest_id", "error_message"],
+                        "contest_id", "vp_attempt_id", "error_message"],
     )
     lines.append("")
     lines += insert_block(
@@ -605,63 +607,120 @@ def at_hour(base: datetime, hour: int, minute: int = 0) -> datetime:
     return base.replace(hour=hour, minute=minute, second=0, microsecond=0)
 
 
+def student_rating(uid: int) -> int:
+    """与 build_students 中的 rating 公式保持一致。"""
+    return 1050 + ((uid - STUDENT_ID_BASE) * 37) % 700
+
+
+CONTEST_LEVELS = [
+    # id, code, name, min, max, enabled, sort_order, description
+    (1001, "BASIC", "基础赛", 0, 1300, 1, 1, "面向 Rating 1300 以下的入门正式赛"),
+    (1002, "INTERMEDIATE", "进阶赛", 1300, 1500, 1, 2, "面向 1300-1499 的常规正式赛"),
+    (1003, "ADVANCED", "高级赛", 1500, 1800, 1, 3, "面向 1500-1799 的进阶正式赛"),
+    (1004, "ELITE", "精英赛", 1800, None, 1, 4, "面向 1800 及以上选手，不设上限"),
+    (1005, "INVITATIONAL", "邀请赛", 1900, None, 0, 5, "按名单邀请，暂未启用"),
+]
+
+
+def build_contest_levels():
+    rows = [
+        [str(lid), q(code), q(name),
+         "NULL" if lo is None else str(lo),
+         "NULL" if hi is None else str(hi),
+         str(en), str(sort), q(desc), dt(NOW - timedelta(days=120))]
+        for lid, code, name, lo, hi, en, sort, desc in CONTEST_LEVELS
+    ]
+    lines = ["-- 7) 比赛等级配置：4 个启用等级 + 1 个停用示例"]
+    lines += insert_block(
+        "contest_level",
+        ["id", "code", "name", "min_rating", "max_rating", "enabled",
+         "sort_order", "description", "create_time"],
+        rows,
+        update_columns=["code", "name", "min_rating", "max_rating", "enabled",
+                        "sort_order", "description"],
+    )
+    lines.append("")
+    return lines
+
+
+def participants_in_band(lo, hi, count):
+    """按 Rating 区间挑选参赛者，保证报名记录与等级限制自洽。"""
+    candidates = [STUDENT_ID_BASE + i for i in range(len(STUDENT_NAMES))]
+    picked = [
+        uid for uid in candidates
+        if (lo is None or student_rating(uid) >= lo)
+        and (hi is None or student_rating(uid) < hi)
+    ]
+    return picked[:count]
+
+
 def build_contests(pool):
-    """4 场比赛：报名审核中 / 进行中 / 已结束 OI / 班级赛。"""
+    """4 场比赛：报名审核中 / 进行中 / 已结束 OI / 班级赛，各自绑定比赛等级。"""
     core = [p for p in pool if p <= 15 or 4000 <= p <= 4008]
     if len(core) < 12:
         core = pool[:24]
 
+    basic = participants_in_band(0, 1300, 12)
+    intermediate = participants_in_band(1300, 1500, 12)
+    advanced = participants_in_band(1500, 1800, 14)
+    class_one = [STUDENT_ID_BASE + i for i in range(0, 20)]
+
     contests = [
         {
             "id": CONTEST_ID_BASE,
-            "title": "2026 秋季算法热身赛（报名审核中）",
-            "description": "面向基础班与进阶班的秋季热身赛，报名需教师审核。赛制 ACM，共 4 题。",
+            "title": "2026 秋季基础赛 第 1 场（报名审核中）",
+            "description": "面向 Rating 1300 以下选手的入门正式赛，报名需教师审核。ACM 赛制，共 4 题。",
             "start": at_hour(NOW + timedelta(days=3), 14),
             "duration": 120,
             "type": "Public", "mode": "ACM", "category": "FORMAL",
             "registration_review": 1, "class_id": None,
+            "level": ("BASIC", 0, 1300),
             "problems": core[:4],
-            "participants": list(range(1001, 1013)),
-            "statuses": ["PENDING"] * 8 + ["APPROVED"] * 3 + ["REJECTED"],
+            "participants": basic,
+            "statuses": (["PENDING"] * 6 + ["APPROVED"] * 4
+                         + ["REJECTED"] * max(0, len(basic) - 10)),
             "finalized": False,
         },
         {
             "id": CONTEST_ID_BASE + 1,
-            "title": "2026 秋季联赛 第 3 场（进行中）",
+            "title": "2026 秋季进阶赛 第 3 场（进行中）",
             "description": "每周联赛第 3 场，ACM 赛制，赛后按 Rating 结算。",
             "start": NOW - timedelta(hours=1),
             "duration": 240,
             "type": "Public", "mode": "ACM", "category": "FORMAL",
             "registration_review": 0, "class_id": None,
+            "level": ("INTERMEDIATE", 1300, 1500),
             "problems": core[4:9],
-            "participants": list(range(1013, 1028)),
-            "statuses": ["AUTO_APPROVED"] * 15,
+            "participants": intermediate,
+            "statuses": ["AUTO_APPROVED"] * len(intermediate),
             "finalized": False,
         },
         {
             "id": CONTEST_ID_BASE + 2,
-            "title": "2026 信奥校选模拟赛（OI 赛制，已结束）",
+            "title": "2026 高级赛 校选模拟（OI 赛制，已结束）",
             "description": "OI 赛制模拟赛，按最后一次提交计分，赛后已结算 Rating。",
             "start": at_hour(NOW - timedelta(days=16), 19),
             "duration": 180,
             "type": "Public", "mode": "OI", "category": "FORMAL",
             "registration_review": 0, "class_id": None,
+            "level": ("ADVANCED", 1500, 1800),
             "problems": core[9:14],
-            "participants": list(range(1028, 1042)),
-            "statuses": ["AUTO_APPROVED"] * 14,
+            "participants": advanced,
+            "statuses": ["AUTO_APPROVED"] * len(advanced),
             "finalized": True,
         },
         {
             "id": CONTEST_ID_BASE + 3,
             "title": "算法基础班 第 6 周班内赛（已结束）",
-            "description": "班级内部练习赛，仅本班学生可参加。",
+            "description": "班级内部练习赛，仅本班学生可参加；班级赛不设 Rating 限制。",
             "start": at_hour(NOW - timedelta(days=9), 15),
             "duration": 120,
             "type": "Class", "mode": "ACM", "category": "FORMAL",
             "registration_review": 0, "class_id": 1,
+            "level": None,
             "problems": core[14:18],
-            "participants": list(range(1001, 1021)),
-            "statuses": ["AUTO_APPROVED"] * 20,
+            "participants": class_one,
+            "statuses": ["AUTO_APPROVED"] * len(class_one),
             "finalized": True,
         },
     ]
@@ -672,11 +731,15 @@ def build_contests(pool):
 
     for c in contests:
         end = c["start"] + timedelta(minutes=c["duration"])
+        level = c["level"]
         contest_rows.append([
             str(c["id"]), q(c["title"]), q(c["description"]),
             dt(c["start"]), dt(end), str(c["duration"]),
-            q(c["type"]), q(c["mode"]), q(c["category"]), q("OPEN"),
-            str(c["registration_review"]), "NULL", "NULL",
+            q(c["type"]), q(c["mode"]), q(c["category"]),
+            q(level[0]) if level else "NULL",
+            str(c["registration_review"]),
+            "NULL" if not level or level[1] is None else str(level[1]),
+            "NULL" if not level or level[2] is None else str(level[2]),
             "2", q("张老师"), str(len(c["participants"])),
             dt(NOW - timedelta(days=20)),
             "NULL" if c["class_id"] is None else str(c["class_id"]),
@@ -687,10 +750,10 @@ def build_contests(pool):
                 str(c["id"] * 100 + order), str(c["id"]), str(problem_id),
                 str(order), "100",
             ])
-        for user_id, status in zip(c["participants"], c["statuses"]):
+        for offset, (user_id, status) in enumerate(zip(c["participants"], c["statuses"])):
             user_rows.append([
-                str(c["id"] * 1000 + (user_id - 1000)), str(c["id"]), str(user_id),
-                q(status), str(1200 + (user_id * 13) % 500),
+                str(c["id"] * 1000 + offset), str(c["id"]), str(user_id),
+                q(status), str(student_rating(user_id)),
                 "1" if status in ("AUTO_APPROVED", "APPROVED") else "0",
                 "NULL", "NULL",
                 q("报名信息不完整") if status == "REJECTED" else "NULL",
@@ -710,7 +773,7 @@ def build_contests(pool):
             scored.append((user_id, solved, penalty))
         scored.sort(key=lambda x: (-x[1], x[2]))
         for rank, (user_id, solved, penalty) in enumerate(scored, start=1):
-            before = 1200 + (user_id * 13) % 500
+            before = student_rating(user_id)
             delta = max(-30, 60 - rank * 5)
             after = before + delta
             rank_rows.append([
@@ -727,7 +790,15 @@ def build_contests(pool):
             rank_id += 1
             rating_id += 1
 
-    lines = ["-- 7) 四场比赛：报名审核中 / 进行中 / 已结束 OI / 班级赛"]
+    lines = [
+        "-- 8) 四场比赛：报名审核中 / 进行中 / 已结束 OI / 班级赛",
+        "--    参赛者按等级区间重算，先清掉本脚本旧行，避免 (contest_id,user_id) 唯一键冲突",
+        "DELETE FROM `contest_user` WHERE contest_id BETWEEN 1001 AND 1099;",
+        "DELETE FROM `contest_rank` WHERE contest_id BETWEEN 1001 AND 1099;",
+        "DELETE FROM `problem_contest` WHERE contest_id BETWEEN 1001 AND 1099;",
+        "DELETE FROM `user_rating` WHERE contest_id BETWEEN 1001 AND 1099;",
+        "",
+    ]
     lines += insert_block(
         "contest",
         ["id", "title", "description", "start_time", "end_time", "duration",
@@ -737,9 +808,9 @@ def build_contests(pool):
          "rank_finalized_at"],
         contest_rows,
         update_columns=["title", "description", "start_time", "end_time", "duration",
-                        "type", "mode", "category", "registration_review",
-                        "participant_count", "class_id", "visible",
-                        "rank_finalized_at"],
+                        "type", "mode", "category", "level_code", "registration_review",
+                        "rating_min", "rating_max", "participant_count", "class_id",
+                        "visible", "rank_finalized_at"],
     )
     lines.append("")
     lines += insert_block(
@@ -776,7 +847,6 @@ def build_contests(pool):
     lines.append("")
     return lines, contests
 
-
 def build_contest_submissions(contests):
     """给每场比赛补赛内提交，让赛内提交表与实时排行有内容。"""
     plans = []
@@ -802,70 +872,408 @@ def build_contest_submissions(contests):
     return plans
 
 
-def build_exam():
-    """试卷挂编程题，并补三条不同状态的作答记录。"""
-    paper_id = 2
-    problems = [(1, 1, 30), (4, 2, 30), (8, 3, 30)]
-    lines = ["-- 8) 训练试卷：给 GESP 二级试卷挂 3 道编程题（客观题 10 分 + 编程 90 分）"]
-    rows = [
-        [str(1001 + i), str(paper_id), str(pid), str(order), str(score)]
-        for i, (pid, order, score) in enumerate(problems)
+EXAM_PAPERS = [
+    {
+        "id": 1001,
+        "title": "GESP C++ 2级 2025-09 真题",
+        "category": "GESP",
+        "level": "2级",
+        "duration": 90,
+        "published": 1,
+        "description": "覆盖变量、运算符、分支循环、数组与函数基础，适合 2 级备考自测。",
+        "problems": [],
+        "questions": [
+            ("SINGLE", "下列变量声明中，合法的是？",
+             [("A", "int 2a;"), ("B", "int a-1;"), ("C", "int _count;"), ("D", "int for;")],
+             "C", "变量名只能由字母、数字、下划线组成，且不能以数字开头，也不能是关键字。", 5),
+            ("SINGLE", "表达式 17 / 5 的值是？",
+             [("A", "3"), ("B", "3.4"), ("C", "4"), ("D", "2")],
+             "A", "两个 int 相除执行整数除法，结果向下取整为 3。", 5),
+            ("SINGLE", "表达式 17 % 5 的值是？",
+             [("A", "2"), ("B", "3"), ("C", "3.4"), ("D", "0")],
+             "A", "17 = 5 * 3 + 2，取余结果为 2。", 5),
+            ("SINGLE", "在 C++ 中，用来向屏幕输出内容的是？",
+             [("A", "cin"), ("B", "cout"), ("C", "scanf"), ("D", "fopen")],
+             "B", "cout 配合 << 用于标准输出，cin 配合 >> 用于输入。", 5),
+            ("SINGLE", "字符 'A' 的 ASCII 码值是？",
+             [("A", "61"), ("B", "65"), ("C", "97"), ("D", "41")],
+             "B", "'A' 为 65，'a' 为 97，两者相差 32。", 5),
+            ("SINGLE", "下列运算符中表示逻辑与的是？",
+             [("A", "&"), ("B", "&&"), ("C", "|"), ("D", "||")],
+             "B", "&& 是逻辑与，|| 是逻辑或；& 与 | 是按位运算符。", 5),
+            ("SINGLE", "执行 int a = 3; a += 2; 之后，a 的值是？",
+             [("A", "2"), ("B", "3"), ("C", "5"), ("D", "6")],
+             "C", "a += 2 等价于 a = a + 2，结果为 5。", 5),
+            ("SINGLE", "声明 int a[10]; 之后，合法下标的最大值是？",
+             [("A", "9"), ("B", "10"), ("C", "11"), ("D", "0")],
+             "A", "数组下标从 0 开始，长度为 10 时合法范围是 0 到 9。", 5),
+            ("SINGLE", "for (int i = 0; i < 5; i++) 的循环体执行次数是？",
+             [("A", "4"), ("B", "5"), ("C", "6"), ("D", "0")],
+             "B", "i 取 0、1、2、3、4，共 5 次。", 5),
+            ("SINGLE", "下列哪个头文件提供 cin 与 cout？",
+             [("A", "<cmath>"), ("B", "<cstdio>"), ("C", "<iostream>"), ("D", "<cstring>")],
+             "C", "<iostream> 是 C++ 标准输入输出流头文件。", 5),
+            ("SINGLE", "while (0) { ... } 的循环体执行次数是？",
+             [("A", "0"), ("B", "1"), ("C", "死循环"), ("D", "不确定")],
+             "A", "条件为 0 即为假，循环体一次都不会执行。", 5),
+            ("SINGLE", "下列哪个是 C++ 的布尔字面量？",
+             [("A", "True"), ("B", "TRUE"), ("C", "true"), ("D", "yes")],
+             "C", "C++ 的布尔字面量是小写的 true 与 false。", 5),
+            ("JUDGE", "C++ 中数组下标从 0 开始。", None,
+             "T", "例如 int a[3] 的元素是 a[0]、a[1]、a[2]。", 5),
+            ("JUDGE", "int 类型可以直接存储小数部分。", None,
+             "F", "int 只能存储整数，小数会被截断；存小数应使用 double 或 float。", 5),
+            ("JUDGE", "= 是赋值运算符，== 是相等比较运算符。", None,
+             "T", "if (a = 1) 是赋值，if (a == 1) 才是比较，这是常见笔误。", 5),
+            ("JUDGE", "continue 语句会结束整个循环。", None,
+             "F", "continue 只跳过本次迭代剩余部分，break 才结束整个循环。", 5),
+            ("JUDGE", "函数可以先声明再定义。", None,
+             "T", "先写函数原型即可在定义之前调用。", 5),
+            ("JUDGE", "字符串 \"123\" 和整数 123 在 C++ 中是同一种类型。", None,
+             "F", "前者是字符串字面量，后者是整型常量，类型不同。", 5),
+            ("JUDGE", "break 只能用于循环或 switch 语句中。", None,
+             "T", "在循环与 switch 之外使用 break 会编译错误。", 5),
+            ("JUDGE", "未初始化的局部变量一定等于 0。", None,
+             "F", "局部变量未初始化时值是不确定的；全局变量才会默认初始化为 0。", 5),
+        ],
+    },
+    {
+        "id": 1002,
+        "title": "CSP-J 2025 初赛模拟卷",
+        "category": "CSP_J",
+        "level": "初赛",
+        "duration": 120,
+        "published": 1,
+        "description": "按 CSP-J 初赛题型组织：单项选择、多项选择与判断，覆盖复杂度、数据结构与图论基础。",
+        "problems": [],
+        "questions": [
+            ("SINGLE", "二分查找在有序序列上的平均时间复杂度是？",
+             [("A", "O(n)"), ("B", "O(log n)"), ("C", "O(n log n)"), ("D", "O(1)")],
+             "B", "每次将候选区间折半，比较次数为 log2(n) 量级。", 5),
+            ("SINGLE", "栈的基本特点是？",
+             [("A", "先进先出"), ("B", "后进先出"), ("C", "随机存取"), ("D", "双端插入")],
+             "B", "栈只在栈顶插入和删除，因此后进先出。", 5),
+            ("SINGLE", "队列的基本特点是？",
+             [("A", "先进先出"), ("B", "后进先出"), ("C", "只能从尾部删除"), ("D", "随机存取")],
+             "A", "队列在队尾入队、队头出队，先进先出。", 5),
+            ("SINGLE", "Dijkstra 算法不能正确处理下列哪种情况？",
+             [("A", "有向图"), ("B", "无向图"), ("C", "存在负权边"), ("D", "稠密图")],
+             "C", "Dijkstra 依赖已确定点的距离不会再变小，负权边会破坏这一前提。", 5),
+            ("SINGLE", "快速排序的最坏时间复杂度是？",
+             [("A", "O(n)"), ("B", "O(n log n)"), ("C", "O(n^2)"), ("D", "O(log n)")],
+             "C", "每次划分极不均衡时退化为 O(n^2)。", 5),
+            ("SINGLE", "1 KiB 等于多少字节？",
+             [("A", "1000"), ("B", "1024"), ("C", "512"), ("D", "2048")],
+             "B", "1 KiB = 2^10 = 1024 字节。", 5),
+            ("SINGLE", "十进制 13 对应的二进制是？",
+             [("A", "1011"), ("B", "1100"), ("C", "1101"), ("D", "1110")],
+             "C", "13 = 8 + 4 + 1 = 1101(2)。", 5),
+            ("SINGLE", "对 n 个元素做冒泡排序，最坏情况下的比较次数是？",
+             [("A", "n"), ("B", "n-1"), ("C", "n(n-1)/2"), ("D", "n^2/2 + n")],
+             "C", "最坏需要 n-1 轮，第 i 轮比较 n-i 次，合计 n(n-1)/2。", 5),
+            ("SINGLE", "n 个顶点的无向图用邻接矩阵存储，空间复杂度是？",
+             [("A", "O(n)"), ("B", "O(n^2)"), ("C", "O(m)"), ("D", "O(n log n)")],
+             "B", "邻接矩阵是 n×n 的二维表。", 5),
+            ("SINGLE", "中缀表达式转后缀表达式通常借助哪种结构？",
+             [("A", "队列"), ("B", "栈"), ("C", "堆"), ("D", "树")],
+             "B", "用栈暂存运算符并按优先级弹出。", 5),
+            ("SINGLE", "0/1 背包问题的经典解法是？",
+             [("A", "贪心"), ("B", "二分"), ("C", "动态规划"), ("D", "最短路")],
+             "C", "按容量维度做 0/1 背包 DP，贪心无法保证最优。", 5),
+            ("SINGLE", "并查集最擅长的操作是？",
+             [("A", "区间求和"), ("B", "合并集合与查询连通性"), ("C", "单点修改"), ("D", "字符串匹配")],
+             "B", "并查集支持近乎常数时间的合并与查询代表元。", 5),
+            ("SINGLE", "二叉树的先序遍历顺序是？",
+             [("A", "左根右"), ("B", "根左右"), ("C", "左右根"), ("D", "根右左")],
+             "B", "先序为根、左子树、右子树。", 5),
+            ("SINGLE", "下列排序算法中，平均与最坏时间复杂度均为 O(n log n) 的是？",
+             [("A", "快速排序"), ("B", "冒泡排序"), ("C", "归并排序"), ("D", "插入排序")],
+             "C", "归并排序的划分始终对半，最坏也是 O(n log n)。", 5),
+            ("MULTIPLE", "下列属于稳定排序的有？",
+             [("A", "冒泡排序"), ("B", "归并排序"), ("C", "插入排序"), ("D", "堆排序")],
+             "ABC", "堆排序在交换时可能打乱相等元素的相对次序，不稳定。", 5),
+            ("MULTIPLE", "下列属于线性数据结构的有？",
+             [("A", "数组"), ("B", "栈"), ("C", "队列"), ("D", "二叉树")],
+             "ABC", "二叉树是非线性的层次结构。", 5),
+            ("MULTIPLE", "关于无向图，下列说法正确的有？",
+             [("A", "邻接矩阵是对称的"), ("B", "所有顶点度数之和等于边数的两倍"),
+              ("C", "一定是连通的"), ("D", "可以用邻接表存储")],
+             "ABD", "无向图不要求连通，孤立顶点也是合法的无向图。", 5),
+            ("JUDGE", "堆排序是稳定排序。", None,
+             "F", "堆排序在建堆与调整过程中会打乱相等元素的顺序。", 5),
+            ("JUDGE", "递归函数必须有终止条件，否则可能栈溢出。", None,
+             "T", "缺少终止条件会不断压栈，最终栈空间耗尽。", 5),
+            ("JUDGE", "在无权图上，BFS 可以求出单源最短路。", None,
+             "T", "BFS 按层扩展，首次到达某点的层数即为最短边数。", 5),
+        ],
+    },
+    {
+        "id": 1003,
+        "title": "CSP-J 2025 复赛模拟（编程）",
+        "category": "CSP_J",
+        "level": "复赛",
+        "duration": 180,
+        "published": 1,
+        "description": "复赛形式：纯编程两题，各 100 分，按提交会话内的最好成绩计分。",
+        "problems": [4000, 4002],
+        "questions": [],
+    },
+    {
+        "id": 1004,
+        "title": "NOIP 2025 提高组模拟（草稿）",
+        "category": "NOIP",
+        "level": "提高组",
+        "duration": 240,
+        "published": 0,
+        "description": "尚未发布的提高组模拟赛，用于验证草稿状态不进入学生端列表。",
+        "problems": [4003, 4006, 4008],
+        "questions": [],
+    },
+    {
+        "id": 1006,
+        "title": "CSP-S 2025 复赛模拟（编程）",
+        "category": "CSP_S",
+        "level": "复赛",
+        "duration": 240,
+        "published": 1,
+        "description": "提高组复赛形式：三道编程题各 100 分，覆盖背包、进制与连通块。",
+        "problems": [4003, 4005, 4007],
+        "questions": [],
+    },
+    {
+        "id": 1005,
+        "title": "期中综合模拟（单选 + 编程）",
+        "category": "MOCK",
+        "level": "期中",
+        "duration": 120,
+        "published": 1,
+        "description": "客观题与编程题混合卷，验证两类题型同时计分。",
+        "problems": [4004],
+        "questions": [
+            ("SINGLE", "下列哪个数不是素数？",
+             [("A", "2"), ("B", "17"), ("C", "91"), ("D", "97")],
+             "C", "91 = 7 × 13，是合数。", 5),
+            ("SINGLE", "gcd(48, 18) 的值是？",
+             [("A", "3"), ("B", "6"), ("C", "9"), ("D", "12")],
+             "B", "48 与 18 的最大公约数为 6。", 5),
+            ("SINGLE", "斐波那契数列 F(1)=F(2)=1，则 F(10) 的值是？",
+             [("A", "34"), ("B", "55"), ("C", "89"), ("D", "144")],
+             "B", "数列为 1,1,2,3,5,8,13,21,34,55。", 5),
+            ("SINGLE", "2 的 10 次方等于？",
+             [("A", "512"), ("B", "1024"), ("C", "2048"), ("D", "100")],
+             "B", "2^10 = 1024。", 5),
+            ("SINGLE", "5 个结点的完全二叉树，叶子结点个数是？",
+             [("A", "2"), ("B", "3"), ("C", "4"), ("D", "5")],
+             "B", "结点 1 的子结点为 2、3，结点 2 的子结点为 4、5，叶子是 3、4、5。", 5),
+            ("SINGLE", "在无负权边的图上求单源最短路，适合使用？",
+             [("A", "Kruskal 算法"), ("B", "Dijkstra 算法"), ("C", "拓扑排序"), ("D", "并查集")],
+             "B", "Kruskal 求最小生成树，拓扑排序处理依赖，均不用于最短路。", 5),
+            ("JUDGE", "栈可以用数组实现。", None,
+             "T", "用数组加一个栈顶指针即可实现顺序栈。", 5),
+            ("JUDGE", "队列遵循先进先出原则。", None,
+             "T", "这正是队列与栈的核心区别。", 5),
+            ("JUDGE", "动态规划一定比递归快。", None,
+             "F", "DP 通过消除重复子问题提速，但简单问题用递归可能更快。", 5),
+            ("JUDGE", "图的 BFS 可以用来求无权图的最短路。", None,
+             "T", "无权图中每条边权为 1，BFS 首次到达即为最短。", 5),
+        ],
+    },
+]
+
+# 作答会话：(attempt_id, paper_id, user_id, status, 距今天数, 开始小时, 已答数, 正确数)
+EXAM_ATTEMPTS = [
+    (1001, 1001, 1001, "SUBMITTED", 10, 19, 20, 16),
+    (1002, 1001, 1004, "SUBMITTED", 8, 20, 20, 18),
+    (1003, 1001, 1007, "TIMEOUT", 6, 21, 14, 12),
+    (1004, 1001, 1012, "RUNNING", 0, 23, 5, 3),
+    (1005, 1002, 1002, "SUBMITTED", 5, 19, 20, 15),
+    (1006, 1002, 1009, "SUBMITTED", 3, 20, 18, 11),
+    (1007, 1003, 1003, "SUBMITTED", 12, 19, 0, 0),
+    (1008, 1003, 1008, "SUBMITTED", 11, 14, 0, 0),
+    (1009, 1005, 1005, "SUBMITTED", 4, 19, 10, 7),
+    (1010, 1001, 1015, "SUBMITTED", 2, 19, 20, 9),
+]
+
+# 编程题的作答计划：attempt_id -> [(problem_id, submission_status)]
+EXAM_CODING_PLANS = {
+    1007: [(4000, 1), (4002, 2)],
+    1008: [(4000, 1), (4002, 1)],
+    1009: [(4004, 1)],
+}
+
+
+def wrong_answer(question_type: str, answer: str) -> str:
+    """构造一个确定错误的作答，用于生成客观题作答记录。"""
+    if question_type == "JUDGE":
+        return "F" if answer == "T" else "T"
+    keys = list(answer)
+    if question_type == "MULTIPLE":
+        return "".join(keys[:-1]) if len(keys) > 1 else "AB"
+    for key in "ABCD":
+        if key not in keys:
+            return key
+    return "A"
+
+
+def build_exam_papers():
+    """5 套训练试卷：客观题卷、纯编程卷与混合卷各有覆盖。"""
+    paper_rows, question_rows, problem_rows = [], [], []
+    question_id, pp_id = 1001, 1001
+
+    for paper in EXAM_PAPERS:
+        objective_total = sum(q[5] for q in paper["questions"])
+        coding_total = 100 * len(paper["problems"])
+        paper_rows.append([
+            str(paper["id"]), q(paper["title"]), q(paper["description"]),
+            q(paper["category"]), q(paper["level"]), str(paper["duration"]),
+            str(objective_total + coding_total),
+            str(len(paper["questions"]) + len(paper["problems"])),
+            str(paper["published"]), "2",
+            dt(NOW - timedelta(days=40)),
+        ])
+        for order, (qtype, statement, options, answer, explanation, score) in enumerate(
+            paper["questions"], start=1
+        ):
+            options_json = (
+                json.dumps([{"key": k, "text": t} for k, t in options], ensure_ascii=False)
+                if options else None
+            )
+            question_rows.append([
+                str(question_id), str(paper["id"]), q(qtype), q(statement),
+                q(options_json) if options_json else "NULL",
+                q(answer), q(explanation), str(score), str(order),
+            ])
+            question_id += 1
+        for order, problem_id in enumerate(paper["problems"], start=1):
+            problem_rows.append([
+                str(pp_id), str(paper["id"]), str(problem_id), str(order), "100",
+            ])
+            pp_id += 1
+
+    lines = [
+        "-- 9) 训练试卷：5 套完整试卷（含客观题与编程题）",
+        "--    历史占位卷 2/3 规范为 10 分小测并解除编程题挂载，避免总分口径矛盾",
+        "DELETE FROM `exam_paper_problem` WHERE paper_id IN (2, 3);",
+        "DELETE FROM `exam_question` WHERE paper_id BETWEEN 1001 AND 1099;",
+        "DELETE FROM `exam_paper_problem` WHERE paper_id BETWEEN 1001 AND 1099;",
+        "UPDATE `exam_paper` SET title = 'GESP 2级 课堂小测（示例）', level = '2级', total_score = 10,"
+        " problem_count = 2 WHERE id = 2;",
+        "UPDATE `exam_paper` SET title = 'GESP 2级 课堂小测（副本）', level = '2级', total_score = 10,"
+        " problem_count = 2 WHERE id = 3;",
+        "",
     ]
+    lines += insert_block(
+        "exam_paper",
+        ["id", "title", "description", "category", "level", "duration_minutes",
+         "total_score", "problem_count", "is_published", "create_by", "create_time"],
+        paper_rows,
+        update_columns=["title", "description", "category", "level", "duration_minutes",
+                        "total_score", "problem_count", "is_published"],
+    )
+    lines.append("")
+    lines += insert_block(
+        "exam_question",
+        ["id", "paper_id", "question_type", "statement", "options", "answer",
+         "explanation", "score", "question_order"],
+        question_rows,
+        update_columns=["paper_id", "question_type", "statement", "options", "answer",
+                        "explanation", "score", "question_order"],
+    )
+    lines.append("")
     lines += insert_block(
         "exam_paper_problem",
         ["id", "paper_id", "problem_id", "problem_order", "score"],
-        rows, update_columns=["problem_id", "problem_order", "score"],
+        problem_rows,
+        update_columns=["paper_id", "problem_id", "problem_order", "score"],
     )
     lines.append("")
-    lines.append(f"UPDATE `exam_paper` SET problem_count = 3 WHERE id = {paper_id};")
-    lines.append("")
+    return lines
 
-    attempts = [
-        (1001, 1001, "SUBMITTED", 10, 60, 70, NOW - timedelta(days=5)),
-        (1002, 1002, "RUNNING", 0, 0, 0, NOW - timedelta(minutes=25)),
-        (1003, 1003, "TIMEOUT", 5, 30, 35, NOW - timedelta(days=11)),
-    ]
-    rows = []
-    for attempt_id, user_id, status, obj, code, total, start in attempts:
-        deadline = start + timedelta(minutes=120)
-        submit = None if status == "RUNNING" else min(deadline, start + timedelta(minutes=40))
-        rows.append([
+
+def build_exam_attempts():
+    """作答会话：客观题记录与编程题提交计划，得分按服务端计分口径推导。"""
+    papers = {p["id"]: p for p in EXAM_PAPERS}
+    attempt_rows, answer_rows, coding_plans = [], [], []
+    answer_id = 2001
+    question_ids = {}
+    qid = 1001
+    for paper in EXAM_PAPERS:
+        for _ in paper["questions"]:
+            question_ids.setdefault(paper["id"], []).append(qid)
+            qid += 1
+
+    for attempt_id, paper_id, user_id, status, days, hour, answered, correct in EXAM_ATTEMPTS:
+        paper = papers[paper_id]
+        duration = paper["duration"]
+        if status == "RUNNING":
+            start = NOW - timedelta(minutes=25)
+        else:
+            start = at_hour(NOW - timedelta(days=days), hour, 0)
+        end = start + timedelta(minutes=duration)
+        submit = None if status == "RUNNING" else start + timedelta(minutes=duration - 4)
+
+        objective = 0
+        for idx, (qtype, _stmt, _opts, answer, _expl, score) in enumerate(
+            paper["questions"][:answered]
+        ):
+            is_correct = idx < correct
+            value = answer if is_correct else wrong_answer(qtype, answer)
+            gained = score if is_correct else 0
+            objective += gained
+            answer_rows.append([
+                str(answer_id), str(paper_id), str(attempt_id),
+                str(question_ids[paper_id][idx]), str(user_id),
+                q(value), "1" if is_correct else "0", str(gained),
+                dt(start + timedelta(minutes=3 + idx)),
+            ])
+            answer_id += 1
+
+        coding = 0
+        for problem_id, sub_status in EXAM_CODING_PLANS.get(attempt_id, []):
+            coding += 100 if sub_status == 1 else 0
+            coding_plans.append({
+                "user_id": user_id,
+                "problem_id": problem_id,
+                "status": sub_status,
+                "create_time": start + timedelta(minutes=duration // 2),
+                "attempt": 1,
+                "contest_id": None,
+            })
+
+        attempt_rows.append([
             str(attempt_id), str(paper_id), str(user_id), q(status),
-            dt(start), dt(deadline), dt(submit) if submit else "NULL",
-            str(obj), str(code), str(total),
-            dt(start), dt(submit or start),
+            dt(start), dt(end), dt(submit) if submit else "NULL",
+            str(objective), str(coding), str(objective + coding),
+            dt(start), dt(submit or start + timedelta(minutes=20)),
         ])
+
+    lines = [
+        "-- 10) 训练试卷作答：清理本脚本旧会话后重建，覆盖 RUNNING/SUBMITTED/TIMEOUT",
+        "DELETE FROM `exam_answer` WHERE attempt_id BETWEEN 1001 AND 1099;",
+        "DELETE FROM `exam_attempt` WHERE id BETWEEN 1001 AND 1099;",
+        "",
+    ]
     lines += insert_block(
         "exam_attempt",
         ["id", "paper_id", "user_id", "status", "start_time", "end_time",
          "submit_time", "objective_score", "coding_score", "total_score",
          "create_time", "update_time"],
-        rows,
-        update_columns=["status", "objective_score", "coding_score", "total_score",
-                        "submit_time"],
+        attempt_rows,
+        update_columns=["paper_id", "user_id", "status", "start_time", "end_time",
+                        "submit_time", "objective_score", "coding_score",
+                        "total_score"],
     )
     lines.append("")
-
-    answers = [
-        (1001, 1001, 6, "T", 1, 5),
-        (1002, 1001, 7, "C", 1, 5),
-        (1003, 1003, 6, "T", 1, 5),
-        (1004, 1003, 7, "B", 0, 0),
-    ]
-    rows = [
-        [str(aid), str(paper_id), str(attempt_id), str(qid), str(user_id),
-         q(ans), str(ok), str(score), dt(NOW - timedelta(days=5))]
-        for aid, attempt_id, qid, ans, ok, score in answers
-    ]
     lines += insert_block(
         "exam_answer",
         ["id", "paper_id", "attempt_id", "question_id", "user_id",
          "answer", "is_correct", "score", "create_time"],
-        rows, update_columns=["answer", "is_correct", "score"],
+        answer_rows,
+        update_columns=["paper_id", "attempt_id", "question_id", "user_id",
+                        "answer", "is_correct", "score", "create_time"],
     )
     lines.append("")
-    return lines
-
+    return lines, coding_plans
 
 def build_community():
     # 与内置的算法/数据结构分类错开，避免出现"算法""基础"这类半重名分组
@@ -1115,6 +1523,289 @@ def build_class_content(pool):
     return lines
 
 
+def build_settlement_and_replay():
+    """已结束比赛的结算记录与结算回放审计（含成功与失败各一条）。"""
+    lines = [
+        "-- 11) 比赛结算与结算回放：让结算回放页有可预览、可恢复的记录",
+        """INSERT INTO `contest_settlement`
+    (contest_id, algorithm_version, rating_algorithm_version, settlement_no,
+     finalized_at, create_time, update_time)
+SELECT c.id, 'v1', 'elo-v1', 1, c.rank_finalized_at, c.rank_finalized_at, c.rank_finalized_at
+FROM `contest` c
+WHERE c.id IN (1003, 1004)
+  AND c.rank_finalized_at IS NOT NULL
+ON DUPLICATE KEY UPDATE algorithm_version = VALUES(algorithm_version),
+    rating_algorithm_version = VALUES(rating_algorithm_version),
+    finalized_at = VALUES(finalized_at);""",
+        "",
+        """INSERT INTO `contest_settlement_replay`
+    (id, from_contest_id, operator_id, reason, status, total_contests,
+     affected_users, backup_json, started_at, finished_at, create_time)
+VALUES
+(1001, 1003, 1, '赛题数据修正后重放后续比赛结算', 'COMPLETED', 2, 34,
+ '{"contests":[1003,1004],"note":"测试环境演示用的结算备份摘要"}',
+ DATE_SUB(NOW(), INTERVAL 5 DAY), DATE_SUB(NOW(), INTERVAL 5 DAY) + INTERVAL 40 SECOND,
+ DATE_SUB(NOW(), INTERVAL 5 DAY)),
+(1002, 1004, 1, 'Rating 算法回滚演练（人工终止）', 'FAILED', 1, 0, NULL,
+ DATE_SUB(NOW(), INTERVAL 2 DAY), DATE_SUB(NOW(), INTERVAL 2 DAY) + INTERVAL 8 SECOND,
+ DATE_SUB(NOW(), INTERVAL 2 DAY))
+ON DUPLICATE KEY UPDATE reason = VALUES(reason), status = VALUES(status),
+    total_contests = VALUES(total_contests), affected_users = VALUES(affected_users),
+    backup_json = VALUES(backup_json), started_at = VALUES(started_at),
+    finished_at = VALUES(finished_at);""",
+        "",
+        "UPDATE `contest_settlement_replay`"
+        " SET error_message = '结算守卫检测到未完成提交，已终止' WHERE id = 1002;",
+        "",
+    ]
+    return lines
+
+
+def build_rejudge():
+    """重判任务：一次全成功、一次部分失败。"""
+    return [
+        "-- 12) 重判任务：COMPLETED 与 PARTIAL 各一条，覆盖成功与失败明细",
+        """INSERT INTO `rejudge_operation`
+    (id, operator_id, operator_name, reason, scope_type, scope_json, status,
+     total_items, succeeded_items, failed_items, created_at, started_at,
+     finished_at, error_message)
+VALUES
+(1001, 1, '系统管理员', '测试用例更新后重判该题全部提交', 'PROBLEM',
+ '{"problemId":4000}', 'COMPLETED', 6, 6, 0,
+ DATE_SUB(NOW(), INTERVAL 6 DAY), DATE_SUB(NOW(), INTERVAL 6 DAY),
+ DATE_SUB(NOW(), INTERVAL 6 DAY) + INTERVAL 95 SECOND, NULL),
+(1002, 1, '系统管理员', '判题机升级后的抽样复核', 'ENDED_CONTEST',
+ '{"contestId":1004}', 'PARTIAL', 4, 2, 2,
+ DATE_SUB(NOW(), INTERVAL 3 DAY), DATE_SUB(NOW(), INTERVAL 3 DAY),
+ DATE_SUB(NOW(), INTERVAL 3 DAY) + INTERVAL 60 SECOND,
+ '2 条提交因用例文件缺失未能重判')
+ON DUPLICATE KEY UPDATE reason = VALUES(reason), status = VALUES(status),
+    total_items = VALUES(total_items), succeeded_items = VALUES(succeeded_items),
+    failed_items = VALUES(failed_items), started_at = VALUES(started_at),
+    finished_at = VALUES(finished_at), error_message = VALUES(error_message);""",
+        "",
+        """INSERT INTO `rejudge_item`
+    (id, operation_id, submission_id, problem_id, user_id, contest_id,
+     vp_attempt_id, testcase_digest, old_result_json, new_result_json, status,
+     created_at, finished_at, error_message)
+SELECT 1001 + ROW_NUMBER() OVER (ORDER BY s.id), 1001, s.id, s.problem_id,
+       s.user_id, s.contest_id, s.vp_attempt_id,
+       SHA2(CONCAT(s.problem_id, '-', s.id), 256),
+       JSON_OBJECT('status', s.status, 'score', s.score),
+       JSON_OBJECT('status', 1, 'score', 100), 'SUCCEEDED',
+       DATE_SUB(NOW(), INTERVAL 6 DAY), DATE_SUB(NOW(), INTERVAL 6 DAY) + INTERVAL 3 SECOND,
+       NULL
+FROM `submission` s
+WHERE s.problem_id = 4000
+ORDER BY s.id
+LIMIT 6
+ON DUPLICATE KEY UPDATE status = VALUES(status), new_result_json = VALUES(new_result_json);""",
+        "",
+        """INSERT INTO `rejudge_item`
+    (id, operation_id, submission_id, problem_id, user_id, contest_id,
+     vp_attempt_id, testcase_digest, old_result_json, new_result_json, status,
+     created_at, finished_at, error_message)
+SELECT 1201 + ROW_NUMBER() OVER (ORDER BY s.id), 1002, s.id, s.problem_id,
+       s.user_id, s.contest_id, s.vp_attempt_id,
+       SHA2(CONCAT(s.problem_id, '-', s.id), 256),
+       JSON_OBJECT('status', s.status, 'score', s.score),
+       JSON_OBJECT('status', 1, 'score', 100), 'SUCCEEDED',
+       DATE_SUB(NOW(), INTERVAL 3 DAY), DATE_SUB(NOW(), INTERVAL 3 DAY) + INTERVAL 2 SECOND,
+       NULL
+FROM `submission` s
+WHERE s.contest_id = 1004
+ORDER BY s.id DESC
+LIMIT 2
+ON DUPLICATE KEY UPDATE status = VALUES(status), new_result_json = VALUES(new_result_json);""",
+        "",
+        """INSERT INTO `rejudge_item`
+    (id, operation_id, submission_id, problem_id, user_id, contest_id,
+     vp_attempt_id, testcase_digest, old_result_json, new_result_json, status,
+     created_at, finished_at, error_message)
+SELECT 1101 + ROW_NUMBER() OVER (ORDER BY s.id), 1002, s.id, s.problem_id,
+       s.user_id, s.contest_id, s.vp_attempt_id,
+       SHA2(CONCAT(s.problem_id, '-', s.id), 256),
+       JSON_OBJECT('status', s.status, 'score', s.score),
+       NULL, 'FAILED',
+       DATE_SUB(NOW(), INTERVAL 3 DAY), DATE_SUB(NOW(), INTERVAL 3 DAY) + INTERVAL 2 SECOND,
+       '用例文件缺失：problem_case 记录不存在'
+FROM `submission` s
+WHERE s.contest_id = 1004
+ORDER BY s.id
+LIMIT 2
+ON DUPLICATE KEY UPDATE status = VALUES(status), error_message = VALUES(error_message);""",
+        "",
+    ]
+
+
+VP1_START = NOW - timedelta(days=7)
+VP1_END = VP1_START + timedelta(minutes=120)
+VP2_START = NOW - timedelta(minutes=40)
+VP2_END = VP2_START + timedelta(minutes=180)
+
+
+def build_vp():
+    """虚拟赛会话：错过正式赛后按原时长补打，覆盖进行中与已完成。"""
+    rows = [
+        ["1001", "1004", "1011", q("FINISHED"),
+         dt(VP1_START), dt(VP1_END), dt(VP1_START + timedelta(minutes=110)),
+         "300", "3", "145", "12", "20",
+         dt(VP1_START), dt(VP1_START + timedelta(minutes=110))],
+        ["1002", "1003", "1016", q("RUNNING"),
+         dt(VP2_START), dt(VP2_END), "NULL",
+         "0", "0", "0", "NULL", "NULL",
+         dt(VP2_START), dt(VP2_START)],
+    ]
+    lines = ["-- 13) 虚拟赛（VP）：补打会话"]
+    lines += insert_block(
+        "vp_attempt",
+        ["id", "contest_id", "user_id", "status", "start_time", "end_time",
+         "submit_time", "score", "solved_count", "penalty_time", "rank_num",
+         "total_participants", "create_time", "update_time"],
+        rows,
+        update_columns=["contest_id", "user_id", "status", "start_time", "end_time",
+                        "submit_time", "score", "solved_count", "penalty_time",
+                        "rank_num", "total_participants"],
+    )
+    lines.append("")
+    return lines
+
+
+def build_vp_submissions(contest_problems):
+    """VP 会话内提交：3 题通过、1 题未过，与 vp_attempt 的得分口径一致。"""
+    statuses = [1, 1, 1, 2]
+    return [
+        {
+            "user_id": 1011,
+            "problem_id": problem_id,
+            "status": statuses[idx],
+            "create_time": VP1_START + timedelta(minutes=12 + idx * 18),
+            "attempt": 1,
+            "contest_id": 1004,
+            "vp_attempt_id": 1001,
+        }
+        for idx, problem_id in enumerate(contest_problems[:4])
+    ]
+
+
+def build_plagiarism_pairs(start_sub_id, start_case_id, pool, case_map):
+    """构造 3 对代码完全相同的提交，并生成对应查重报告。"""
+    pairs = [
+        (1002, 1003, 1, 0.97, "PENDING"),
+        (1005, 1006, 2, 0.91, "REVIEWED"),
+        (1010, 1011, 4, 0.88, "IGNORED"),
+    ]
+    sub_rows, code_rows, result_rows, case_rows, report_rows = [], [], [], [], []
+    sub_id, case_id, report_id = start_sub_id, start_case_id, 1001
+
+    for user_a, user_b, problem_id, similarity, status in pairs:
+        if problem_id not in pool:
+            continue
+        shared_code = (
+            "#include <bits/stdc++.h>\n"
+            "using namespace std;\n"
+            f"// problem {problem_id} / 同源代码\n"
+            "int main() { return 0; }"
+        )
+        ids = []
+        for user_id in (user_a, user_b):
+            run_time = 20 + sub_id % 17
+            sub_rows.append([
+                str(sub_id), str(problem_id), str(user_id), q("cpp"), "100", "1",
+                str(run_time), "20480", dt(NOW - timedelta(days=13)), q("FINISHED"),
+                "NULL", "NULL", "NULL",
+            ])
+            code_rows.append([str(sub_id), q(shared_code)])
+            result_rows.append([
+                str(sub_id), "1", "100", str(run_time), "20480",
+                dt(NOW - timedelta(days=13) + timedelta(seconds=2)),
+            ])
+            for case_pk, case_order in case_map.get(problem_id, [])[:5]:
+                case_rows.append([
+                    str(case_id), str(sub_id), str(case_pk), str(case_order), "1",
+                    str(run_time), "20480", "NULL",
+                ])
+                case_id += 1
+            ids.append(sub_id)
+            sub_id += 1
+        report_rows.append([
+            str(report_id), "NULL", "NULL", str(problem_id), str(ids[0]), str(ids[1]),
+            str(user_a), str(user_b), str(similarity), q("AST"), q(status),
+            dt(NOW - timedelta(days=12)),
+        ])
+        report_id += 1
+
+    lines = ["-- 14) 查重样本：3 对代码完全相同的提交"]
+    lines += insert_block(
+        "submission",
+        ["id", "problem_id", "user_id", "language", "score", "status", "run_time",
+         "run_memory", "create_time", "judge_phase", "contest_id", "vp_attempt_id",
+         "error_message"],
+        sub_rows,
+        update_columns=["problem_id", "user_id", "language", "score", "status",
+                        "run_time", "run_memory", "create_time", "judge_phase"],
+    )
+    lines.append("")
+    lines += insert_block("submission_code", ["submission_id", "code"], code_rows,
+                          update_columns=["code"])
+    lines.append("")
+    lines += insert_block(
+        "submission_result",
+        ["submission_id", "status", "score", "run_time", "run_memory", "judged_at"],
+        result_rows, update_columns=["status", "score", "run_time", "run_memory"],
+    )
+    lines.append("")
+    lines.append(
+        "DELETE FROM `submission_case_result` WHERE submission_id BETWEEN "
+        f"{start_sub_id} AND {sub_id - 1};"
+    )
+    lines += insert_block(
+        "submission_case_result",
+        ["id", "submission_id", "problem_case_id", "case_order", "status",
+         "run_time", "run_memory", "error_message"],
+        case_rows,
+        update_columns=["submission_id", "problem_case_id", "case_order", "status"],
+    )
+    lines.append("")
+
+    report_lines = ["-- 14b) 查重报告（PENDING / REVIEWED / IGNORED 三种状态）"]
+    report_lines += insert_block(
+        "plagiarism_report",
+        ["id", "class_id", "contest_id", "problem_id", "submission_a_id",
+         "submission_b_id", "user_a_id", "user_b_id", "similarity", "method",
+         "status", "created_at"],
+        report_rows,
+        update_columns=["problem_id", "submission_a_id", "submission_b_id",
+                        "user_a_id", "user_b_id", "similarity", "status"],
+    )
+    report_lines.append("")
+    return lines, report_lines, sub_id - 1, case_id - 1
+
+
+def build_content_reports():
+    """内容举报：覆盖 PENDING / RESOLVED / DISMISSED 三种状态。"""
+    return [
+        "-- 15) 内容举报",
+        """INSERT INTO `content_report`
+    (id, reporter_id, post_id, reason, detail, status, handler_id, handle_note,
+     handled_at, create_time)
+VALUES
+(1001, 1003, 24, '广告推广', '正文末尾附带外部引流链接', 'PENDING', NULL, NULL, NULL,
+ DATE_SUB(NOW(), INTERVAL 30 HOUR)),
+(1002, 1008, 21, '不友善内容', '回复中使用了带有攻击性的表述', 'RESOLVED', 1,
+ '已隐藏该内容并提醒作者', DATE_SUB(NOW(), INTERVAL 2 DAY),
+ DATE_SUB(NOW(), INTERVAL 3 DAY)),
+(1003, 1012, 23, '内容重复', '与已有题解高度重复', 'DISMISSED', 1,
+ '核实为独立撰写，保留原帖', DATE_SUB(NOW(), INTERVAL 5 DAY),
+ DATE_SUB(NOW(), INTERVAL 6 DAY)),
+(1004, 1015, 20, '信息不实', '课程费用描述与实际不符', 'PENDING', NULL, NULL, NULL,
+ DATE_SUB(NOW(), INTERVAL 10 HOUR))
+ON DUPLICATE KEY UPDATE status = VALUES(status), handler_id = VALUES(handler_id),
+    handle_note = VALUES(handle_note), handled_at = VALUES(handled_at),
+    detail = VALUES(detail);""",
+        "",
+    ]
+
 def build_reconcile():
     """把冗余计数按源表重算，避免页面数字自相矛盾。"""
     lines = [
@@ -1208,23 +1899,57 @@ ORDER BY c.problem_id, c.case_order;
     sub_lines, last_sub_id, last_case_id = build_submissions(
         plans, case_map, header="-- 6) 提交记录（含源码、判题结果与逐点结果）"
     )
-    contest_lines, contests = build_contests(pool)
 
+    contest_lines, contests = build_contests(pool)
     contest_plans = build_contest_submissions(contests)
     contest_sub_lines = []
     if contest_plans:
-        contest_sub_lines, _, _ = build_submissions(
+        contest_sub_lines, last_sub_id, last_case_id = build_submissions(
             contest_plans, case_map,
             start_id=last_sub_id + 1,
             start_case_id=last_case_id + 1,
             header="-- 6b) 赛内提交（contest_id 已标注）",
         )
 
+    exam_lines, exam_coding_plans = build_exam_attempts()
+    exam_sub_lines = []
+    if exam_coding_plans:
+        exam_sub_lines, last_sub_id, last_case_id = build_submissions(
+            exam_coding_plans, case_map,
+            start_id=last_sub_id + 1,
+            start_case_id=last_case_id + 1,
+            header="-- 10b) 训练试卷编程题提交（落在作答会话时间窗内）",
+        )
+
+    vp_plans = build_vp_submissions(contests[3]["problems"])
+    vp_sub_lines = []
+    if vp_plans:
+        vp_sub_lines, last_sub_id, last_case_id = build_submissions(
+            vp_plans, case_map,
+            start_id=last_sub_id + 1,
+            start_case_id=last_case_id + 1,
+            header="-- 13b) 虚拟赛提交（带 vp_attempt_id）",
+        )
+
+    plag_lines, plag_report_lines, last_sub_id, last_case_id = build_plagiarism_pairs(
+        last_sub_id + 1, last_case_id + 1, pool, case_map
+    )
+
     lines += student_lines
     lines += sub_lines
     lines += contest_sub_lines
+    lines += exam_sub_lines
+    lines += vp_sub_lines
+    lines += plag_lines
+    lines += build_contest_levels()
     lines += contest_lines
-    lines += build_exam()
+    lines += build_exam_papers()
+    lines += exam_lines
+    lines += build_settlement_and_replay()
+    lines += build_rejudge()
+    lines += build_vp()
+    lines += plag_report_lines
+    lines += build_content_reports()
     lines += build_community()
     lines += build_class_content(pool)
     lines += build_notifications(students)
