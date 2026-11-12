@@ -36,6 +36,8 @@ OJ-Backend/data/
 OJ-Backend/uploads/
 OJ-Backend/*/uploads/
 OJ-Backend/logs/
+# 测试环境补数脚本的产物：由 scripts/seed-testenv.py 生成，随库状态变化，不纳入版本控制
+OJ-Backend/db/seed-testenv.sql
 # 日志实际按模块落在 OJ-Backend/<模块>/logs/ 下（如 oj-admin/logs/），
 # 只写 OJ-Backend/logs/ 挡不住；*.log 虽能兜住文件本身，
 # 但滚动归档等非 .log 文件仍可能漏进来，这里按目录一并排除
