@@ -356,7 +356,6 @@ const selectedKeys = computed(() => FORMAT_FIELDS.filter((field) => selection.va
 const issues = computed(() => (Array.isArray(preview.value?.issues) ? preview.value.issues : []))
 const groupedIssues = computed(() => groupIssuesByField(issues.value))
 const severity = computed(() => countSeverity(issues.value))
-const blockingCount = computed(() => severity.value.error)
 const fieldIssues = computed(() => groupedIssues.value[activeKey.value] || [])
 
 // 状态标签把「阻断」和「提醒」分开表达：只有阻断会让应用失败，
