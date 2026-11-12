@@ -46,14 +46,15 @@ public class AdminAiServiceController {
     }
 
     public record AddressRequest(@jakarta.validation.constraints.NotBlank
-                                 @jakarta.validation.constraints.Size(max = 512) String apiUrl) { }
+                                 @jakarta.validation.constraints.Size(max = 512) String apiUrl,
+                                 @jakarta.validation.constraints.Pattern(regexp = "AUTO|BASE_URL|FULL_URL") String addressType) { }
 
     @Operation(summary = "检查地址解析与安全策略，不调用模型")
     @AuditLog(module = "ai", action = "diagnose_address")
     @RateLimit(key = "ai-service-diagnose", time = 60, count = 10)
     @PostMapping("/services/diagnose")
     public Result<AiServiceCatalogService.AddressDiagnosis> diagnose(@Valid @RequestBody AddressRequest request) {
-        return Result.success(catalogService.diagnose(request.apiUrl()));
+        return Result.success(catalogService.diagnose(request.apiUrl(), request.addressType()));
     }
 
     @Operation(summary = "新增 AI 服务")

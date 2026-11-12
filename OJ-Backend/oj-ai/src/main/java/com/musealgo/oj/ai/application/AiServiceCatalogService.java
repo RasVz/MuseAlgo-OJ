@@ -187,13 +187,13 @@ public class AiServiceCatalogService {
         return runtimeView();
     }
 
-    public record AddressDiagnosis(String host, boolean masterKeyReady, String message) { }
+    public record AddressDiagnosis(String host, boolean masterKeyReady, String message, String apiUrl) { }
 
-    public AddressDiagnosis diagnose(String apiUrl) {
+    public AddressDiagnosis diagnose(String apiUrl, String addressType) {
         try {
-            URI endpoint = endpointGuard.validate(apiUrl);
+            URI endpoint = endpointGuard.validate(com.musealgo.oj.ai.network.ChatCompletionEndpoint.resolve(apiUrl, addressType));
             return new AddressDiagnosis(endpoint.getHost(), keyCipher.readiness().ready(),
-                    "地址解析与安全检查通过；尚未验证服务凭证及模型，请保存后测试连接");
+                    "地址解析与安全检查通过；尚未验证服务凭证及模型，请保存后测试连接", endpoint.toString());
         } catch (com.musealgo.oj.ai.network.AiEndpointException e) {
             throw new AiAdminException(e.status(), e.errorCode(), e.getMessage());
         } catch (IllegalArgumentException e) {
@@ -302,7 +302,7 @@ public class AiServiceCatalogService {
         }
         URI endpoint;
         try {
-            endpoint = endpointGuard.validate(request.getApiUrl());
+            endpoint = endpointGuard.validate(com.musealgo.oj.ai.network.ChatCompletionEndpoint.resolve(request.getApiUrl(), request.getAddressType()));
         } catch (com.musealgo.oj.ai.network.AiEndpointException e) {
             throw new AiAdminException(e.status(), e.errorCode(), e.getMessage());
         } catch (IllegalArgumentException e) {

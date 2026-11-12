@@ -214,7 +214,7 @@ public class AiEndpointGuard {
         return !(first16 == 0x3fff && ((b[2] & 0xff) & 0xf0) == 0);
     }
 
-    private static String canonicalize(String rawUrl, boolean allowHttp) {
+    static String canonicalize(String rawUrl, boolean allowHttp) {
         if (rawUrl == null) {
             throw new IllegalArgumentException("接口地址不能为空");
         }

@@ -235,6 +235,7 @@ class ChatCompletionsClientTest {
         assertHttpError(401, "AUTH_FAILED");
         assertHttpError(429, "QUOTA_EXCEEDED");
         assertHttpError(500, "MODEL_UNAVAILABLE");
+        assertHttpError(404, "UPSTREAM_NOT_FOUND");
     }
 
     @Test
@@ -356,6 +357,13 @@ class ChatCompletionsClientTest {
         assertFalse(result.success());
         assertEquals(type, result.errorType());
         assertFalse(result.errorMessage().contains("upstream secret"));
+        AiStreamResult stream = client.stream(snapshot(false, true), messages(), ignored -> {});
+        assertFalse(stream.success()); assertEquals(type, stream.errorType());
+        assertFalse(stream.errorMessage().contains("upstream secret"));
+        if (status == 404) {
+            assertTrue(result.errorMessage().contains("HTTP 404"));
+            assertTrue(stream.errorMessage().contains("请求路径"));
+        }
         server.stop(0);
     }
 

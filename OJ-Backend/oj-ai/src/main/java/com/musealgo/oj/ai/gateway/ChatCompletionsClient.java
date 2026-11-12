@@ -520,7 +520,10 @@ public class ChatCompletionsClient {
         if (status >= 300 && status < 400) {
             return "REDIRECT_BLOCKED";
         }
-        if (status >= 500 || status == 400 || status == 404 || status == 422) {
+        if (status == 404) {
+            return "UPSTREAM_NOT_FOUND";
+        }
+        if (status >= 500 || status == 400 || status == 422) {
             return "MODEL_UNAVAILABLE";
         }
         return "INVALID_RESPONSE";
@@ -532,6 +535,7 @@ public class ChatCompletionsClient {
             case "QUOTA_EXCEEDED" -> "上游额度不足或被限流";
             case "TIMEOUT" -> "上游请求超时";
             case "REDIRECT_BLOCKED" -> "上游返回重定向，已拒绝跟随";
+            case "UPSTREAM_NOT_FOUND" -> "上游返回 HTTP 404，请检查完整请求路径和模型名称";
             case "MODEL_UNAVAILABLE" -> "上游模型不可用或拒绝参数";
             default -> "上游返回无效响应";
         };
