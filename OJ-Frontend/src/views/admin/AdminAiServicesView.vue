@@ -183,9 +183,15 @@
             placeholder="https://api.example.com/v1/chat/completions"
             autocomplete="off"
           />
-          <div class="field-help">填写完整请求地址，不自动拼接路径；公网默认只允许 HTTPS 443。</div>
-        <el-button :loading="diagnosing" :disabled="!form.apiUrl.trim()" @click="diagnoseAddress">检查地址（不调用模型）</el-button>
-        <p v-if="diagnosis" class="field-help">{{ diagnosis }}</p>
+          <el-select v-model="form.addressType" aria-label="地址填写方式" class="address-type">
+            <el-option label="自动识别" value="AUTO" />
+            <el-option label="基础地址（Base URL）" value="BASE_URL" />
+            <el-option label="完整请求地址" value="FULL_URL" />
+          </el-select>
+          <div class="field-help">可填写官网 Base URL 或完整接口地址。自动识别根地址与 /v1 等版本前缀；其他基础路径请选择“基础地址”。公网仅允许 HTTPS 443。</div>
+          <div v-if="effectiveEndpoint" class="field-help endpoint-preview">实际请求地址：<code data-testid="ai-request-url">{{ effectiveEndpoint }}</code></div>
+          <el-button :loading="diagnosing" :disabled="!effectiveEndpoint" @click="diagnoseAddress">检查地址（不调用模型）</el-button>
+          <p v-if="diagnosis" class="field-help">{{ diagnosis }}</p>
         </el-form-item>
         <el-form-item label="模型名称" prop="model">
           <el-input v-model="form.model" maxlength="128" placeholder="服务商要求的精确模型 ID" />
@@ -288,6 +294,7 @@ import {
   updateAiRuntime,
   updateAiService
 } from '@/api/adminAiServices'
+import { resolveAiEndpoint } from '@/utils/aiEndpoint'
 import { aiServiceErrorMessage } from '@/utils/aiServiceErrors'
 import { getResultMessage, isResultSuccess, unwrapResultData } from '@/utils/response'
 
@@ -295,6 +302,7 @@ const initializationVisible = ref(false)
 const diagnosing = ref(false)
 const lastError = ref('')
 const diagnosis = ref('')
+const diagnosedEndpoint = ref('')
 function handleError(error) {
   lastError.value = aiServiceErrorMessage(error)
   ElMessage.error(lastError.value)
@@ -304,11 +312,16 @@ async function diagnoseAddress() {
   diagnosis.value = ''
   lastError.value = ''
   const checkedUrl = form.value.apiUrl.trim()
+  const checkedType = form.value.addressType
   try {
-    const response = await diagnoseAiAddress(checkedUrl)
-    if (form.value.apiUrl.trim() === checkedUrl) diagnosis.value = unwrapResultData(response)?.message || '检查完成'
+    const response = await diagnoseAiAddress(checkedUrl, checkedType)
+    if (form.value.apiUrl.trim() === checkedUrl && form.value.addressType === checkedType) {
+      const data = unwrapResultData(response)
+      diagnosis.value = data?.message || '检查完成'
+      diagnosedEndpoint.value = data?.apiUrl || ''
+    }
   } catch (error) {
-    if (form.value.apiUrl.trim() === checkedUrl) handleError(error)
+    if (form.value.apiUrl.trim() === checkedUrl && form.value.addressType === checkedType) handleError(error)
   } finally {
     diagnosing.value = false
   }
@@ -330,6 +343,7 @@ const emptyForm = () => ({
   name: '',
   protocol: 'CHAT_COMPLETIONS',
   apiUrl: '',
+  addressType: 'AUTO',
   model: '',
   apiKey: '',
   remark: '',
@@ -338,7 +352,11 @@ const emptyForm = () => ({
   maxTokens: 8192
 })
 const form = ref(emptyForm())
-watch(() => form.value.apiUrl, () => { diagnosis.value = '' })
+watch(() => [form.value.apiUrl, form.value.addressType], () => {
+  diagnosis.value = ''
+  diagnosedEndpoint.value = ''
+})
+const effectiveEndpoint = computed(() => diagnosedEndpoint.value || resolveAiEndpoint(form.value.apiUrl, form.value.addressType))
 
 const modeLabel = computed(() => ({
   LEGACY: '旧环境',
@@ -459,6 +477,7 @@ function openEdit(row) {
     name: row.name,
     protocol: row.protocol || 'CHAT_COMPLETIONS',
     apiUrl: row.apiUrl,
+    addressType: 'AUTO',
     model: row.model,
     apiKey: '',
     remark: row.remark || '',
@@ -517,6 +536,7 @@ async function save() {
       name: form.value.name.trim(),
       protocol: 'CHAT_COMPLETIONS',
       apiUrl: form.value.apiUrl.trim(),
+      addressType: form.value.addressType,
       model: form.value.model.trim(),
       remark: form.value.remark.trim(),
       jsonMode: form.value.jsonMode,
@@ -715,6 +735,8 @@ onMounted(load)
 </script>
 
 <style scoped>
+.address-type { width: 220px; margin-top: 8px; }
+.endpoint-preview code { overflow-wrap: anywhere; }
 .init-command { white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; background: var(--bg-page); }
 .admin-ai-services { padding: 16px; }
 .page-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 16px; }

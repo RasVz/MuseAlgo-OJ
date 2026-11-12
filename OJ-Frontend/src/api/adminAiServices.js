@@ -47,6 +47,6 @@ export function updateAiRuntime(mode, version) {
   return request({ url: '/admin/ai/runtime', method: 'put', silent: true, data: { mode, version } })
 }
 
-export function diagnoseAiAddress(apiUrl) {
-  return request({ url: '/admin/ai/services/diagnose', method: 'post', silent: true, data: { apiUrl }, timeout: 15000 })
+export function diagnoseAiAddress(apiUrl, addressType = 'AUTO') {
+  return request({ url: '/admin/ai/services/diagnose', method: 'post', silent: true, data: { apiUrl, addressType }, timeout: 15000 })
 }

@@ -385,3 +385,60 @@ test('环境失败与表单错误可区分且没有未处理 Promise', async ({ 
   await expect(drawer.getByText('地址解析与安全检查通过', { exact: false })).toBeHidden(SLOW)
   expect(errors).toEqual([])
 })
+
+
+test('官网基础地址可预览完整路径且支持手动选择地址方式', async ({ page }) => {
+  const errors = []
+  page.on('pageerror', error => errors.push(error.message))
+  await installAdminAuth(page)
+  await installMockApi(page)
+  await page.goto('/admin/ai-services')
+  await page.getByRole('button', { name: '添加服务', exact: true }).click()
+  const drawer = page.locator('.el-drawer')
+  const input = drawer.getByPlaceholder('https://api.example.com/v1/chat/completions')
+  const preview = drawer.getByTestId('ai-request-url')
+  await input.fill('https://api.deepseek.com')
+  await expect(preview).toHaveText('https://api.deepseek.com/chat/completions')
+  await drawer.locator('.address-type').click()
+  await page.getByRole('option', { name: '完整请求地址', exact: true }).click()
+  await expect(preview).toHaveText('https://api.deepseek.com/')
+  await drawer.locator('.address-type').click()
+  await page.getByRole('option', { name: '基础地址（Base URL）', exact: true }).click()
+  await input.fill('https://api.example.com/custom')
+  await expect(preview).toHaveText('https://api.example.com/custom/chat/completions')
+  await input.fill('https://api.example.com/v1/chat/completions')
+  await expect(preview).toHaveText('https://api.example.com/v1/chat/completions')
+  await drawer.locator('.address-type').click()
+  await page.getByRole('option', { name: '自动识别', exact: true }).click()
+  await input.fill('https://api.deepseek.com')
+  await page.route('**/api/admin/ai/services/diagnose', async route => {
+    expect(route.request().postDataJSON()).toEqual({ apiUrl: 'https://api.deepseek.com', addressType: 'AUTO' })
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200,
+      data: { message: '地址解析与安全检查通过；尚未验证服务凭证及模型，请保存后测试连接',
+        apiUrl: 'https://api.deepseek.com:443/chat/completions' } }) })
+  })
+  await drawer.getByRole('button', { name: '检查地址（不调用模型）' }).click()
+  await expect(preview).toHaveText('https://api.deepseek.com:443/chat/completions')
+  await screenshot(page, 'ai-base-url-preview.png')
+  // A newer input must not retain the server confirmation for the previous target.
+  await input.fill('https://api.example.com/v1')
+  await expect(preview).toHaveText('https://api.example.com/v1/chat/completions')
+  await expect(drawer.getByText('地址解析与安全检查通过', { exact: false })).toBeHidden()
+  let release
+  let received = false
+  const responseGate = new Promise(resolve => { release = resolve })
+  await page.route('**/api/admin/ai/services/diagnose', async route => {
+    received = true
+    await responseGate
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200,
+      data: { message: '旧地址检查通过', apiUrl: 'https://api.example.com:443/v1/chat/completions' } }) })
+  })
+  await drawer.getByRole('button', { name: '检查地址（不调用模型）' }).click()
+  await expect.poll(() => received).toBeTruthy()
+  await input.fill('https://new.example.com/v1')
+  release()
+  await expect(drawer.getByRole('button', { name: '检查地址（不调用模型）' })).toBeEnabled()
+  await expect(preview).toHaveText('https://new.example.com/v1/chat/completions')
+  await expect(drawer.getByText('旧地址检查通过')).toBeHidden()
+  expect(errors).toEqual([])
+})
