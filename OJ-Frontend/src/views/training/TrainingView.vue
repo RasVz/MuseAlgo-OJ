@@ -9,70 +9,100 @@
       </div>
     </NavbarContext>
 
-    <div class="main-content">
-      <div class="category-bar">
-        <el-radio-group v-model="category" @change="fetchList">
+    <main class="main-content">
+      <section class="library-toolbar" aria-label="试卷筛选">
+        <el-radio-group v-model="category" class="category-filter" aria-label="试卷分类" @change="onCategoryChange">
           <el-radio-button value="">全部</el-radio-button>
           <el-radio-button v-for="cat in CATEGORIES" :key="cat.value" :value="cat.value">
             {{ cat.label }}
           </el-radio-button>
         </el-radio-group>
+        <el-input
+          v-model="keywordDraft"
+          class="search-input"
+          clearable
+          placeholder="搜索试卷标题"
+          aria-label="搜索试卷标题"
+          @keyup.enter="applySearch"
+          @clear="applySearch"
+        >
+          <template #append>
+            <el-button aria-label="搜索" @click="applySearch">搜索</el-button>
+          </template>
+        </el-input>
+      </section>
+
+      <div class="result-heading">
+        <div>
+          <h1>试卷库</h1>
+          <span>共 {{ total }} 份试卷</span>
+        </div>
+        <span v-if="keyword" class="active-search">搜索：{{ keyword }}</span>
       </div>
 
-      <div v-loading="loading" class="paper-grid">
-        <el-card
+      <el-alert v-if="loadError" class="load-error" type="error" show-icon :closable="false" title="试卷暂时无法加载">
+        <template #default>
+          <div class="error-content">
+            <span>检查网络连接后重试。</span>
+            <el-button size="small" type="danger" plain :loading="loading" @click="fetchList">重试</el-button>
+          </div>
+        </template>
+      </el-alert>
+
+      <div v-loading="loading" class="paper-grid" aria-live="polite">
+        <RouterLink
           v-for="paper in papers"
           :key="paper.id"
-          shadow="hover"
-          class="paper-card"
-          @click="goDetail(paper.id)"
+          :to="paperLocation(paper.id)"
+          class="paper-link"
+          :aria-label="`${paper.title}，${paper.problemCount ?? 0} 题，${paper.totalScore ?? 100} 分`"
         >
-          <div class="paper-category">{{ categoryLabel(paper.category) }}</div>
-          <div class="paper-title">{{ paper.title }}</div>
-          <div v-if="paper.level" class="paper-level">{{ paper.level }}</div>
-          <div class="paper-meta">
-            <span>{{ paper.problemCount ?? 0 }} 题</span>
-            <span>{{ paper.totalScore ?? 100 }} 分</span>
-            <span>{{ paper.durationMinutes ?? 120 }} 分钟</span>
-          </div>
-          <div v-if="paper.description" class="paper-desc">{{ paper.description }}</div>
-        </el-card>
+          <el-card shadow="hover" class="paper-card">
+            <div class="paper-card-top">
+              <span class="paper-category">{{ categoryLabel(paper.category) }}</span>
+              <span v-if="paper.level" class="paper-level">{{ paper.level }}</span>
+            </div>
+            <h2 class="paper-title">{{ paper.title }}</h2>
+            <p class="paper-meta">
+              <span>{{ paper.problemCount ?? 0 }} 题</span>
+              <span>{{ paper.totalScore ?? 100 }} 分</span>
+              <span>{{ paper.durationMinutes ?? 120 }} 分钟</span>
+            </p>
+            <p v-if="paper.description" class="paper-desc">{{ paper.description }}</p>
+            <span class="paper-action">查看试卷 <span aria-hidden="true">→</span></span>
+          </el-card>
+        </RouterLink>
 
-        <el-empty v-if="!loading && papers.length === 0" description="暂无训练试卷" />
+        <el-empty v-if="!loading && !loadError && papers.length === 0" description="没有找到符合条件的试卷">
+          <el-button v-if="keyword || category" @click="clearFilters">清除筛选</el-button>
+        </el-empty>
       </div>
-    </div>
+
+      <el-pagination
+        v-if="total > PAGE_SIZE"
+        class="paper-pagination"
+        background
+        layout="prev, pager, next, total"
+        :current-page="page"
+        :page-size="PAGE_SIZE"
+        :total="total"
+        aria-label="试卷分页"
+        @current-change="changePage"
+      />
+    </main>
   </div>
 </template>
 
 <script setup>
-/**
- * 训练（试卷）列表页：展示 GESP / CSP / NOIP 真题与模拟套卷，支持按类别筛选。
- *
- * 与题库、题单、课程的区别在于「整套限时模拟」语义——这里的一张卡片是一份试卷，
- * 点击进入的是答卷流程而不是单题详情，因此不复用题目列表的卡片组件。
- *
- * 数据来自 getExamPaperList。三个关键点：
- * 1. 类别筛选直接透传给后端分页接口，不在前端过滤——试卷量级可能远超一页，
- *    前端过滤只能看到首页那几条，会漏数据；
- * 2. category 为空串时传 undefined 而非 ''，避免后端把 '' 当成合法类别过滤出空列表；
- * 3. 卡片上的题数/总分/时长都有默认值兜底，缺失字段在模板里做 ?? 兜底，
- *    避免老数据因缺字段渲染成 "undefined 题"。
- */
-import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import NavbarContext from '@/components/NavbarContext.vue'
 import { getExamPaperList } from '@/api/examPaper'
 import { unwrapResultData } from '@/utils/response'
 
+const route = useRoute()
 const router = useRouter()
-// 空串代表「全部」，与 el-radio-group 的 value="" 绑定；不要改成 null，
-// null 会被单选组当作未选中而高亮丢失。
-const category = ref('')
-const papers = ref([])
-const loading = ref(false)
-
-// 类别取值必须与后端枚举严格一致（value 用于提交，label 只用于展示）。
-// 新增类别时后端枚举与这里要同步改，否则筛选项会提交一个后端不认的值。
+const PAGE_SIZE = 12
 const CATEGORIES = [
   { value: 'GESP', label: 'GESP' },
   { value: 'CSP_J', label: 'CSP-J' },
@@ -81,37 +111,76 @@ const CATEGORIES = [
   { value: 'MOCK', label: '模拟' }
 ]
 
-// 找不到对应枚举时原样回显后端返回值，而不是显示 undefined：
-// 后端新增了类别但前端漏改 CATEGORIES 时，回显原值能让问题被看见而不是变成空白标签。
-const categoryLabel = (c) => CATEGORIES.find((x) => x.value === c)?.label || c || '套卷'
+const category = ref('')
+const keywordDraft = ref('')
+const keyword = ref('')
+const page = ref(1)
+const total = ref(0)
+const papers = ref([])
+const loading = ref(false)
+const loadError = ref(false)
+let requestSequence = 0
 
-/**
- * 拉取试卷列表。
- *
- * 同时用于首次进入（onMounted）与类别切换（单选框 @change）：
- * 切换时整体重查而不是本地过滤，保证「全部」与各分类走同一条服务端分页链路。
- * 只取第 1 页、50 条——页面没有分页器，超过 50 条的试卷需要在
- * 接入分页控件时同步调整 size 与页码管理。
- */
+const categoryLabel = (value) => CATEGORIES.find((item) => item.value === value)?.label || value || '套卷'
+
+const readPage = (value) => {
+  const parsed = Number.parseInt(Array.isArray(value) ? value[0] : value, 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1
+}
+
+const updateQuery = (changes) => {
+  const query = { ...route.query }
+  for (const [key, value] of Object.entries(changes)) {
+    if (value == null || value === '') delete query[key]
+    else query[key] = String(value)
+  }
+  return router.replace({ name: 'Training', query })
+}
+
 const fetchList = async () => {
+  const sequence = ++requestSequence
   loading.value = true
+  loadError.value = false
   try {
-    // category 为空时传 undefined，让请求层在序列化时自动丢弃该参数
-    const res = await getExamPaperList({ page: 1, size: 50, category: category.value || undefined })
+    const res = await getExamPaperList({
+      page: page.value,
+      size: PAGE_SIZE,
+      category: category.value || undefined,
+      keyword: keyword.value || undefined
+    })
+    if (sequence !== requestSequence) return
     const data = unwrapResultData(res)
-    // ?? [] 兜底：接口异常返回空对象时，papers.value 必须是数组，
-    // 否则模板里的 papers.length 会对 undefined 取属性而抛错、整页白屏。
     papers.value = data?.records ?? []
+    total.value = Number(data?.total ?? 0)
+  } catch {
+    if (sequence !== requestSequence) return
+    loadError.value = true
   } finally {
-    // 不 catch：交由统一错误处理，finally 只负责复位 loading，
-    // 否则筛选失败后 v-loading 会一直挂着不消失。
-    loading.value = false
+    if (sequence === requestSequence) loading.value = false
   }
 }
 
-const goDetail = (id) => router.push(`/training/${id}`)
+const onCategoryChange = () => updateQuery({ category: category.value, page: 1 })
+const applySearch = () => updateQuery({ keyword: keywordDraft.value.trim(), page: 1 })
+const changePage = (nextPage) => updateQuery({ page: nextPage })
+const clearFilters = () => {
+  keywordDraft.value = ''
+  updateQuery({ category: '', keyword: '', page: 1 })
+}
+const paperLocation = (id) => ({ name: 'TrainingDetail', params: { id }, query: { ...route.query } })
 
-onMounted(fetchList)
+watch(
+  () => [route.query.category, route.query.keyword, route.query.page],
+  () => {
+    const requestedCategory = Array.isArray(route.query.category) ? route.query.category[0] : route.query.category
+    category.value = CATEGORIES.some((item) => item.value === requestedCategory) ? requestedCategory : ''
+    keyword.value = String(Array.isArray(route.query.keyword) ? route.query.keyword[0] ?? '' : route.query.keyword ?? '').trim()
+    keywordDraft.value = keyword.value
+    page.value = readPage(route.query.page)
+    fetchList()
+  },
+  { immediate: true }
+)
 </script>
 
 <style scoped>
@@ -119,14 +188,38 @@ onMounted(fetchList)
 .nav-header { padding: 8px 0; }
 .nav-title { font-size: 20px; font-weight: 600; }
 .nav-desc { color: var(--text-secondary); font-size: 13px; margin-top: 4px; }
-.main-content { max-width: 1100px; margin: 0 auto; padding: 16px; }
-.category-bar { margin-bottom: 16px; }
-.paper-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
-.paper-card { cursor: pointer; transition: transform .15s; }
-.paper-card:hover { transform: translateY(-2px); }
-.paper-category { display: inline-block; font-size: 12px; color: var(--accent-primary); background: var(--el-color-primary-light-9); border-radius: 4px; padding: 2px 8px; }
-.paper-title { font-size: 16px; font-weight: 600; margin-top: 8px; }
-.paper-level { font-size: 13px; color: var(--accent-warning); margin-top: 4px; }
-.paper-meta { display: flex; gap: 14px; font-size: 12px; color: var(--text-secondary); margin-top: 10px; }
-.paper-desc { font-size: 13px; color: var(--text-regular); margin-top: 8px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.main-content { max-width: 1180px; margin: 0 auto; padding: 24px; }
+.library-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 26px; }
+.category-filter { max-width: 100%; overflow-x: auto; }
+.search-input { max-width: 320px; }
+.result-heading { display: flex; justify-content: space-between; align-items: end; margin-bottom: 16px; }
+.result-heading h1 { display: inline; margin: 0 10px 0 0; font-size: 20px; color: var(--text-primary); }
+.result-heading span { color: var(--text-secondary); font-size: 13px; }
+.active-search { max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.paper-grid { min-height: 180px; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; align-items: stretch; }
+.paper-link { min-width: 0; color: inherit; text-decoration: none; border-radius: 10px; outline-offset: 3px; }
+.paper-card { height: 100%; transition: transform .16s ease, border-color .16s ease; }
+.paper-link:hover .paper-card { transform: translateY(-2px); border-color: var(--accent-primary); }
+.paper-link:focus-visible { outline: 2px solid var(--accent-primary); }
+.paper-card :deep(.el-card__body) { height: 100%; min-height: 170px; display: flex; flex-direction: column; padding: 18px; }
+.paper-card-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.paper-category { display: inline-flex; align-items: center; font-size: 12px; color: var(--accent-primary); background: var(--bg-surface-soft); border: 1px solid var(--border-light); border-radius: 999px; padding: 3px 10px; }
+.paper-title { margin: 13px 0 0; font-size: 16px; line-height: 1.45; font-weight: 650; color: var(--text-primary); }
+.paper-level { font-size: 12px; color: var(--accent-warning); }
+.paper-meta { display: flex; flex-wrap: wrap; gap: 12px; margin: 12px 0 0; font-size: 12px; color: var(--text-secondary); }
+.paper-desc { color: var(--text-regular); font-size: 13px; line-height: 1.55; margin: 10px 0 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.paper-action { margin-top: auto; padding-top: 16px; color: var(--accent-primary); font-size: 13px; font-weight: 600; }
+.load-error { margin-bottom: 16px; }
+.error-content { display: flex; align-items: center; gap: 12px; }
+.paper-pagination { justify-content: center; margin-top: 24px; }
+@media (max-width: 760px) {
+  .main-content { padding: 16px; }
+  .library-toolbar { align-items: stretch; flex-direction: column; gap: 12px; margin-bottom: 20px; }
+  .category-filter { overflow-x: auto; white-space: nowrap; }
+  .search-input { max-width: none; }
+  .paper-grid { grid-template-columns: 1fr; gap: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .paper-card { transition: none; }
+}
 </style>
