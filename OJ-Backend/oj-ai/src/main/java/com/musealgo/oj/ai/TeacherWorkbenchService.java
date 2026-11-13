@@ -190,6 +190,71 @@ public class TeacherWorkbenchService {
             }
             """;
 
+    /**
+     * 题面生成（草稿工作台）：与 {@code teacher-wb-statement} 的区别在于输入是结构化命题简报，
+     * 输出额外要求时限/内存与「数据范围」小节，并按简报约束样例组数。
+     * 单独一个 key 而不是复用旧模板：旧模板的输入形态是纯文本命题要求，改它会同时改变旧页面行为。
+     */
+    private static final String TEACHER_DRAFT_STATEMENT_PROMPT = """
+            你是资深信奥命题教练，为小学四~六年级学生命制 C++ 算法题。你的输出会直接进入教师的审阅台，
+            因此必须结构完整、可直接使用：不允许占位符，不允许「略」「同上」这类省略，不允许自我评价或解释。
+
+            【教学边界】
+            1. 只使用 C++17 标准库、只用 iostream 的 cin/cout 就能实现的算法：模拟、枚举、贪心、二分查找、
+               前缀和、差分、动态规划、排序、字符串、数学、递归、栈与队列、图论入门、搜索。
+            2. 题面不得依赖位运算技巧（& | ~ ^ << >>），不得使用题干里没有定义过的术语。
+            3. 数学公式用 $...$，范围统一用 ≤（不要混用 <=）。
+
+            【题面要求】
+            1. title：不超过 20 字，点题、儿童友好，不堆砌形容词。
+            2. content：150~380 字，故事化场景，必须把「输入什么、要算什么、输出什么」讲清楚；
+               不要在正文里重复样例数据；末尾必须有「数据范围」小节，逐项写出每个输入量的范围，
+               并给出 2~3 档子任务及分值比例（例如「三成数据 n ≤ 1000」）。
+            3. inputDesc / outputDesc：逐行描述（第一行…第二行…），格式符与题面完全一致。
+            4. samples：组数严格按命题简报；第 1 组为普通情况，其后至少 1 组覆盖边界（最小值、最大值、
+               全部相同、负数等，按题意取舍）。每组都要有 explanation，用一句话说明「为什么是这个输出」。
+               输出前请自己验算每组输入与输出是否匹配，宁可减少一组也不要给出算错的样例。
+            5. hint：可选，给一条不泄露解法的提示；没有就给空字符串。
+            6. tags：只能从命题简报给出的词表里选，1~3 个。
+            7. difficultyScore：取命题简报给定的区间内的整数。
+            8. timeLimit / memoryLimit：按数据规模给合理值，多数题目 1000ms / 256~512MB。
+
+            【输出要求】只输出一个 JSON 对象（不要 Markdown 围栏、不要任何说明文字），结构如下：
+            {
+              "title": "题名",
+              "content": "题目描述（Markdown，末尾含数据范围小节）",
+              "inputDesc": "输入格式",
+              "outputDesc": "输出格式",
+              "hint": "",
+              "samples": [{"input": "...", "output": "...", "explanation": "..."}],
+              "tags": ["标签"],
+              "difficultyScore": 1200,
+              "timeLimit": 1000,
+              "memoryLimit": 512
+            }
+            """;
+
+    /**
+     * 定向重写：教师已有草稿，只改一个字段。
+     * <p>服务端只采纳目标字段，因此这里的重点是「保持其它字段与上下文一致」，而不是让它整篇重写。</p>
+     */
+    private static final String TEACHER_DRAFT_FIELD_REWRITE_PROMPT = """
+            你是资深信奥命题教练。教师已经有一份题面草稿，现在只要求改写其中一个字段。
+
+            【约束】
+            1. 只改教师指定的字段；其余字段必须原样返回。服务端只采纳目标字段，但你要基于完整题面判断一致性。
+            2. 改写后必须与原题的输入输出格式、样例、数据范围保持一致，不得引入新的变量名、新的格式或新的考点。
+            3. 不得改变算法考点与难度档位。
+            4. 若目标字段是 samples：必须保证每组输入输出能互相验算通过，explanation 同步更新；
+               组数与题干要求一致，不要借机增删样例。
+            5. 若目标字段是 content：仍要保留「数据范围」小节，并继续讲清输入、计算目标与输出。
+            6. 若目标字段是 tags：仍从受控词表选择，1~3 个。
+
+            【输出要求】只输出一个 JSON 对象（不要 Markdown 围栏、不要说明文字），
+            结构必须与第一次生成时完全一致：title / content / inputDesc / outputDesc / hint /
+            samples / tags / difficultyScore / timeLimit / memoryLimit。
+            """;
+
     private final AiGateway aiGateway;
     private final PromptRegistry promptRegistry;
 
@@ -206,6 +271,8 @@ public class TeacherWorkbenchService {
         promptRegistry.register("teacher-wb-testdata", 1, TEACHER_WB_TESTDATA_PROMPT);
         promptRegistry.register("teacher-wb-generator", 1, TEACHER_WB_GENERATOR_PROMPT);
         promptRegistry.register("teacher-wb-rename", 1, TEACHER_WB_RENAME_PROMPT);
+        promptRegistry.register("teacher-draft-statement", 1, TEACHER_DRAFT_STATEMENT_PROMPT);
+        promptRegistry.register("teacher-draft-field-rewrite", 1, TEACHER_DRAFT_FIELD_REWRITE_PROMPT);
     }
 
     /**
@@ -238,6 +305,14 @@ public class TeacherWorkbenchService {
         messages.add(systemMessage(promptRegistry.render(toolKey)));
         messages.add(userMessage(userPrompt));
         return aiGateway.completeDetailed(messages, true);
+    }
+
+    /**
+     * 当前生效的系统提示词文本（含管理与 DB 覆盖后的版本）。
+     * <p>仅供「提示词预览」展示：教师需要看到自己填的简报最终变成了什么要求，才谈得上可控。</p>
+     */
+    public String renderPrompt(String toolKey) {
+        return promptRegistry.render(toolKey);
     }
 
     private static JSONObject systemMessage(String content) {

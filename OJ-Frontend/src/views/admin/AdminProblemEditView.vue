@@ -180,6 +180,22 @@ const resetForm = () => {
 }
 
 // 函数声明（提升）：onMounted 与优化完成回调都在下方引用，保持声明式写法避免 TDZ
+const TAB_NAMES = ['basic', 'cases', 'std']
+
+// ?tab=std 这类外链参数：只有题目加载成功、对应 tab 可用时才切换。
+// 否则「新建题目」页收到 ?tab=std 会切到一个 disabled 的页签，视觉上像点了没反应。
+const applyRequestedTab = () => {
+  const tab = String(route.query.tab || '')
+  if (!TAB_NAMES.includes(tab)) return
+  if (tab !== 'basic' && !form.id) {
+    const query = { ...route.query }
+    delete query.tab
+    router.replace({ query })
+    return
+  }
+  activeTab.value = tab
+}
+
 // 详情回填时把 isPublic 归一到 0/1：后端布尔与数字混用，
 // 归一后 el-switch 才能正确显示选中态，提交时也不用再特判。
 async function init() {
@@ -199,6 +215,7 @@ async function init() {
         output: s?.output ?? ''
       }))
       formatBaseline.value = pickFormattedFields(res.data)
+      applyRequestedTab()
     }
   } catch (e) {
     console.error(e)
@@ -276,6 +293,12 @@ const goBack = () => {
 watch(activeTab, (tab) => {
   if (tab === 'std') stdPanelRef.value?.refreshStatus?.()
 })
+
+// 同页 query 变化也要生效：从「去生成标准答案」跳到同一道题的另一 tab 时组件不会重建
+watch(
+  () => route.query.tab,
+  () => applyRequestedTab()
+)
 
 onMounted(() => init())
 </script>
