@@ -196,7 +196,7 @@ public class ProblemStatementVersionService {
             version.setProblemId(problemId);
             version.setVersionNo(nextVersionNo(problemId));
             version.setStatus(STATUS_LIVE);
-            version.setSource(SOURCE_AI_APPLIED);
+            version.setSource(SOURCE_AI);
             fillFromSnapshot(version, current);
             version.setNote(note);
             version.setCreatedBy(actorId);
@@ -229,28 +229,39 @@ public class ProblemStatementVersionService {
         ProblemStatementVersion base = request.baseVersionId() == null
                 ? ensureLive(problem)
                 : requireVersion(problemId, request.baseVersionId());
-        if (STATUS_CANDIDATE.equals(base.getStatus())) {
-            throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "待审候选版本不能作为编辑基线");
-        }
         List<StatementIssue> issues = StatementQualityChecker.check(toSnapshot(base), formatted);
         ProblemStatementSnapshot snapshot = formatted.asSnapshot();
+        boolean saveInPlace = request.saveInPlace() && request.baseVersionId() != null;
+        String source = saveInPlace ? base.getSource() : request.normalizedSource();
 
-        ProblemStatementVersion created = transactionTemplate.execute(status -> {
+        ProblemStatementVersion saved = transactionTemplate.execute(status -> {
             archiveLive(problemId);
-            ProblemStatementVersion version = new ProblemStatementVersion();
-            version.setProblemId(problemId);
-            version.setVersionNo(nextVersionNo(problemId));
-            version.setStatus(STATUS_LIVE);
-            version.setSource(request.aiApplied() ? SOURCE_AI_APPLIED : SOURCE_MANUAL);
-            fillFromSnapshot(version, snapshot);
-            version.setBaseVersionId(base.getId());
-            version.setIssuesJson(writeIssues(issues));
-            version.setNote(StringUtils.hasText(request.note()) ? truncate(request.note(), 255)
-                    : (request.aiApplied() ? "AI 整理后手工调整" : "手工编辑"));
-            version.setCreatedBy(SecurityUtils.getUserId());
-            version.setCreateTime(LocalDateTime.now());
-            version.setUpdateTime(LocalDateTime.now());
-            versionMapper.insert(version);
+            ProblemStatementVersion version;
+            if (saveInPlace) {
+                // 直接保存：覆盖当前打开的版本，版本身份与属性都不变
+                version = base;
+                fillFromSnapshot(version, snapshot);
+                version.setIssuesJson(writeIssues(issues));
+                version.setNote(StringUtils.hasText(request.note()) ? truncate(request.note(), 255) : "编辑保存");
+                version.setStatus(STATUS_LIVE);
+                version.setUpdateTime(LocalDateTime.now());
+                versionMapper.updateById(version);
+            } else {
+                // 另存为新版本：新增一条，属性反映内容来源
+                version = new ProblemStatementVersion();
+                version.setProblemId(problemId);
+                version.setVersionNo(nextVersionNo(problemId));
+                version.setStatus(STATUS_LIVE);
+                version.setSource(source);
+                fillFromSnapshot(version, snapshot);
+                version.setBaseVersionId(base.getId());
+                version.setIssuesJson(writeIssues(issues));
+                version.setNote(StringUtils.hasText(request.note()) ? truncate(request.note(), 255) : "另存为新版本");
+                version.setCreatedBy(SecurityUtils.getUserId());
+                version.setCreateTime(LocalDateTime.now());
+                version.setUpdateTime(LocalDateTime.now());
+                versionMapper.insert(version);
+            }
 
             writeSnapshotToProblem(problem, snapshot, ALL_FIELDS);
             if (!problemService.updateById(problem)) {
@@ -258,11 +269,11 @@ public class ProblemStatementVersionService {
             }
             return version;
         });
-        if (created == null) {
+        if (saved == null) {
             throw new IllegalStateException("题面保存失败");
         }
         searchIndexer.indexProblem(problem);
-        return toVO(created, true, false);
+        return toVO(saved, true, false);
     }
 
     private void validateComposed(ProblemFormattedContent formatted) {
@@ -433,31 +444,40 @@ public class ProblemStatementVersionService {
     }
 
     /**
-     * 任务完成后生成候选版本。同一任务重跑时先清掉旧的候选，避免重试堆出多条。
+     * 优化任务完成后生成一条「AI 整理」版本。
+     * <p>AI 结果本身就是正式版本，没有待审状态；它也不会自动成为「当前」，
+     * 由用户在编辑器里保存 / 另存时决定。同一任务重跑时先删掉旧产物，避免重试堆出多条。</p>
      */
-    public ProblemStatementVersion createCandidate(Long problemId, Long baseVersionId, Long jobId, Long actorId,
+    public ProblemStatementVersion createAiVersion(Long problemId, Long baseVersionId, Long jobId, Long actorId,
                                                    ProblemFormatApplicationService.Proposal proposal) {
         return transactionTemplate.execute(status -> {
             versionMapper.delete(new LambdaQueryWrapper<ProblemStatementVersion>()
                     .eq(ProblemStatementVersion::getProblemId, problemId)
                     .eq(ProblemStatementVersion::getJobId, jobId)
-                    .eq(ProblemStatementVersion::getStatus, STATUS_CANDIDATE));
+                    .eq(ProblemStatementVersion::getSource, SOURCE_AI)
+                    .eq(ProblemStatementVersion::getStatus, STATUS_ARCHIVED));
             ProblemStatementVersion version = new ProblemStatementVersion();
             version.setProblemId(problemId);
             version.setVersionNo(nextVersionNo(problemId));
-            version.setStatus(STATUS_CANDIDATE);
+            version.setStatus(STATUS_ARCHIVED);
             version.setSource(SOURCE_AI);
             fillFromSnapshot(version, proposal.formatted().asSnapshot());
             version.setBaseVersionId(baseVersionId);
             version.setJobId(jobId);
             version.setIssuesJson(writeIssues(proposal.issues()));
-            version.setNote("AI 整理，待审阅");
+            version.setNote("AI 整理");
             version.setCreatedBy(actorId);
             version.setCreateTime(LocalDateTime.now());
             version.setUpdateTime(LocalDateTime.now());
             versionMapper.insert(version);
             return version;
         });
+    }
+
+    /** 兼容旧调用名。 */
+    public ProblemStatementVersion createCandidate(Long problemId, Long baseVersionId, Long jobId, Long actorId,
+                                                   ProblemFormatApplicationService.Proposal proposal) {
+        return createAiVersion(problemId, baseVersionId, jobId, actorId, proposal);
     }
 
     // ==================== 内部 ====================

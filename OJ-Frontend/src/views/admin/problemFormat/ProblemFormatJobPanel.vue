@@ -29,7 +29,7 @@
           <div>
             <div class="fj-option-title">无阻断问题时自动应用</div>
             <div class="fj-option-desc">
-              进入待审的原因是：题名为空/超长、正文为空或明显被截断、正文残留时限声明、代码块未闭合、样例减少或重复。
+              未自动应用的原因是：题名为空/超长、正文为空或明显被截断、正文残留时限声明、代码块未闭合、样例减少或重复；这些题目仍会生成 AI 整理版本。
             </div>
           </div>
           <el-switch v-model="autoApply" />
@@ -49,7 +49,7 @@
           <el-tag :type="jobTagType" effect="dark" size="small">{{ jobStatusLabel }}</el-tag>
           <span class="fj-progress-text">{{ job.processed }} / {{ job.total }}</span>
           <span class="fj-summary-detail">
-            已应用 {{ job.applied }} · 待审 {{ job.review }} · 失败 {{ job.failed }} · 跳过 {{ job.skipped }}
+            已应用 {{ job.applied }} · 仅生成版本 {{ job.review }} · 失败 {{ job.failed }} · 跳过 {{ job.skipped }}
           </span>
         </div>
         <el-progress
@@ -164,7 +164,7 @@ function itemTagType(item) {
 
 function itemStatusLabel(item) {
   return {
-    PENDING: '等待', RUNNING: '执行中', APPLIED: '已应用', REVIEW: '待审阅', FAILED: '失败', SKIPPED: '已跳过'
+    PENDING: '等待', RUNNING: '执行中', APPLIED: '已应用', REVIEW: '已生成版本', FAILED: '失败', SKIPPED: '已跳过'
   }[item.status] || item.status
 }
 

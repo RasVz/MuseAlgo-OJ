@@ -82,6 +82,6 @@ test('批量任务面板：创建选项、进度与逐项状态', async ({ page 
   await panel.getByRole('button', { name: '开始整理' }).click()
   await expect(panel.locator('.fj-progress-text')).toContainText('3 / 4')
   await expect(panel.locator('.fj-item')).toHaveCount(4)
-  await expect(panel.getByText('待审阅').first()).toBeVisible()
+  await expect(panel.getByText('已生成版本').first()).toBeVisible()
   await page.screenshot({ path: join(EVIDENCE, '06-job-progress.png') })
 })

@@ -1,25 +1,39 @@
 package com.musealgo.oj.problem.format;
 
 /**
- * 编辑器保存：把当前编辑区内容写成新的 LIVE 版本。
+ * 编辑器保存。
  * <p>
- * 与「应用候选」的区别：这里没有字段勾选，内容就是用户在编辑器里看到的最终结果；
- * 质量检查结果只作为提示，不再阻断保存——人已经逐段确认过内容了，
- * 自动应用（无人值守）才需要闸门。
+ * 两种写入方式：
+ * </p>
+ * <ul>
+ *   <li>{@code SAVE}：把编辑区内容写回当前打开的那个版本（就地覆盖），版本属性不变；</li>
+ *   <li>{@code SAVE_AS_NEW}：基于编辑区内容新建一条版本，属性由 {@code source} 指定。</li>
+ * </ul>
+ * <p>
+ * 两者都会把该版本设为「当前」并回写题目。质量检查结果只写进快照，不阻断保存。
  * </p>
  *
- * @param baseVersionId 这次编辑基于哪个版本；为空表示基于当前题面
- * @param source        MANUAL（手工编辑）/ AI_APPLIED（AI 生成后又改过）
+ * @param mode          SAVE / SAVE_AS_NEW，空值按 SAVE_AS_NEW 处理
+ * @param baseVersionId 当前打开的版本；SAVE 时必填
+ * @param source        INITIAL / AI / MANUAL，仅 SAVE_AS_NEW 有意义
  * @param note          版本备注
  * @param formatted     完整题面内容
  */
 public record StatementComposeRequest(
+        String mode,
         Long baseVersionId,
         String source,
         String note,
         ProblemFormattedContent formatted
 ) {
-    public boolean aiApplied() {
-        return "AI_APPLIED".equalsIgnoreCase(source);
+    public boolean saveInPlace() {
+        return "SAVE".equalsIgnoreCase(mode);
+    }
+
+    public String normalizedSource() {
+        if ("INITIAL".equalsIgnoreCase(source) || "AI".equalsIgnoreCase(source)) {
+            return source.toUpperCase();
+        }
+        return "MANUAL";
     }
 }

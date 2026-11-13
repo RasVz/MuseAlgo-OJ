@@ -127,7 +127,7 @@ class ProblemStatementVersionServiceTest {
 
     @Test
     void composeRejectsBlankContent() {
-        StatementComposeRequest request = new StatementComposeRequest(VERSION_ID, "MANUAL", null,
+        StatementComposeRequest request = new StatementComposeRequest("SAVE_AS_NEW", VERSION_ID, "MANUAL", null,
                 new ProblemFormattedContent("题名", "   ", "", "", "", 1000, 512, List.of()));
 
         BusinessException failure = assertThrows(BusinessException.class,
@@ -145,7 +145,7 @@ class ProblemStatementVersionServiceTest {
         when(problemService.getById(PROBLEM_ID)).thenReturn(problem);
         when(problemService.updateById(any(Problem.class))).thenReturn(true);
 
-        StatementComposeRequest request = new StatementComposeRequest(VERSION_ID, "MANUAL", "改了正文",
+        StatementComposeRequest request = new StatementComposeRequest("SAVE_AS_NEW", VERSION_ID, "MANUAL", "改了正文",
                 new ProblemFormattedContent("新题名", "整理后的正文，长度足够避免触发过短规则。".repeat(4),
                         "输入", "输出", "提示", 1000, 512, List.of(new FormatSample("1", "1"))));
 
@@ -156,6 +156,26 @@ class ProblemStatementVersionServiceTest {
         assertEquals(ProblemStatementVersionService.SOURCE_MANUAL, result.source());
         verify(versionMapper, times(1)).insert(any(ProblemStatementVersion.class));
         verify(problemService, times(1)).updateById(any(Problem.class));
+    }
+
+    @Test
+    void saveInPlaceUpdatesOpenedVersionWithoutCreatingARow() {
+        ProblemStatementVersion base = version(ProblemStatementVersionService.STATUS_LIVE);
+        when(versionMapper.selectById(VERSION_ID)).thenReturn(base);
+        when(problemService.getById(PROBLEM_ID)).thenReturn(problem);
+        when(problemService.updateById(any(Problem.class))).thenReturn(true);
+        when(versionMapper.updateById(any(ProblemStatementVersion.class))).thenReturn(1);
+
+        StatementComposeRequest request = new StatementComposeRequest("SAVE", VERSION_ID, "MANUAL", null,
+                new ProblemFormattedContent("新题名", "整理后的正文，长度足够避免触发过短规则。".repeat(4),
+                        "输入", "输出", "提示", 1000, 512, List.of(new FormatSample("1", "1"))));
+
+        var result = service.compose(PROBLEM_ID, request);
+
+        assertEquals(2, result.versionNo());
+        assertEquals("新题名", base.getTitle());
+        verify(versionMapper, never()).insert(any(ProblemStatementVersion.class));
+        verify(versionMapper, times(1)).updateById(any(ProblemStatementVersion.class));
     }
 
     private ProblemStatementVersion version(String status) {

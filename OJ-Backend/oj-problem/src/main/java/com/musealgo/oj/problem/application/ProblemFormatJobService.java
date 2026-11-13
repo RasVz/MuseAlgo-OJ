@@ -177,7 +177,7 @@ public class ProblemFormatJobService {
     }
 
     /**
-     * 单题版本优化：以指定版本为基线创建 1 条任务，产出候选版本等待审阅。
+     * 单题版本优化：以指定版本为基线创建 1 条任务，产出一条「AI 整理」版本。
      * <p>不自动应用：候选必须经过人工勾选字段后才写入题面。</p>
      */
     public ProblemFormatJobVO createVersionJob(Long problemId, Long baseVersionId, boolean ipMode) {
@@ -187,12 +187,10 @@ public class ProblemFormatJobService {
             throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "未登录，无法创建整理任务");
         }
         Problem problem = accessGuard.requireManagedProblem(problemId);
+        // 任何版本都可以作为优化基线（版本之间互相独立）
         ProblemStatementVersion base = baseVersionId == null
                 ? versionService.ensureLive(problem)
                 : versionService.requireVersion(problemId, baseVersionId);
-        if (ProblemStatementVersionService.STATUS_CANDIDATE.equals(base.getStatus())) {
-            throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "候选版本不能作为优化基线");
-        }
         requireNoActiveJob(creatorId);
 
         Long jobId = transactionTemplate.execute(status -> {
@@ -372,11 +370,11 @@ public class ProblemFormatJobService {
                     .generateProposal(source, Boolean.TRUE.equals(job.getIpMode()), job.getCreatorId());
 
             if (item.getBaseVersionId() != null) {
-                // 单题版本优化：只产出候选版本，绝不自动写题面
-                ProblemStatementVersion candidate = versionService.createCandidate(item.getProblemId(),
+                // 单题版本优化：只产出 AI 整理版本，绝不自动写题面
+                ProblemStatementVersion candidate = versionService.createAiVersion(item.getProblemId(),
                         item.getBaseVersionId(), job.getId(), job.getCreatorId(), proposal);
                 markItem(item.getId(), ITEM_REVIEW,
-                        "已生成候选版本 v" + candidate.getVersionNo() + "，等待审阅",
+                        "已生成 AI 整理版本 v" + candidate.getVersionNo(),
                         null, proposal, null, candidate.getId());
                 return;
             }
@@ -414,18 +412,18 @@ public class ProblemFormatJobService {
                 markItem(item.getId(), ITEM_APPLIED, "已自动应用：" + String.join("、", applied.appliedFields()),
                         null, proposal, String.join(",", applied.appliedFields()), null);
             } else {
-                String reason = blocking ? "存在阻断问题，等待人工审阅"
-                        : sampleRisk ? "样例存在风险，等待人工审阅"
-                        : needsHuman ? "正文明显缩短，等待人工确认"
-                        : "已生成，等待人工审阅";
-                // 待审项也落成候选版本：审阅入口统一到题面工作区，不再需要单独的对照弹窗
+                String reason = blocking ? "已生成 AI 整理版本（存在阻断问题，未自动应用）"
+                        : sampleRisk ? "已生成 AI 整理版本（样例有风险，未自动应用）"
+                        : needsHuman ? "已生成 AI 整理版本（正文明显缩短，未自动应用）"
+                        : "已生成 AI 整理版本";
+                // 未自动应用的项也落成 AI 整理版本：入口统一到题面工作区
                 Long candidateId = null;
                 try {
                     ProblemStatementVersion live = versionService.ensureLive(problem, job.getCreatorId());
-                    candidateId = versionService.createCandidate(item.getProblemId(), live.getId(),
+                    candidateId = versionService.createAiVersion(item.getProblemId(), live.getId(),
                             job.getId(), job.getCreatorId(), proposal).getId();
                 } catch (RuntimeException e) {
-                    log.warn("批量整理生成候选版本失败 problemId={}", item.getProblemId(), e);
+                    log.warn("批量整理生成 AI 版本失败 problemId={}", item.getProblemId(), e);
                 }
                 markItem(item.getId(), ITEM_REVIEW, reason, null, proposal, null, candidateId);
             }

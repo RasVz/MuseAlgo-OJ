@@ -2,8 +2,7 @@ import { test, expect } from '@playwright/test'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 
-// 题面工作区（文档就地编辑 + 版本轨）的合成检查。
-// 入口只有一个：编辑页的「题面」Tab。AI 与手改共用同一个编辑区，保存才产生版本。
+// 题面工作区：三属性版本、统一工具栏、无状态提示、差异大弹窗。
 test.describe.configure({ timeout: 90000 })
 
 const EVIDENCE = process.env.OJ_TEST_OUTPUT_DIR
@@ -42,8 +41,8 @@ const problemDetail = {
 
 const rawVersions = [
   { id: 303, versionNo: 3, status: 'LIVE', source: 'MANUAL', title: '两数之和', content: CONTENT_V3, timeLimit: 2000, memoryLimit: 256, baseVersionId: 302, issues: [], createTime: '2026-11-13T10:20:00', live: true },
-  { id: 302, versionNo: 2, status: 'ARCHIVED', source: 'AI_APPLIED', title: 'Two Sum', content: CONTENT_V2, timeLimit: 1000, memoryLimit: 512, baseVersionId: 301, issues: [], createTime: '2026-11-12T09:00:00', live: false },
-  { id: 301, versionNo: 1, status: 'CANDIDATE', source: 'AI', title: '两数之和（候选）', content: `${CONTENT_V3}\n\n## 提示\n\n用哈希表把查找降到 $O(1)$。`, timeLimit: 2000, memoryLimit: 256, baseVersionId: 302, issues: [{ code: 'SAMPLE_CONTENT_CHANGED', field: 'samples', severity: 'WARN', message: '第 2 组样例与原文不一致' }], createTime: '2026-11-13T11:00:00', live: false }
+  { id: 302, versionNo: 2, status: 'ARCHIVED', source: 'AI', title: 'Two Sum', content: CONTENT_V2, timeLimit: 1000, memoryLimit: 512, baseVersionId: 301, issues: [], createTime: '2026-11-12T09:00:00', live: false },
+  { id: 301, versionNo: 1, status: 'ARCHIVED', source: 'INITIAL', title: '初始题面', content: CONTENT_V2, timeLimit: 1000, memoryLimit: 512, baseVersionId: null, issues: [], createTime: '2026-11-11T08:00:00', live: false }
 ]
 
 let versions = []
@@ -87,7 +86,7 @@ function toVO(version) {
     baseVersionId: version.baseVersionId,
     jobId: null,
     issueErrors: 0,
-    issueWarnings: version.issues?.length || 0,
+    issueWarnings: 0,
     createdBy: 3,
     createTime: version.createTime,
     live: version.live === true,
@@ -97,7 +96,7 @@ function toVO(version) {
 
 async function setup(page) {
   versions = rawVersions.map((v) => ({ ...v }))
-  const state = { composeBody: null, nextVersionId: 304 }
+  const state = { composeBodies: [], nextVersionId: 400, aiVersionAdded: false }
 
   await page.addInitScript(() => {
     localStorage.setItem('accessToken', 'synthetic-studio-token')
@@ -118,30 +117,64 @@ async function setup(page) {
     if (path === '/api/problem/12/statement/versions' && method === 'GET') return json(versions.map(toVO))
 
     if (path === '/api/problem/12/statement/versions/compose' && method === 'POST') {
-      state.composeBody = request.postDataJSON()
-      const created = {
-        id: state.nextVersionId,
-        versionNo: Math.max(...versions.map((v) => v.versionNo)) + 1,
-        status: 'LIVE',
-        source: state.composeBody.source,
-        title: state.composeBody.formatted.title,
-        content: state.composeBody.formatted.content,
-        timeLimit: state.composeBody.formatted.timeLimitMs,
-        memoryLimit: state.composeBody.formatted.memoryLimitMb,
-        baseVersionId: state.composeBody.baseVersionId,
-        issues: [],
-        createTime: '2026-11-13T12:00:00',
-        live: true
+      const body = request.postDataJSON()
+      state.composeBodies.push(body)
+      let saved
+      if (body.mode === 'SAVE') {
+        const target = versions.find((v) => v.id === body.baseVersionId)
+        Object.assign(target, {
+          title: body.formatted.title,
+          content: body.formatted.content,
+          timeLimit: body.formatted.timeLimitMs,
+          memoryLimit: body.formatted.memoryLimitMb,
+          status: 'LIVE',
+          live: true
+        })
+        versions.forEach((v) => { if (v !== target) { v.live = false; if (v.status === 'LIVE') v.status = 'ARCHIVED' } })
+        saved = target
+      } else {
+        saved = {
+          id: state.nextVersionId,
+          versionNo: Math.max(...versions.map((v) => v.versionNo)) + 1,
+          status: 'LIVE',
+          source: body.source,
+          title: body.formatted.title,
+          content: body.formatted.content,
+          timeLimit: body.formatted.timeLimitMs,
+          memoryLimit: body.formatted.memoryLimitMb,
+          baseVersionId: body.baseVersionId,
+          issues: [],
+          createTime: '2026-11-13T12:00:00',
+          live: true
+        }
+        versions.forEach((v) => { v.live = false; if (v.status === 'LIVE') v.status = 'ARCHIVED' })
+        versions = [saved, ...versions]
+        state.nextVersionId += 1
       }
-      versions = [created, ...versions.map((v) => ({ ...v, live: false, status: v.status === 'LIVE' ? 'ARCHIVED' : v.status }))]
-      state.nextVersionId += 1
-      return json(toVO(created), '保存成功')
+      return json(toVO(saved), '保存成功')
     }
 
     if (path === '/api/problem/12/statement/versions/optimize' && method === 'POST') {
-      return json({ id: 91, status: 'PENDING', total: 1, processed: 0, applied: 0, review: 1, failed: 0, skipped: 0, items: [{ problemId: 12, status: 'PENDING' }] })
+      return json({ id: 91, status: 'PENDING', total: 1, processed: 0, items: [{ problemId: 12, status: 'PENDING' }] })
     }
     if (path === '/api/problem/format/jobs/91' && method === 'GET') {
+      if (!state.aiVersionAdded) {
+        state.aiVersionAdded = true
+        versions = [{
+          id: 401,
+          versionNo: Math.max(...versions.map((v) => v.versionNo)) + 1,
+          status: 'ARCHIVED',
+          source: 'AI',
+          title: 'AI 整理结果',
+          content: `${CONTENT_V3}\n\n## 复杂度\n\n$O(n)$。`,
+          timeLimit: 2000,
+          memoryLimit: 256,
+          baseVersionId: 303,
+          issues: [],
+          createTime: '2026-11-13T13:00:00',
+          live: false
+        }, ...versions]
+      }
       return json({
         id: 91,
         status: 'DONE',
@@ -151,8 +184,8 @@ async function setup(page) {
         review: 1,
         failed: 0,
         skipped: 0,
-        message: '成功 0 题，待审 1 题',
-        items: [{ problemId: 12, status: 'REVIEW', resultVersionId: 301, baseVersionId: 303 }]
+        message: '完成',
+        items: [{ problemId: 12, status: 'REVIEW', resultVersionId: 401, baseVersionId: 303 }]
       })
     }
 
@@ -170,67 +203,89 @@ async function setup(page) {
 
 async function openStudio(page) {
   await page.goto('/admin/problem/edit/12')
-  await expect(page.locator('.st')).toBeVisible()
-  await expect(page.locator('.st-block').first()).toBeVisible()
+  await expect(page.locator('.st')).toBeVisible({ timeout: 20000 })
+  await expect(page.locator('.st-block').first()).toBeVisible({ timeout: 20000 })
 }
 
-test('题面工作区：文档区块、元数据行与版本轨', async ({ page }) => {
+test('统一工具栏、三种版本属性、无状态提示', async ({ page }) => {
   await setup(page)
   await openStudio(page)
 
-  await expect(page.locator('.st-block')).toHaveCount(7)
-  await expect(page.locator('.st-block-label').first()).toHaveText('题名')
-  await expect(page.locator('.st-state')).toContainText('已保存为 v3')
-  await expect(page.locator('.st-rail-card')).toHaveCount(3)
-  await expect(page.locator('.meta-row')).toContainText('难度分')
+  const toolbar = page.locator('.st-toolbar')
+  await expect(toolbar.getByRole('button', { name: '返回题库' })).toBeVisible()
+  await expect(toolbar.getByRole('button', { name: '保存修改' })).toBeVisible()
+  await expect(toolbar.getByRole('button', { name: '另存为新版本' })).toBeVisible()
+  await expect(toolbar.getByRole('button', { name: '放弃修改' })).toBeVisible()
+  await expect(toolbar.getByRole('button', { name: '优化这一版' })).toBeVisible()
 
-  await page.waitForTimeout(800)
-  await page.screenshot({ path: join(EVIDENCE, '21-studio-overview.png') })
+  // 截图里那些提示全部不再出现
+  await expect(page.locator('.st-state')).toHaveCount(0)
+  await expect(page.locator('.st-banner')).toHaveCount(0)
+  await expect(page.locator('.st-issues')).toHaveCount(0)
+  await expect(page.locator('.st-chip')).toHaveCount(0)
+
+  await expect(page.locator('.st-block')).toHaveCount(7)
+  await expect(page.locator('.st-block').first().getByRole('button', { name: '恢复' })).toHaveCount(0)
+  await expect(page.locator('.st-block').first().getByRole('button', { name: '编辑' })).toBeVisible()
+  await expect(page.locator('.st-block').first().getByRole('button', { name: '差异' })).toBeVisible()
+
+  await expect(page.locator('.st-rail-card')).toHaveCount(3)
+  await expect(page.locator('.st-rail-card', { hasText: '人工编辑' }).first()).toBeVisible()
+  await expect(page.locator('.st-rail-card', { hasText: 'AI 整理' }).first()).toBeVisible()
+  await expect(page.locator('.st-rail-card', { hasText: '初始题面' }).first()).toBeVisible()
+  await expect(page.locator('.st-rail-card', { hasText: '当前' }).first()).toBeVisible()
+
+  await page.waitForTimeout(700)
+  await page.screenshot({ path: join(EVIDENCE, '31-studio-clean.png') })
 })
 
-test('题面工作区：就地编辑后保存为新版本', async ({ page }) => {
+test('就地编辑、差异大弹窗、另存为新版本', async ({ page }) => {
   const state = await setup(page)
   await openStudio(page)
 
   const contentBlock = page.locator('.st-block').nth(1)
   await contentBlock.getByRole('button', { name: '编辑' }).click()
-  const textarea = contentBlock.locator('textarea')
-  await expect(textarea).toBeVisible()
-  await textarea.fill(`${CONTENT_V3}\n\n补充一行：数组元素互不相同。`)
+  await contentBlock.locator('textarea').fill(`${CONTENT_V3}\n\n补充：数组元素互不相同。`)
   await contentBlock.getByRole('button', { name: '完成' }).click()
 
-  await expect(contentBlock.locator('.st-chip')).toHaveText('已改')
-  await expect(page.locator('.save-btn')).toHaveText('保存为新版本')
+  await contentBlock.getByRole('button', { name: '差异' }).click()
+  const dialog = page.locator('.el-dialog').last()
+  await expect(dialog).toBeVisible()
+  await expect(dialog.locator('.st-diff-pane')).toHaveCount(2)
+  await expect(dialog.locator('.st-diff-line.is-add').first()).toBeVisible()
+  await page.waitForTimeout(500)
+  await page.screenshot({ path: join(EVIDENCE, '32-studio-diff-dialog.png') })
+  await dialog.getByRole('button', { name: '关闭', exact: true }).click()
 
-  await page.waitForTimeout(400)
-  await page.screenshot({ path: join(EVIDENCE, '22-studio-editing.png') })
-
-  await page.locator('.save-btn').click()
-  await expect(page.locator('.st-state')).toContainText('已保存为 v4')
-
-  expect(state.composeBody).not.toBeNull()
-  expect(state.composeBody.source).toBe('MANUAL')
-  expect(state.composeBody.baseVersionId).toBe(303)
-  expect(state.composeBody.formatted.content).toContain('数组元素互不相同')
+  await page.locator('.st-toolbar').getByRole('button', { name: '另存为新版本' }).click()
   await expect(page.locator('.st-rail-card')).toHaveCount(4)
+
+  const last = state.composeBodies.at(-1)
+  expect(last.mode).toBe('SAVE_AS_NEW')
+  expect(last.source).toBe('MANUAL')
+  expect(last.formatted.content).toContain('数组元素互不相同')
+  await page.screenshot({ path: join(EVIDENCE, '33-studio-save-as-new.png') })
 })
 
-test('题面工作区：切换历史版本与 AI 草稿', async ({ page }) => {
-  await setup(page)
+test('保存修改是就地覆盖，优化生成 AI 整理版本', async ({ page }) => {
+  const state = await setup(page)
   await openStudio(page)
 
-  await page.locator('.st-rail-card', { hasText: 'v2' }).click()
-  await expect(page.locator('.st-state')).toContainText('已保存为 v2')
-  await expect(page.locator('.st-render').nth(1)).toContainText('Given an array of integers')
+  const titleBlock = page.locator('.st-block').first()
+  await titleBlock.getByRole('button', { name: '编辑' }).click()
+  await titleBlock.locator('textarea').fill('两数之和（修订）')
+  await titleBlock.getByRole('button', { name: '完成' }).click()
 
+  await page.locator('.st-toolbar').getByRole('button', { name: '保存修改' }).click()
+  await expect(page.locator('.st-rail-card')).toHaveCount(3)
+  const saveBody = state.composeBodies.at(-1)
+  expect(saveBody.mode).toBe('SAVE')
+  expect(saveBody.baseVersionId).toBe(303)
+
+  await page.locator('.st-toolbar').getByRole('button', { name: '优化这一版' }).click()
+  await expect(page.locator('.st-rail-card')).toHaveCount(4, { timeout: 20000 })
+  await expect(page.locator('.st-rail-card', { hasText: 'AI 整理' }).first()).toBeVisible()
+  await expect(page.locator('.st-banner')).toHaveCount(0)
   await page.waitForTimeout(600)
-  await page.screenshot({ path: join(EVIDENCE, '23-studio-version-switch.png') })
-
-  await page.getByRole('button', { name: '优化这一版' }).click()
-  await page.getByRole('button', { name: '开始生成' }).click()
-
-  await expect(page.locator('.st-banner')).toContainText('AI 草稿', { timeout: 20000 })
-  await expect(page.locator('.st-state')).toContainText('AI 草稿未保存')
-  await page.waitForTimeout(800)
-  await page.screenshot({ path: join(EVIDENCE, '24-studio-ai-draft.png') })
+  await page.screenshot({ path: join(EVIDENCE, '34-studio-ai-version.png') })
 })

@@ -216,12 +216,12 @@ export function optimizeStatementVersion(problemId, baseVersionId, ipMode = fals
   })
 }
 
-// 编辑器保存：把当前编辑区内容写成新的当前版本（编辑与 AI 改写共用）
-export function composeStatement(problemId, { baseVersionId, source, note, formatted }) {
+// 编辑器保存：SAVE 覆盖当前打开的版本；SAVE_AS_NEW 新建一条版本
+export function composeStatement(problemId, { mode, baseVersionId, source, note, formatted }) {
   return request({
     url: `/problem/${problemId}/statement/versions/compose`,
     method: 'post',
-    data: { baseVersionId, source, note, formatted }
+    data: { mode, baseVersionId, source, note, formatted }
   })
 }
 

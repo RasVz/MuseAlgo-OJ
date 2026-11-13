@@ -5,14 +5,12 @@
         <div class="hero-badge">Problem Studio</div>
         <h1 class="hero-title">{{ isEditMode ? `编辑题目 #${form.id || routeId}` : '新建题目' }}</h1>
         <p class="hero-subtitle">
-          {{ isEditMode ? '逐段编辑题面，AI 结果先成为草稿；保存才产生新版本' : '填写基础信息并保存，随后进入测试用例与题面优化' }}
+          {{ isEditMode ? '每个版本都是独立内容，可直接保存或另存为新版本；差异在大弹窗里对照' : '填写基础信息并保存，随后进入测试用例与题面优化' }}
         </p>
       </div>
-      <div class="hero-right">
+      <div class="hero-right" v-if="!isEditMode">
         <el-button class="ghost-btn" @click="goBack">返回题库</el-button>
-        <el-button type="primary" class="save-btn" :loading="saving" @click="handleSaveBasic">
-          {{ isEditMode ? (studioDirty ? '保存为新版本' : '保存修改') : '保存并创建' }}
-        </el-button>
+        <el-button type="primary" class="save-btn" :loading="saving" @click="createProblemFlow">保存并创建</el-button>
       </div>
     </div>
 
@@ -50,7 +48,8 @@
           :initial-version-id="route.query.version"
           :saving="saving"
           @update:form="Object.assign(form, $event)"
-          @dirty-change="handleStudioDirty"
+          @save="handleSaveRequest"
+          @go-back="goBack"
         />
       </el-tab-pane>
 
@@ -85,7 +84,6 @@ import ProblemBasicForm from './components/ProblemBasicForm.vue'
 import ProblemCaseManager from './components/ProblemCaseManager.vue'
 import StdManagerPanel from './components/StdManagerPanel.vue'
 import StatementStudio from './problemFormat/StatementStudio.vue'
-import { toFormattedPayload } from './problemFormat/formatReview'
 
 const route = useRoute()
 const router = useRouter()
@@ -102,8 +100,6 @@ const basicFormRef = ref(null)
 const caseManagerRef = ref(null)
 const stdPanelRef = ref(null)
 const studioRef = ref(null)
-const studioDirty = ref(false)
-const studioAiDraft = ref(false)
 
 const form = reactive({
   id: null,
@@ -145,11 +141,6 @@ function snapshotMeta() {
     tags: String(form.tags || ''),
     isPublic: Number(form.isPublic) || 0
   }
-}
-
-function handleStudioDirty(state) {
-  studioDirty.value = Boolean(state?.dirty)
-  studioAiDraft.value = Boolean(state?.aiDraft)
 }
 
 // 创建接口返回的新 ID 位置不固定（数字/字符串/对象/消息文本都可能带出来），
@@ -290,49 +281,28 @@ function buildPayload() {
   return payload
 }
 
-const handleSaveBasic = async () => {
-  if (!form.id) {
-    await createProblemFlow()
-    return
-  }
-
-  if (!String(form.title || '').trim()) {
-    activeTab.value = 'statement'
+/** 保存修改 / 另存为新版本：由题面工作区统一发起，元数据一起提交。 */
+const handleSaveRequest = async ({ mode, baseVersionId, source, formatted }) => {
+  if (!form.id) return
+  if (!String(formatted.title || '').trim()) {
     ElMessage.warning('题名不能为空')
     return
   }
-  if (!String(form.content || '').trim()) {
-    activeTab.value = 'statement'
+  if (!String(formatted.content || '').trim()) {
     ElMessage.warning('题目正文不能为空')
-    return
-  }
-
-  const statementDirty = studioRef.value?.isDirty?.() === true
-  if (!statementDirty && !metaDirty.value) {
-    ElMessage.info('没有需要保存的修改')
     return
   }
 
   saving.value = true
   try {
-    // 先落版本（写题面 + 建版本），再补元数据；顺序反了会出现「版本里是旧内容」
-    if (statementDirty) {
-      await composeStatement(form.id, {
-        baseVersionId: studioRef.value?.baseVersionId ?? null,
-        source: studioAiDraft.value ? 'AI_APPLIED' : 'MANUAL',
-        note: '',
-        formatted: toFormattedPayload({
-          title: form.title,
-          content: form.content,
-          inputDesc: form.inputDesc,
-          outputDesc: form.outputDesc,
-          hint: form.hint,
-          timeLimit: form.timeLimit,
-          memoryLimit: form.memoryLimit,
-          samples: form.samples
-        })
-      })
-    }
+    // 先落版本（写题面 + 版本行），再补元数据；顺序反了会出现「版本里是旧内容」
+    await composeStatement(form.id, {
+      mode,
+      baseVersionId,
+      source,
+      note: '',
+      formatted
+    })
 
     if (metaDirty.value) {
       const res = await updateProblem(buildPayload())
@@ -342,7 +312,7 @@ const handleSaveBasic = async () => {
       }
     }
 
-    ElMessage.success(statementDirty ? '已保存为新版本' : '修改已保存')
+    ElMessage.success(mode === 'SAVE' ? '修改已保存' : '已另存为新版本')
     snapshotMeta()
     await studioRef.value?.reload?.()
     caseManagerRef.value?.loadCases?.()
