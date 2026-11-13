@@ -138,6 +138,9 @@ public class ExamPaperServiceImpl implements ExamPaperService {
             }
         } else {
             validatePaperStructure(dto);
+            if (Integer.valueOf(1).equals(dto.getIsPublished())) {
+                validatePublishedScoreTotal(dto);
+            }
         }
         paper.setTitle(dto.getTitle());
         paper.setDescription(dto.getDescription());
@@ -397,7 +400,7 @@ public class ExamPaperServiceImpl implements ExamPaperService {
             List<ExamPaperDTO.ExamOptionItem> normalized = options.stream().map(option -> {
                 ExamPaperDTO.ExamOptionItem copy = new ExamPaperDTO.ExamOptionItem();
                 copy.setKey(option.getKey().trim().toUpperCase());
-                copy.setText(option.getText());
+                copy.setText(option.getText().trim());
                 return copy;
             }).toList();
             return OBJECT_MAPPER.writeValueAsString(normalized);
@@ -469,9 +472,9 @@ public class ExamPaperServiceImpl implements ExamPaperService {
                 }
             }
         }
-        if (optionKeys.isEmpty()) {
+        if (optionKeys.size() < 2) {
             throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID,
-                    "第 " + order + " 题至少需要一个选项");
+                    "第 " + order + " 题至少需要两个选项");
         }
         Set<String> answerKeys = normalized.chars()
                 .mapToObj(c -> String.valueOf((char) c)).collect(Collectors.toSet());
@@ -522,18 +525,43 @@ public class ExamPaperServiceImpl implements ExamPaperService {
                     ? "" : requested.getQuestionType().trim().toUpperCase();
             String requestedOptions = safelySerializeOptions(requested.getOptions());
             String requestedAnswer = ObjectiveJudge.normalize(requestedType, requested.getAnswer());
+            String requestedStatement = normalizeText(requested.getStatement());
+            String requestedExplanation = normalizeText(requested.getExplanation());
             boolean answerMatches = java.util.Objects.equals(current.getAnswer(), requestedAnswer)
                     || java.util.Objects.equals(current.getAnswer(), requested.getAnswer());
             if (!java.util.Objects.equals(current.getQuestionType(), requestedType)
-                    || !java.util.Objects.equals(current.getStatement(), requested.getStatement())
+                    || !java.util.Objects.equals(normalizeText(current.getStatement()), requestedStatement)
                     || !java.util.Objects.equals(normalizeStoredOptions(current.getOptions()), requestedOptions)
                     || !answerMatches
-                    || !java.util.Objects.equals(current.getExplanation(), requested.getExplanation())
+                    || !java.util.Objects.equals(normalizeText(current.getExplanation()), requestedExplanation)
                     || !java.util.Objects.equals(current.getScore(), requested.getScore())) {
                 return true;
             }
         }
         return false;
+    }
+
+    private void validatePublishedScoreTotal(ExamPaperDTO dto) {
+        long configuredTotal = 0;
+        if (dto.getProblems() != null) {
+            configuredTotal += dto.getProblems().stream()
+                    .mapToLong(item -> item.getScore() == null ? 0 : item.getScore()).sum();
+        }
+        if (dto.getQuestions() != null) {
+            configuredTotal += dto.getQuestions().stream()
+                    .mapToLong(item -> item.getScore() == null ? 0 : item.getScore()).sum();
+        }
+        if (dto.getTotalScore() == null || configuredTotal != dto.getTotalScore().longValue()) {
+            throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID,
+                    "编程题与客观题分值合计必须等于试卷满分");
+        }
+    }
+
+    private static String normalizeText(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
     }
 
     private static String safelySerializeOptions(List<ExamPaperDTO.ExamOptionItem> options) {

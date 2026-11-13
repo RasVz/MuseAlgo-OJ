@@ -20,6 +20,7 @@ public class ExamAttemptVO {
     private Integer codingScore;
     private Integer totalScore;
     private Long remainingSeconds;
+    private Boolean gradingPending = false;
     private List<ExamPaperVO.ExamAttemptAnswerVO> answers = new ArrayList<>();
     private List<ExamPaperVO.ExamQuestionResultVO> results = new ArrayList<>();
 }

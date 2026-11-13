@@ -197,6 +197,94 @@ class ExamPaperAttemptTest {
     }
 
     @Test
+    void manualFinishWaitsForPendingJudgeAndCanRetryAfterItCompletes() {
+        ExamAttempt running = runningAttempt();
+        when(examAttemptMapper.selectRunningByPaperUserForUpdate(anyLong(), anyLong())).thenReturn(running);
+        when(examPaperProblemMapper.selectList(any())).thenReturn(List.of(scoredProblem(100L, 20)));
+        when(submissionAttemptQuery.countPending(anyLong(), any(), any(), any())).thenReturn(1L, 0L);
+        when(examAnswerMapper.selectList(any())).thenReturn(List.of());
+        when(submissionAttemptQuery.findBestScores(anyLong(), any(), any(), any()))
+                .thenReturn(List.of(new SubmissionAttemptQuery.SubmissionAttemptScore(100L, 50)));
+
+        var pending = assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
+                () -> attemptFlow.finishAttempt(10L, 1L));
+        assertEquals("EXAM_ATTEMPT_GRADING_PENDING", pending.getErrorCode().key());
+        assertEquals(ExamAttempt.STATUS_RUNNING, running.getStatus());
+
+        ExamAttemptVO completed = attemptFlow.finishAttempt(10L, 1L);
+
+        assertEquals(ExamAttempt.STATUS_SUBMITTED, completed.getStatus());
+        assertEquals(10, completed.getCodingScore());
+        verify(examAttemptMapper, times(1)).updateById(any(ExamAttempt.class));
+    }
+
+    @Test
+    void expiredPendingAttemptDoesNotBlockOtherAutomaticFinalizations() {
+        ExamAttempt pendingAttempt = runningAttempt();
+        pendingAttempt.setId(21L);
+        pendingAttempt.setEndTime(LocalDateTime.now().minusMinutes(2));
+        ExamAttempt readyAttempt = runningAttempt();
+        readyAttempt.setId(22L);
+        readyAttempt.setEndTime(LocalDateTime.now().minusMinutes(2));
+        when(examAttemptMapper.selectList(any())).thenReturn(List.of(pendingAttempt, readyAttempt));
+        when(examAttemptMapper.selectByIdForUpdate(21L)).thenReturn(pendingAttempt);
+        when(examAttemptMapper.selectByIdForUpdate(22L)).thenReturn(readyAttempt);
+        when(examAttemptMapper.selectRunningByPaperUserForUpdate(anyLong(), anyLong())).thenReturn(pendingAttempt);
+        when(examPaperMapper.selectById(10L)).thenReturn(paper(90));
+        when(examPaperProblemMapper.selectList(any())).thenReturn(List.of(scoredProblem(100L, 20)));
+        when(submissionAttemptQuery.countPending(anyLong(), any(), any(), any())).thenReturn(1L, 0L, 1L);
+        when(examAnswerMapper.selectList(any())).thenReturn(List.of());
+        when(submissionAttemptQuery.findBestScores(anyLong(), any(), any(), any()))
+                .thenReturn(List.of(new SubmissionAttemptQuery.SubmissionAttemptScore(100L, 100)));
+
+        int finalized = attemptFlow.autoFinalizeExpired();
+        ExamAttemptVO pending = attemptFlow.getAttempt(10L, 1L);
+
+        assertEquals(1, finalized);
+        assertEquals(ExamAttempt.STATUS_RUNNING, pendingAttempt.getStatus());
+        assertEquals(ExamAttempt.STATUS_TIMEOUT, readyAttempt.getStatus());
+        assertEquals(ExamAttempt.STATUS_RUNNING, pending.getStatus());
+        assertEquals(0L, pending.getRemainingSeconds());
+        assertEquals(true, pending.getGradingPending());
+    }
+
+    @Test
+    void startDoesNotCreateRetakeUntilExpiredAttemptFinishesGrading() {
+        ExamAttempt expired = runningAttempt();
+        expired.setEndTime(LocalDateTime.now().minusSeconds(1));
+        when(examPaperMapper.selectByIdForUpdate(10L)).thenReturn(paper(90));
+        when(examAttemptMapper.selectRunningByPaperUserForUpdate(10L, 1L)).thenReturn(expired);
+        when(examPaperProblemMapper.selectList(any())).thenReturn(List.of(scoredProblem(100L, 20)));
+        when(submissionAttemptQuery.countPending(anyLong(), any(), any(), any())).thenReturn(1L);
+        when(examAnswerMapper.selectList(any())).thenReturn(List.of());
+
+        ExamAttemptVO result = attemptFlow.startAttempt(10L, 1L);
+
+        assertEquals(expired.getId(), result.getId());
+        assertEquals(ExamAttempt.STATUS_RUNNING, result.getStatus());
+        assertEquals(0L, result.getRemainingSeconds());
+        assertEquals(true, result.getGradingPending());
+        verify(examAttemptMapper, never()).insert(any(ExamAttempt.class));
+    }
+
+    @Test
+    void expiredAnswerSubmitKeepsAttemptRunningWhileCodingJudgeIsPending() {
+        ExamAttempt expired = runningAttempt();
+        expired.setEndTime(LocalDateTime.now().minusSeconds(1));
+        when(examAttemptMapper.selectRunningByPaperUserForUpdate(anyLong(), anyLong())).thenReturn(expired);
+        when(examPaperProblemMapper.selectList(any())).thenReturn(List.of(scoredProblem(100L, 20)));
+        when(submissionAttemptQuery.countPending(anyLong(), any(), any(), any())).thenReturn(1L);
+        when(examAnswerMapper.selectList(any())).thenReturn(List.of());
+
+        var error = assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
+                () -> attemptFlow.submitAnswers(10L, 1L, answerSubmit(1L, "A")));
+
+        assertEquals("EXAM_ATTEMPT_GRADING_PENDING", error.getErrorCode().key());
+        assertEquals(ExamAttempt.STATUS_RUNNING, expired.getStatus());
+        verify(examAttemptMapper, never()).updateById(any(ExamAttempt.class));
+    }
+
+    @Test
     void autoFinalizeExpiredMarksTimedOut() {
         ExamAttempt expired = new ExamAttempt();
         expired.setId(2L);
@@ -341,7 +429,14 @@ class ExamPaperAttemptTest {
         when(examPaperMapper.selectByIdForUpdate(10L)).thenReturn(paper(90));
         when(examAttemptMapper.selectCount(any())).thenReturn(1L);
         when(examPaperProblemMapper.selectList(any())).thenReturn(List.of());
-        when(examQuestionMapper.selectList(any())).thenReturn(List.of());
+        ExamQuestion legacyQuestion = new ExamQuestion();
+        legacyQuestion.setQuestionType("SINGLE");
+        legacyQuestion.setStatement(" 题干 ");
+        legacyQuestion.setOptions("[{\"key\":\"a\",\"text\":\" A \"}]");
+        legacyQuestion.setAnswer("A");
+        legacyQuestion.setExplanation(null);
+        legacyQuestion.setScore(5);
+        when(examQuestionMapper.selectList(any())).thenReturn(List.of(legacyQuestion));
         ExamPaperDTO dto = new ExamPaperDTO();
         dto.setId(10L);
         dto.setTitle("改过标题");
@@ -350,7 +445,17 @@ class ExamPaperAttemptTest {
         dto.setDurationMinutes(90);
         dto.setTotalScore(100);
         dto.setProblems(List.of());
-        dto.setQuestions(List.of());
+        ExamPaperDTO.ExamQuestionItem unchangedQuestion = new ExamPaperDTO.ExamQuestionItem();
+        unchangedQuestion.setQuestionType("SINGLE");
+        unchangedQuestion.setStatement("题干");
+        unchangedQuestion.setAnswer("A");
+        unchangedQuestion.setExplanation("");
+        unchangedQuestion.setScore(5);
+        ExamPaperDTO.ExamOptionItem option = new ExamPaperDTO.ExamOptionItem();
+        option.setKey("A");
+        option.setText("A");
+        unchangedQuestion.setOptions(List.of(option));
+        dto.setQuestions(List.of(unchangedQuestion));
 
         service.savePaper(dto, 1L);
 
@@ -419,6 +524,56 @@ class ExamPaperAttemptTest {
         verify(examPaperMapper, never()).insert(any(ExamPaper.class));
     }
 
+    @Test
+    void publishedPaperRejectsOneOptionQuestion() {
+        ExamPaperDTO dto = publishedPaperWithSingleQuestion(5);
+        ExamPaperDTO.ExamOptionItem option = new ExamPaperDTO.ExamOptionItem();
+        option.setKey("A");
+        option.setText("A");
+        dto.getQuestions().get(0).setOptions(List.of(option));
+
+        var error = assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
+                () -> service.savePaper(dto, 1L));
+
+        assertEquals("PROBLEM_INPUT_INVALID", error.getErrorCode().key());
+        verify(examPaperMapper, never()).insert(any(ExamPaper.class));
+    }
+
+    @Test
+    void publishedPaperRequiresConfiguredScoreTotalToMatchFullScore() {
+        ExamPaperDTO dto = publishedPaperWithSingleQuestion(6);
+        for (String key : List.of("A", "B")) {
+            ExamPaperDTO.ExamOptionItem option = new ExamPaperDTO.ExamOptionItem();
+            option.setKey(key);
+            option.setText(key);
+            dto.getQuestions().get(0).getOptions().add(option);
+        }
+
+        var error = assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
+                () -> service.savePaper(dto, 1L));
+
+        assertEquals("PROBLEM_INPUT_INVALID", error.getErrorCode().key());
+        verify(examPaperMapper, never()).insert(any(ExamPaper.class));
+    }
+
+    private ExamPaperDTO publishedPaperWithSingleQuestion(int totalScore) {
+        ExamPaperDTO dto = new ExamPaperDTO();
+        dto.setTitle("新试卷");
+        dto.setCategory("MOCK");
+        dto.setDurationMinutes(60);
+        dto.setTotalScore(totalScore);
+        dto.setIsPublished(1);
+        dto.setProblems(List.of());
+        ExamPaperDTO.ExamQuestionItem question = new ExamPaperDTO.ExamQuestionItem();
+        question.setQuestionType("SINGLE");
+        question.setStatement("题干");
+        question.setAnswer("A");
+        question.setScore(5);
+        question.setOptions(new java.util.ArrayList<>());
+        dto.setQuestions(List.of(question));
+        return dto;
+    }
+
     private ExamAttempt runningAttempt() {
         ExamAttempt attempt = new ExamAttempt();
         attempt.setId(7L);
@@ -428,6 +583,13 @@ class ExamPaperAttemptTest {
         attempt.setStartTime(LocalDateTime.now().minusMinutes(1));
         attempt.setEndTime(LocalDateTime.now().plusMinutes(10));
         return attempt;
+    }
+
+    private ExamPaperProblem scoredProblem(Long problemId, int score) {
+        ExamPaperProblem problem = new ExamPaperProblem();
+        problem.setProblemId(problemId);
+        problem.setScore(score);
+        return problem;
     }
 
     private ExamAnswerSubmitDTO answerSubmit(Long questionId, String value) {

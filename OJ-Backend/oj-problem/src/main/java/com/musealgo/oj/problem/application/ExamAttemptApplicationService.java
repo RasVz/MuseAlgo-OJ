@@ -70,7 +70,11 @@ public class ExamAttemptApplicationService {
         }
         LocalDateTime now = LocalDateTime.now();
         if (!running.getEndTime().isAfter(now)) {
-            finalizeAttempt(running, true);
+            ExamAttemptVO result = finalizeAttempt(running, true);
+            if (Boolean.TRUE.equals(result.getGradingPending())) {
+                throw new BusinessException(ProblemErrorCode.EXAM_ATTEMPT_GRADING_PENDING,
+                        "编程题仍在判题，判题完成后会自动交卷");
+            }
             throw new AttemptExpiredException("作答时间已结束，试卷已自动交卷");
         }
         if (submit.getAnswers() == null || submit.getAnswers().isEmpty()) {
@@ -148,9 +152,12 @@ public class ExamAttemptApplicationService {
         ExamAttempt running = findRunningAttempt(paperId, userId);
         if (running != null) {
             if (!running.getEndTime().isAfter(LocalDateTime.now())) {
-                finalizeAttempt(running, true); // 过期会话先自动交卷
+                ExamAttemptVO result = finalizeAttempt(running, true);
+                if (ExamAttempt.STATUS_RUNNING.equals(result.getStatus())) {
+                    return result;
+                }
             } else {
-                return toAttemptVO(running);
+                return toRunningAttemptVO(running);
             }
         }
         LocalDateTime now = LocalDateTime.now();
@@ -183,7 +190,7 @@ public class ExamAttemptApplicationService {
             if (!running.getEndTime().isAfter(LocalDateTime.now())) {
                 return finalizeAttempt(running, true);
             }
-            return toAttemptVO(running);
+            return toRunningAttemptVO(running);
         }
         return toAttemptVO(latest);
     }
@@ -199,7 +206,12 @@ public class ExamAttemptApplicationService {
             return toAttemptVO(latest);
         }
         boolean expired = !running.getEndTime().isAfter(LocalDateTime.now());
-        return finalizeAttempt(running, expired);
+        ExamAttemptVO result = finalizeAttempt(running, expired);
+        if (Boolean.TRUE.equals(result.getGradingPending())) {
+            throw new BusinessException(ProblemErrorCode.EXAM_ATTEMPT_GRADING_PENDING,
+                    "编程题仍在判题，请等待判题完成后交卷");
+        }
+        return result;
     }
 
     /** 定时任务：批量自动交卷所有已过期的进行中会话。 */
@@ -214,8 +226,10 @@ public class ExamAttemptApplicationService {
             ExamAttempt attempt = examAttemptMapper.selectByIdForUpdate(candidate.getId());
             if (attempt != null && ExamAttempt.STATUS_RUNNING.equals(attempt.getStatus())
                     && !attempt.getEndTime().isAfter(LocalDateTime.now())) {
-                finalizeAttempt(attempt, true);
-                count++;
+                ExamAttemptVO result = finalizeAttempt(attempt, true);
+                if (!ExamAttempt.STATUS_RUNNING.equals(result.getStatus())) {
+                    count++;
+                }
             }
         }
         if (count > 0) {
@@ -263,6 +277,15 @@ public class ExamAttemptApplicationService {
     /** 交卷：客观题按最新作答判分；编程题将会话内最好判分折算到试卷设置的单题分值。 */
     private ExamAttemptVO finalizeAttempt(ExamAttempt attempt, boolean auto) {
         LocalDateTime now = LocalDateTime.now();
+        LocalDateTime scoreDeadline = now.isBefore(attempt.getEndTime()) ? now : attempt.getEndTime();
+        List<ExamPaperProblem> problems = examPaperProblemMapper.selectList(
+                new LambdaQueryWrapper<ExamPaperProblem>()
+                        .eq(ExamPaperProblem::getPaperId, attempt.getPaperId()));
+        if (hasPendingCodingSubmission(attempt, problems, scoreDeadline)) {
+            ExamAttemptVO pending = toRunningAttemptVO(attempt, true);
+            return pending;
+        }
+
         int objectiveScore = examAnswerMapper.selectList(
                         new LambdaQueryWrapper<ExamAnswer>()
                                 .eq(ExamAnswer::getPaperId, attempt.getPaperId())
@@ -270,13 +293,9 @@ public class ExamAttemptApplicationService {
                 .stream().mapToInt(a -> a.getScore() == null ? 0 : a.getScore()).sum();
 
         int codingScore = 0;
-        List<ExamPaperProblem> problems = examPaperProblemMapper.selectList(
-                new LambdaQueryWrapper<ExamPaperProblem>()
-                        .eq(ExamPaperProblem::getPaperId, attempt.getPaperId()));
         if (!problems.isEmpty()) {
             List<Long> problemIds = problems.stream()
                     .map(ExamPaperProblem::getProblemId).toList();
-            LocalDateTime scoreDeadline = now.isBefore(attempt.getEndTime()) ? now : attempt.getEndTime();
             Map<Long, Integer> bestScoreByProblem = submissionAttemptQuery.findBestScores(
                             attempt.getUserId(), problemIds,
                             attempt.getStartTime(), scoreDeadline)
@@ -310,6 +329,31 @@ public class ExamAttemptApplicationService {
         running.setObjectiveScore(objectiveScore);
         running.setUpdateTime(LocalDateTime.now());
         examAttemptMapper.updateById(running);
+    }
+
+    private boolean hasPendingCodingSubmission(ExamAttempt attempt, List<ExamPaperProblem> problems,
+                                               LocalDateTime scoreDeadline) {
+        if (problems == null || problems.isEmpty()) {
+            return false;
+        }
+        List<Long> problemIds = problems.stream().map(ExamPaperProblem::getProblemId).distinct().toList();
+        return submissionAttemptQuery.countPending(
+                attempt.getUserId(), problemIds, attempt.getStartTime(), scoreDeadline) > 0;
+    }
+
+    private ExamAttemptVO toRunningAttemptVO(ExamAttempt attempt) {
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime scoreDeadline = now.isBefore(attempt.getEndTime()) ? now : attempt.getEndTime();
+        List<ExamPaperProblem> problems = examPaperProblemMapper.selectList(
+                new LambdaQueryWrapper<ExamPaperProblem>()
+                        .eq(ExamPaperProblem::getPaperId, attempt.getPaperId()));
+        return toRunningAttemptVO(attempt, hasPendingCodingSubmission(attempt, problems, scoreDeadline));
+    }
+
+    private ExamAttemptVO toRunningAttemptVO(ExamAttempt attempt, boolean gradingPending) {
+        ExamAttemptVO vo = toAttemptVO(attempt);
+        vo.setGradingPending(gradingPending);
+        return vo;
     }
 
     private ExamAttemptVO toAttemptVO(ExamAttempt attempt) {
