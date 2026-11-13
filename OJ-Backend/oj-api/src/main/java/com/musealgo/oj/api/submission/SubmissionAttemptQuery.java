@@ -22,6 +22,11 @@ public interface SubmissionAttemptQuery {
             Long userId, Collection<Long> problemIds,
             LocalDateTime from, LocalDateTime to);
 
+    /** 尚在判题中的普通练习提交数；交卷前等待这些提交进入终态。 */
+    long countPending(
+            Long userId, Collection<Long> problemIds,
+            LocalDateTime from, LocalDateTime to);
+
     /** 某题的本次最好成绩。 */
     record SubmissionAttemptScore(Long problemId, int bestScore) {
     }
