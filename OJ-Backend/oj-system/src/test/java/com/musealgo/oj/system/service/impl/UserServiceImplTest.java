@@ -200,6 +200,58 @@ class UserServiceImplTest {
                 org.mockito.ArgumentMatchers.any());
     }
 
+    @Test
+    void presentationPatchUsesAuthenticatedIdentityAndLeavesUnspecifiedFieldsAlone() {
+        var existing = new com.musealgo.oj.system.entity.User(); existing.setId(12L);
+        when(userMapper.selectById(12L)).thenReturn(existing);
+        when(userMapper.updateById(any(com.musealgo.oj.system.entity.User.class))).thenAnswer(invocation -> {
+            com.musealgo.oj.system.entity.User patch = invocation.getArgument(0);
+            org.junit.jupiter.api.Assertions.assertEquals(12L, patch.getId());
+            org.junit.jupiter.api.Assertions.assertEquals("/uploads/post-images/cover.png", patch.getCoverUrl());
+            org.junit.jupiter.api.Assertions.assertEquals(25, patch.getCoverPosition());
+            org.junit.jupiter.api.Assertions.assertNull(patch.getIntroduction());
+            org.junit.jupiter.api.Assertions.assertNull(patch.getNickname());
+            org.junit.jupiter.api.Assertions.assertNull(patch.getRole());
+            return 1;
+        });
+        var request = new com.musealgo.oj.system.entity.User(); request.setId(99L); request.setRole((byte) 3);
+        request.setCoverUrl("/uploads/post-images/cover.png"); request.setCoverPosition(25);
+        org.junit.jupiter.api.Assertions.assertTrue(userService.updateProfile(12L, request));
+    }
+
+    @Test
+    void emptyStringsClearCoverAndIntroduction() {
+        when(userMapper.selectById(12L)).thenReturn(new com.musealgo.oj.system.entity.User());
+        when(userMapper.updateById(any(com.musealgo.oj.system.entity.User.class))).thenAnswer(invocation -> {
+            com.musealgo.oj.system.entity.User patch = invocation.getArgument(0);
+            org.junit.jupiter.api.Assertions.assertEquals("", patch.getCoverUrl());
+            org.junit.jupiter.api.Assertions.assertEquals("", patch.getIntroduction());
+            return 1;
+        });
+        var request = new com.musealgo.oj.system.entity.User(); request.setCoverUrl(""); request.setIntroduction("");
+        org.junit.jupiter.api.Assertions.assertTrue(userService.updateProfile(12L, request));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"javascript:alert(1)", "data:image/svg+xml,test", "//evil.test/cover.png", "/uploads/../secret", "https://user:pass@example.com/a.png"})
+    void unsafeCoverIsRejectedBeforeDatabaseAccess(String url) {
+        var request = new com.musealgo.oj.system.entity.User(); request.setCoverUrl(url);
+        org.junit.jupiter.api.Assertions.assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
+                () -> userService.updateProfile(12L, request));
+        verify(userMapper, never()).selectById(anyLong());
+    }
+
+    @Test
+    void rejectsOversizedIntroductionAndInvalidFocus() {
+        var request = new com.musealgo.oj.system.entity.User(); request.setIntroduction("a".repeat(20001));
+        org.junit.jupiter.api.Assertions.assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
+                () -> userService.updateProfile(12L, request));
+        request.setIntroduction(null); request.setCoverPosition(101);
+        org.junit.jupiter.api.Assertions.assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
+                () -> userService.updateProfile(12L, request));
+        verify(userMapper, never()).selectById(anyLong());
+    }
+
     // ===== SEC-01：规范化 RBAC 关联同步 =====
 
     @Test

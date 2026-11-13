@@ -32,13 +32,15 @@ test('历史列表快速翻页时，较晚返回的旧页不能覆盖当前页',
     if (page === 2) oldResponseFinished()
   })
   try {
-    await adminPage.goto('/admin/reports')
-    await expect(adminPage.getByText('第1页合成数据')).toBeVisible({ timeout: 20000 })
-    const next = adminPage.locator('.pager .btn-next')
+    await adminPage.goto('/admin/reports?tab=history')
+    // 工作区多个页签会同时渲染同名报告，断言限定在历史列表内。
+    const history = adminPage.locator('.history-panel')
+    await expect(history.getByText('第1页合成数据')).toBeVisible({ timeout: 20000 })
+    const next = history.locator('.pager .btn-next')
     await next.click()
     await oldStarted
     await next.click()
-    await expect(adminPage.getByText('第3页合成数据')).toBeVisible()
+    await expect(history.getByText('第3页合成数据')).toBeVisible()
     const oldResponse = adminPage.waitForResponse(response => {
       const url = new URL(response.url())
       return url.pathname === '/api/profile/report/jobs' && url.searchParams.get('page') === '2'
@@ -47,8 +49,8 @@ test('历史列表快速翻页时，较晚返回的旧页不能覆盖当前页',
     await (await oldResponse).finished()
     await oldFinished
     await adminPage.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
-    await expect(adminPage.getByText('第3页合成数据')).toBeVisible()
-    await expect(adminPage.getByText('第2页合成数据')).toHaveCount(0)
+    await expect(history.getByText('第3页合成数据')).toBeVisible()
+    await expect(history.getByText('第2页合成数据')).toHaveCount(0)
   } finally {
     releaseOld()
   }

@@ -1,20 +1,38 @@
 <template>
   <div class="radar-wrapper">
     <svg viewBox="0 0 240 240" class="radar-svg">
-      <polygon v-for="i in 5" :key="`bg-${i}`" 
-        :points="getPolyPoints(i * 20)" 
-        class="radar-grid" 
+      <polygon
+        v-for="i in 5"
+        :key="`bg-${i}`"
+        :points="getPolyPoints((i * radius) / 5)"
+        class="radar-grid"
       />
-      <line v-for="(pt, i) in axisPoints" :key="`axis-${i}`"
-        x1="120" y1="120" :x2="pt.x" :y2="pt.y" class="radar-axis"
+      <line
+        v-for="(pt, i) in axisPoints"
+        :key="`axis-${i}`"
+        x1="120"
+        y1="120"
+        :x2="pt.x"
+        :y2="pt.y"
+        class="radar-axis"
       />
       <polygon :points="dataPointsStr" class="radar-area" />
-      <circle v-for="(pt, i) in dataPoints" :key="`dot-${i}`"
-        :cx="pt.x" :cy="pt.y" r="3" class="radar-dot"
+      <circle
+        v-for="(pt, i) in dataPoints"
+        :key="`dot-${i}`"
+        :cx="pt.x"
+        :cy="pt.y"
+        r="3"
+        class="radar-dot"
       />
-      <text v-for="(pt, i) in labelPoints" :key="`txt-${i}`"
-        :x="pt.x" :y="pt.y" class="radar-label"
-        text-anchor="middle" dominant-baseline="middle"
+      <text
+        v-for="(pt, i) in labelPoints"
+        :key="`txt-${i}`"
+        :x="pt.x"
+        :y="pt.y"
+        class="radar-label"
+        text-anchor="middle"
+        dominant-baseline="middle"
       >
         {{ data[i].name }}
       </text>
@@ -38,7 +56,7 @@
 import { computed } from 'vue'
 
 const props = defineProps({
-  data: { type: Array, default: () => [] } // [{name: 'DP', value: 80}, ...]
+  data: { type: Array, default: () => [] }, // [{name: 'DP', value: 80}, ...]
 })
 
 // 画布为 240x240 的 viewBox，center 取正中，radius=80 留出四周 40 的余量给轴标签
@@ -60,7 +78,7 @@ const getPoint = (idx, r) => {
   const angle = (Math.PI * 2 * idx) / count.value - Math.PI / 2
   return {
     x: center.x + r * Math.cos(angle),
-    y: center.y + r * Math.sin(angle)
+    y: center.y + r * Math.sin(angle),
   }
 }
 
@@ -73,23 +91,55 @@ const getPolyPoints = (r) => {
 }
 
 // 三组同角度、不同半径的点：外圈多边形用 radius，数据点按 value 内缩，轴标签在 radius 外侧
-const axisPoints = computed(() => Array.from({ length: count.value }, (_, i) => getPoint(i, radius)))
-const labelPoints = computed(() => Array.from({ length: count.value }, (_, i) => getPoint(i, radius + 20)))
+const axisPoints = computed(() =>
+  Array.from({ length: count.value }, (_, i) => getPoint(i, radius)),
+)
+const labelPoints = computed(() =>
+  Array.from({ length: count.value }, (_, i) => getPoint(i, radius + 20)),
+)
 
 // value 按 0-100 归一到半径：满值顶到网格外圈，与 utils/difficulty 的 rating 无关，两者不要混用
-const dataPoints = computed(() => props.data.map((item, i) => {
-  const r = (item.value / 100) * radius // value 0-100
-  return getPoint(i, r)
-}))
-const dataPointsStr = computed(() => dataPoints.value.map(p => `${p.x},${p.y}`).join(' '))
+const dataPoints = computed(() =>
+  props.data.map((item, i) => {
+    const r = (item.value / 100) * radius // value 0-100
+    return getPoint(i, r)
+  }),
+)
+const dataPointsStr = computed(() => dataPoints.value.map((p) => `${p.x},${p.y}`).join(' '))
 </script>
 
 <style scoped>
-.radar-wrapper { width: 100%; display: flex; justify-content: center; }
-.radar-svg { width: 300px; height: 300px; }
-.radar-grid { fill: none; stroke: var(--border-light); stroke-width: 1; }
-.radar-axis { stroke: var(--border-light); stroke-width: 1; }
-.radar-area { fill: rgba(107, 107, 107, 0.3); stroke: var(--accent-primary); stroke-width: 2; }
-.radar-dot { fill: var(--bg-surface); stroke: var(--accent-primary); stroke-width: 2; }
-.radar-label { font-size: 11px; fill: var(--text-regular); }
+.radar-wrapper {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+.radar-svg {
+  width: min(100%, 280px);
+  height: auto;
+  aspect-ratio: 1;
+}
+.radar-grid {
+  fill: none;
+  stroke: var(--border-light);
+  stroke-width: 1;
+}
+.radar-axis {
+  stroke: var(--border-light);
+  stroke-width: 1;
+}
+.radar-area {
+  fill: color-mix(in srgb, var(--el-color-primary) 14%, transparent);
+  stroke: var(--accent-primary);
+  stroke-width: 2;
+}
+.radar-dot {
+  fill: var(--bg-surface);
+  stroke: var(--accent-primary);
+  stroke-width: 2;
+}
+.radar-label {
+  font-size: 11px;
+  fill: var(--text-regular);
+}
 </style>

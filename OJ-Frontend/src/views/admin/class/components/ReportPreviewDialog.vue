@@ -80,15 +80,21 @@
       </p>
     </div>
 
-    <!-- 报告 iframe -->
-    <div v-else-if="currentHtml" class="report-frame-wrapper">
-      <iframe
-        ref="reportIframeRef"
-        :srcdoc="reportDocument(currentHtml)"
-        class="report-iframe"
-        title="学生周报预览"
-        sandbox="allow-scripts"
-      />
+    <!-- 报告快速预览：弹窗内保留即时预览，完整正文交给独立全屏阅读页 -->
+    <div v-else-if="currentHtml" class="report-preview">
+      <div class="preview-toolbar">
+        <span class="preview-hint">此处为快速预览；目录、结构化正文、打印与导出在独立阅读页</span>
+        <el-button type="primary" plain size="small" @click="openFullReport">打开完整报告</el-button>
+      </div>
+      <div class="report-frame-wrapper">
+        <iframe
+          ref="reportIframeRef"
+          :srcdoc="reportDocument(currentHtml)"
+          class="report-iframe"
+          title="学生周报预览"
+          sandbox="allow-scripts"
+        />
+      </div>
     </div>
 
     <!-- 尚未提交 -->
@@ -126,6 +132,7 @@ import { getErrorCode } from '@/utils/apiError'
 // 服务端 canRetry=true 时显示重试；切换学生立即停止旧轮询且内容按学生各自保存，
 // 不会把 A 的 HTML/错误显示到 B 上。关闭弹窗只停止轮询，不取消已受理任务。
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { Loading, CircleCheckFilled, CircleCloseFilled } from '@element-plus/icons-vue'
 import { getReportJob, requestReportJob, retryReportJob } from '@/api/report'
 import { unwrapResultData } from '@/utils/response'
@@ -195,7 +202,16 @@ const dialogTitle = computed(() => {
   return s ? `${s.name} · 学习周报` : '学习周报'
 })
 
+const router = useRouter()
 const onExport = () => exportImage(currentHtml.value, currentStudent.value?.name)
+
+// 完整正文统一由 /admin/reports/view/:jobId 承载；弹窗只负责受理、进度与快速预览。
+function openFullReport() {
+  const jobId = Number(currentStudent.value?.jobId)
+  if (!Number.isInteger(jobId) || jobId <= 0) return
+  const href = router.resolve({ name: 'AdminWeeklyReportReader', params: { jobId } }).href
+  window.open(href, '_blank', 'noopener')
+}
 
 function isInProgress(status) {
   return status === 'PENDING' || status === 'GENERATING'
@@ -576,9 +592,12 @@ defineExpose({ open })
   padding: 24px 0;
 }
 
+.report-preview { display: flex; flex-direction: column; gap: 10px; }
+.preview-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.preview-hint { font-size: 12px; color: var(--text-secondary); }
 .report-frame-wrapper {
   width: 100%;
-  height: 78vh;
+  height: 68vh;
   border: 1px solid var(--border-base);
   border-radius: 6px;
   overflow: hidden;

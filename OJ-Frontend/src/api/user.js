@@ -3,9 +3,9 @@ import request from '@/utils/request'
 // 获取用户个人资料
 export function getUserInfo(userId, options = {}) {
   return request({
-    ...options,
     url: `/user/info/${userId}`,
-    method: 'get'
+    ...options,
+    method: 'get',
   })
 }
 
@@ -13,7 +13,9 @@ export function getUserInfo(userId, options = {}) {
 export function getUserHeatmap(userId) {
   return request({
     url: `/user/activity/heatmap/${userId}`,
-    method: 'get'
+    silent: true,
+    authFailureHandled: true,
+    method: 'get',
   })
 }
 
@@ -22,7 +24,7 @@ export function toggleFollow(data) {
   return request({
     url: '/user-relation/toggle',
     method: 'post',
-    data
+    data,
   })
 }
 
@@ -31,7 +33,7 @@ export function getFollowingList(userId, params) {
   return request({
     url: `/user-relation/following/${userId}`,
     method: 'get',
-    params // page, size
+    params, // page, size
   })
 }
 
@@ -40,7 +42,7 @@ export function getFollowerList(userId, params) {
   return request({
     url: `/user-relation/followers/${userId}`,
     method: 'get',
-    params
+    params,
   })
 }
 
@@ -48,7 +50,7 @@ export function updateUserProfile(data) {
   return request({
     url: '/user/profile',
     method: 'put',
-    data
+    data,
   })
 }
 
@@ -56,7 +58,7 @@ export function changeUserPassword(data) {
   return request({
     url: '/user/password',
     method: 'put',
-    data
+    data,
   })
 }
 
@@ -69,15 +71,15 @@ export function uploadImage(file) {
     method: 'post',
     data: formData,
     headers: {
-      'Content-Type': 'multipart/form-data'
-    }
+      'Content-Type': 'multipart/form-data',
+    },
   })
 }
 
 export function getUserPreferences() {
   return request({
     url: '/user/preferences',
-    method: 'get'
+    method: 'get',
   })
 }
 
@@ -85,7 +87,7 @@ export function updateUserPreferences(data) {
   return request({
     url: '/user/preferences',
     method: 'put',
-    data
+    data,
   })
 }
 
@@ -93,7 +95,7 @@ export function getAcceptedRankList(limit = 10) {
   return request({
     url: '/user/rank/accepted',
     method: 'get',
-    params: { limit }
+    params: { limit },
   })
 }
 
@@ -101,7 +103,7 @@ export function getRatingRankList(limit = 10) {
   return request({
     url: '/user/rank/rating',
     method: 'get',
-    params: { limit }
+    params: { limit },
   })
 }
 
@@ -109,7 +111,7 @@ export function getRatingRankList(limit = 10) {
 export function getUserRatingHistory(userId) {
   return request({
     url: `/user/rating/history/${userId}`,
-    method: 'get'
+    method: 'get',
   })
 }
 
@@ -117,7 +119,7 @@ export function getUserRatingHistory(userId) {
 export function getUserRadar(userId) {
   return request({
     url: `/user/radar/${userId}`,
-    method: 'get'
+    method: 'get',
   })
 }
 
@@ -125,7 +127,7 @@ export function getUserRadar(userId) {
 export function getRecentAC(userId) {
   return request({
     url: `/user/recent-ac/${userId}`,
-    method: 'get'
+    method: 'get',
   })
 }
 
@@ -133,17 +135,16 @@ export function getRecentAC(userId) {
 export function getRecommend(userId) {
   return request({
     url: `/user/recommend/${userId}`,
-    method: 'get'
+    method: 'get',
   })
 }
-
 
 // 获取错题本；today 为今日优先复习，all 为全部待复习题
 export function getReviewBook(scope = 'today') {
   return request({
     url: '/user/review-book',
     method: 'get',
-    params: { scope }
+    params: { scope },
   })
 }
 
@@ -151,7 +152,7 @@ export function markReviewMastered(problemId, mastered) {
   return request({
     url: `/user/review-book/${problemId}/mastered`,
     method: 'post',
-    params: { mastered }
+    params: { mastered },
   })
 }
 
@@ -159,6 +160,6 @@ export function getWeaknessAnalysis(params) {
   return request({
     url: '/profile/weakness',
     method: 'get',
-    params
+    params,
   })
 }

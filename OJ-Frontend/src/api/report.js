@@ -25,9 +25,11 @@ export function generateReport(studentId, { classId, periodStart, periodEnd } = 
 }
 
 /**
- * 旧批量报告入口（兼容）：每个学生独立受理/复用任务，接口立即返回。
+ * 批量受理报告任务：每个学生独立受理/复用任务，接口立即返回。
  * 每条结果含 jobId/status/accepted；PENDING/GENERATING 为 accepted=true、success=false、
  * html=null（排队不是失败）。只有 GENERATED 才 success=true。前端必须先看 accepted/status。
+ * 单次最多 50 名学生（BatchReportRequest @Size），超出由调用方分批；
+ * 班级成员页与学习周报工作区的批量生成共用此入口。
  */
 export function generateBatchReports({ classId, studentIds, periodStart, periodEnd }) {
   return request({

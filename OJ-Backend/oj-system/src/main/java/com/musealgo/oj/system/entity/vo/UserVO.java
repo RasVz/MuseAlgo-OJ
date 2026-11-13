@@ -32,6 +32,9 @@ public class UserVO {
     private Byte role;
     private String email;
     private String avatar;
+    private String coverUrl;
+    private Integer coverPosition;
+    private String introduction;
     private String school;
 
     private String major;

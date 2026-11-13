@@ -66,6 +66,18 @@ public class User implements Serializable, AuthenticatedUser {
     @TableField("avatar")
     private String avatar;
 
+    @ApiModelProperty("个人主页封面")
+    @TableField("cover_url")
+    private String coverUrl;
+
+    @ApiModelProperty("封面垂直焦点，0至100")
+    @TableField("cover_position")
+    private Integer coverPosition;
+
+    @ApiModelProperty("Markdown个人介绍")
+    @TableField("introduction")
+    private String introduction;
+
     @ApiModelProperty("真实姓名")
     @TableField("real_name")
     private String realName;

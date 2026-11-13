@@ -1,6 +1,8 @@
 // 报告 FAILED 分支 UI 回归：失败状态/错误码、终态停止轮询、重试后重新生成并再次停止轮询。
 // 为了稳定复现失败终态，测试栈内直接构造一个已合成的 PENDING 任务（next_attempt_at 在未来），
-// 打开详情后将其置为 FAILED；这是测试夹具状态，不修改产品代码或业务库。
+// 打开阅读页后将其置为 FAILED；这是测试夹具状态，不修改产品代码或业务库。
+//
+// 方案 B 后：?jobId= 深链进入全屏阅读页，「关闭弹窗」语义改为「返回工作区」路由离开。
 import { test, expect } from './fixtures/e2e_prepare.js'
 import { sql } from './fixtures/e2e_db.js'
 
@@ -59,7 +61,7 @@ function detailRequestCount(page, jobId) {
 }
 
 test.describe('报告 FAILED 分支', () => {
-  test('关闭详情时取消在途请求，迟到结果不能重新开始轮询', async ({ adminPage, fixture }) => {
+  test('离开阅读页时取消在途请求，迟到结果不能重新开始轮询', async ({ adminPage, fixture }) => {
     const jobId = fixture.report.jobId
     let requests = 0
     let release
@@ -75,33 +77,34 @@ test.describe('报告 FAILED 分支', () => {
           code: 200, data: { id: jobId, status: 'PENDING' }
         }) })
       } catch {
-        // The browser may already have aborted the request when the dialog closed.
+        // 路由离开后浏览器可能已中止该请求。
       }
     })
     await adminPage.goto('/admin/reports?jobId=' + jobId)
     await intercepted
-    const dialog = adminPage.locator('.el-dialog').filter({ hasText: '学习周报详情' }).first()
-    await expect(dialog).toBeVisible()
-    await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+    const reader = adminPage.locator('.reader-page')
+    await expect(reader).toBeVisible()
+    await reader.getByRole('button', { name: '返回工作区' }).first().click()
     release()
-    await expect(dialog).toBeHidden()
+    await expect(reader).toHaveCount(0)
     await adminPage.waitForTimeout(5000)
     expect(requests).toBe(1)
     await expect(adminPage.locator('.el-message').filter({ hasText: '网络连接异常' })).toHaveCount(0)
   })
+
   test('失败状态展示错误码，轮询在终态停止；重试成功后再次停止', async ({ adminPage, fixture }) => {
     const jobId = insertPendingJob(fixture)
     const requests = detailRequestCount(adminPage, jobId)
 
     await adminPage.goto('/admin/reports?jobId=' + jobId)
-    const dialog = adminPage.locator('.el-dialog').filter({ hasText: '学习周报详情' }).first()
-    await expect(dialog).toBeVisible({ timeout: 20000 })
-    await expect(dialog.getByText('排队中', { exact: true }).first()).toBeVisible({ timeout: 15000 })
+    const reader = adminPage.locator('.reader-page')
+    await expect(reader).toBeVisible({ timeout: 20000 })
+    await expect(reader.getByText('排队中', { exact: true }).first()).toBeVisible({ timeout: 15000 })
 
     forceFailed(jobId)
-    await expect(dialog.getByText('失败', { exact: true }).first()).toBeVisible({ timeout: 15000 })
-    await expect(dialog).toContainText('错误码：GENERATOR_UNAVAILABLE')
-    await expect(dialog).toContainText('报告生成暂时失败。')
+    await expect(reader.getByText('失败', { exact: true }).first()).toBeVisible({ timeout: 15000 })
+    await expect(reader).toContainText('错误码：GENERATOR_UNAVAILABLE')
+    await expect(reader).toContainText('报告生成暂时失败。')
 
     // 终态后不应再排下一轮详情轮询；给已在途请求留出 1.5 秒再取基线。
     await adminPage.waitForTimeout(1500)
@@ -109,13 +112,15 @@ test.describe('报告 FAILED 分支', () => {
     await adminPage.waitForTimeout(5000)
     expect(requests()).toBe(afterFailure)
 
-    const retry = dialog.getByRole('button', { name: '重试生成' }).first()
+    const retry = reader.getByRole('button', { name: '重试生成' }).first()
     await expect(retry).toBeVisible({ timeout: 15000 })
     await retry.click()
 
-    await expect(dialog.getByText('已生成', { exact: true }).first()).toBeVisible({ timeout: 60000 })
-    await expect(dialog.locator('iframe.report-iframe')).toBeVisible({ timeout: 20000 })
-    await expect(dialog).not.toContainText('错误码：GENERATOR_UNAVAILABLE')
+    await expect(reader.getByText('已生成', { exact: true }).first()).toBeVisible({ timeout: 60000 })
+    // 重试生成的新报告带结构化数据节点，默认网页阅读；切回 A4 原始版验证 iframe。
+    await reader.getByText('A4 原始版', { exact: true }).click()
+    await expect(reader.locator('iframe.report-iframe')).toBeVisible({ timeout: 20000 })
+    await expect(reader).not.toContainText('错误码：GENERATOR_UNAVAILABLE')
 
     await adminPage.waitForTimeout(1500)
     const afterGenerated = requests()
@@ -123,7 +128,7 @@ test.describe('报告 FAILED 分支', () => {
     expect(requests()).toBe(afterGenerated)
     expect(afterGenerated).toBeGreaterThan(afterFailure)
 
-    await dialog.getByRole('button', { name: '关闭', exact: true }).click()
-    await expect(dialog).toBeHidden({ timeout: 15000 })
+    await reader.getByRole('button', { name: '返回工作区' }).first().click()
+    await expect(reader).toHaveCount(0)
   })
 })

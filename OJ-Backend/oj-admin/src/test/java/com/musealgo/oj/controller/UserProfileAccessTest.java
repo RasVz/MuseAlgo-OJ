@@ -53,8 +53,18 @@ class UserProfileAccessTest {
     @Test void anonymousCanReadPublicProfile() {
         when(jdbc.queryForObject(anyString(), eq(Integer.class), eq(4L))).thenReturn(0);
         User user = new User(); user.setId(4L); user.setUsername("public-student");
+        user.setCoverUrl("/uploads/cover.png"); user.setCoverPosition(30); user.setIntroduction("# Hello");
         when(users.getById(4L)).thenReturn(user);
-        assertEquals(200, controller.getUserInfo(4L).getCode());
+        var response = controller.getUserInfo(4L);
+        assertEquals(200, response.getCode());
+        assertEquals("/uploads/cover.png", response.getData().getCoverUrl());
+        assertEquals(30, response.getData().getCoverPosition());
+        assertEquals("# Hello", response.getData().getIntroduction());
         verify(users).getById(4L);
+    }
+    @Test void anonymousCannotSavePresentation() {
+        User patch = new User(); patch.setId(4L); patch.setIntroduction("# Unauthorized");
+        assertEquals(401, controller.updateProfile(patch).getCode());
+        verifyNoInteractions(users);
     }
 }

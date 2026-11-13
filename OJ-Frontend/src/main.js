@@ -14,6 +14,8 @@ import 'element-plus/es/components/message-box/style/css'
 import 'element-plus/es/components/notification/style/css'
 import 'element-plus/es/components/loading/style/css'
 import './styles/tokens.css'
+// 深色语法配色：github.css 是固定浅色 token 配色，深色模式下对比度不足
+import './styles/hljs-dark.css'
 import App from './App.vue'
 import router from './router'
 import dicebearPlugin from './plugins/dicebear';
