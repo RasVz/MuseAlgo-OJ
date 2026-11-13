@@ -39,36 +39,7 @@
           </div>
         </el-card>
 
-        <el-card v-else-if="sessionActive" shadow="never" class="session-toolbar">
-          <div class="session-main">
-            <div class="timer-block" aria-live="polite">
-              <span class="timer-label">剩余时间</span>
-              <strong class="timer" :class="{ 'timer-warn': remaining <= 300 }">{{ formatTime(remaining) }}</strong>
-            </div>
-            <div class="progress-block">
-              <div class="progress-copy">
-                <strong>{{ answeredCount }} / {{ objectiveQuestions.length }}</strong>
-                <span>道客观题已作答</span>
-              </div>
-              <el-progress :percentage="answerProgress" :show-text="false" :stroke-width="7" />
-            </div>
-            <div class="session-actions">
-              <span class="save-hint" :class="{ 'save-hint-error': !draftAvailable }">
-                {{ draftAvailable ? '本设备暂存不计分，请提交客观题；到时按已提交答案计分' : '本地暂存不可用，请及时提交答案并避免刷新' }}
-              </span>
-              <el-button :loading="submitting" :disabled="submitting || finishing" @click="submitAnswers()">提交客观题</el-button>
-              <el-button type="primary" :loading="finishing" :disabled="submitting" @click="finishSession(false)">
-                {{ remaining === 0 ? '重试交卷' : '交卷' }}
-              </el-button>
-            </div>
-          </div>
-          <div v-if="attempt.gradingPending" class="timeout-hint" role="status">编程题仍在判题，正在等待判题完成后自动交卷。作答时间已结束，不能继续修改答案。</div>
-          <div v-else-if="autoFinishFailed" class="timeout-hint" role="status">
-            自动交卷暂未完成，答案仍保留。请重试交卷，系统会继续自动重试。
-          </div>
-        </el-card>
-
-        <el-card v-else-if="attempt" shadow="never" class="session-card session-result">
+        <el-card v-else-if="!sessionActive" shadow="never" class="session-card session-result">
           <div class="result-summary">
             <el-tag type="success" effect="light" size="large">
               {{ attempt.status === 'TIMEOUT' ? '时间到，已自动交卷' : '本次作答已交卷' }}
@@ -89,9 +60,9 @@
           />
         </el-card>
 
-        <div v-if="objectiveQuestions.length && attempt" class="answer-layout">
-          <section class="question-column" aria-label="客观题答题区">
-            <el-card shadow="never" class="question-card">
+        <div v-if="attempt" class="answer-layout" :class="{ 'answer-layout-main-only': !sessionActive && !objectiveQuestions.length }">
+          <section class="question-column" aria-label="试卷答题区">
+            <el-card v-if="objectiveQuestions.length" shadow="never" class="question-card">
               <template #header>
                 <div class="card-header">
                   <div>
@@ -210,8 +181,37 @@
             </el-card>
           </section>
 
-          <aside class="answer-sidebar" aria-label="答题卡">
-            <el-card shadow="never" class="navigator-card">
+          <aside v-if="sessionActive || objectiveQuestions.length" class="answer-sidebar" aria-label="作答工具">
+            <el-card v-if="sessionActive" shadow="never" class="session-toolbar" aria-label="作答进度与提交">
+              <div class="session-main">
+                <div class="timer-block" aria-live="polite">
+                  <span class="timer-label">剩余时间</span>
+                  <strong class="timer" :class="{ 'timer-warn': remaining <= 300 }">{{ formatTime(remaining) }}</strong>
+                </div>
+                <div class="progress-block">
+                  <div class="progress-copy">
+                    <strong>{{ answeredCount }} / {{ objectiveQuestions.length }}</strong>
+                    <span>道客观题已作答</span>
+                  </div>
+                  <el-progress :percentage="answerProgress" :show-text="false" :stroke-width="7" />
+                </div>
+                <div class="session-actions">
+                  <span class="save-hint" :class="{ 'save-hint-error': !draftAvailable }">
+                    {{ draftAvailable ? '本设备暂存不计分，请提交客观题；到时按已提交答案计分' : '本地暂存不可用，请及时提交答案并避免刷新' }}
+                  </span>
+                  <el-button :loading="submitting" :disabled="submitting || finishing" @click="submitAnswers()">提交客观题</el-button>
+                  <el-button type="primary" :loading="finishing" :disabled="submitting" @click="finishSession(false)">
+                    {{ remaining === 0 ? '重试交卷' : '交卷' }}
+                  </el-button>
+                </div>
+              </div>
+              <div v-if="attempt.gradingPending" class="timeout-hint" role="status">编程题仍在判题，正在等待判题完成后自动交卷。作答时间已结束，不能继续修改答案。</div>
+              <div v-else-if="autoFinishFailed" class="timeout-hint" role="status">
+                自动交卷暂未完成，答案仍保留。请重试交卷，系统会继续自动重试。
+              </div>
+            </el-card>
+
+            <el-card v-if="objectiveQuestions.length" shadow="never" class="navigator-card">
               <template #header>
                 <div class="navigator-heading">
                   <strong>答题卡</strong>
@@ -244,24 +244,6 @@
             </el-card>
           </aside>
         </div>
-
-        <el-card v-else-if="paper.problems?.length && attempt" shadow="never" class="problem-card">
-          <template #header>
-            <div class="card-header"><h2>编程题</h2><span>{{ paper.problems.length }} 题</span></div>
-          </template>
-          <div class="problem-list">
-            <div v-for="row in paper.problems" :key="row.problemId" class="problem-row">
-              <span class="problem-order">{{ row.problemOrder }}</span>
-              <div class="problem-info">
-                <strong>{{ row.title || `题目 #${row.problemId}` }}</strong>
-                <span>{{ difficultyLabel(row.difficulty) }} · {{ row.score ?? '-' }} 分</span>
-              </div>
-              <RouterLink :to="{ name: 'ProblemDetail', params: { id: row.problemId } }" target="_blank" rel="noopener" class="problem-link">
-                查看题目 <span aria-hidden="true">↗</span>
-              </RouterLink>
-            </div>
-          </div>
-        </el-card>
       </template>
     </main>
   </div>
@@ -687,17 +669,18 @@ onBeforeUnmount(() => {
 .start-icon { width: 42px; height: 42px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 12px; background: var(--bg-surface-hover); color: var(--accent-primary); font-size: 20px; }
 .start-title { font-size: 16px; font-weight: 650; color: var(--text-primary); }
 .start-copy p { margin: 5px 0 0; color: var(--text-secondary); font-size: 13px; line-height: 1.55; }
-.session-toolbar { position: sticky; top: 8px; z-index: 8; border-radius: 12px; box-shadow: 0 8px 28px rgba(0, 0, 0, .06); }
-.session-main { display: flex; align-items: center; gap: 26px; }
+.session-toolbar { border-radius: 12px; flex-shrink: 0; }
+.session-main { display: flex; flex-direction: column; align-items: stretch; gap: 16px; }
 .timer-block { display: flex; flex-direction: column; min-width: 112px; }
 .timer-label { color: var(--text-secondary); font-size: 11px; }
 .timer { font-size: 25px; line-height: 1.25; color: var(--accent-primary); font-variant-numeric: tabular-nums; }
 .timer-warn { color: var(--accent-danger); }
-.progress-block { width: min(210px, 22vw); }
-.progress-copy { display: flex; align-items: baseline; gap: 6px; margin-bottom: 6px; font-size: 12px; color: var(--text-secondary); }
+.progress-block { width: 100%; min-width: 0; }
+.progress-copy { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; margin-bottom: 6px; font-size: 12px; color: var(--text-secondary); }
 .progress-copy strong { font-size: 14px; color: var(--text-primary); }
-.session-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
-.save-hint { margin-right: 4px; font-size: 12px; color: var(--text-secondary); }
+.session-actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+.session-actions .el-button { margin-left: 0; min-width: 0; padding-inline: 8px; }
+.save-hint { grid-column: 1 / -1; font-size: 12px; line-height: 1.6; color: var(--text-secondary); }
 .save-hint-error, .timeout-hint { color: var(--accent-danger); }
 .timeout-hint { margin-top: 10px; font-size: 12px; }
 .result-summary { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
@@ -709,7 +692,9 @@ onBeforeUnmount(() => {
 .answer-layout { display: grid; grid-template-columns: minmax(0, 1fr) 270px; align-items: start; gap: 16px; }
 .question-column { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .question-card, .problem-card, .navigator-card { border-radius: 12px; }
-.answer-sidebar { position: sticky; top: 124px; }
+.answer-layout-main-only { grid-template-columns: minmax(0, 1fr); }
+.answer-sidebar { position: sticky; top: 8px; display: flex; flex-direction: column; gap: 16px; min-width: 0; max-height: calc(100dvh - var(--app-header-height, 72px) - 48px); overflow-y: auto; scrollbar-width: thin; }
+.navigator-card { flex-shrink: 0; }
 .navigator-heading { display: flex; align-items: center; justify-content: space-between; }
 .navigator-heading strong { font-size: 15px; }
 .navigator-heading span { font-size: 12px; color: var(--text-secondary); }
@@ -730,7 +715,7 @@ onBeforeUnmount(() => {
 .card-header h2 { margin: 0; font-size: 16px; color: var(--text-primary); }
 .card-header > div > span, .card-header > span { color: var(--text-secondary); font-size: 12px; }
 .card-header > div > span { display: block; margin-top: 3px; }
-.question-item { scroll-margin-top: 120px; border: 1px solid var(--border-light); border-radius: 10px; padding: 16px; margin-bottom: 12px; background: var(--bg-surface); }
+.question-item { scroll-margin-top: 16px; border: 1px solid var(--border-light); border-radius: 10px; padding: 16px; margin-bottom: 12px; background: var(--bg-surface); }
 .question-item:last-child { margin-bottom: 0; }
 .question-item-answered { border-color: color-mix(in srgb, var(--accent-primary) 32%, var(--border-light)); }
 .question-head { display: flex; align-items: center; gap: 10px; }
@@ -760,7 +745,6 @@ onBeforeUnmount(() => {
 @media (max-width: 900px) {
   .answer-layout { grid-template-columns: minmax(0, 1fr) 220px; gap: 12px; }
   .session-main { gap: 16px; }
-  .save-hint { width: 100%; font-size: 10px; line-height: 1.35; }
 }
 @media (max-width: 720px) {
   .nav-header { min-width: 0; width: 100%; overflow: hidden; }
@@ -772,21 +756,16 @@ onBeforeUnmount(() => {
   .info-title { font-size: 20px; }
   .start-panel { align-items: stretch; flex-direction: column; gap: 16px; }
   .start-panel > .el-button { width: 100%; }
-  .session-toolbar { top: 4px; }
-  .session-main { align-items: center; flex-wrap: wrap; gap: 10px 14px; }
+  .session-main { gap: 14px; }
   .timer-block { min-width: 88px; }
   .timer { font-size: 21px; }
-  .progress-block { flex: 1; width: auto; min-width: 110px; }
-  .session-actions { width: 100%; margin-left: 0; flex-wrap: wrap; }
-  .save-hint { flex: 0 0 100%; margin: 0; line-height: 1.6; font-size: 11px; }
-  .session-actions .el-button { flex: 1; min-width: 0; margin-left: 0; }
   .progress-copy { flex-wrap: wrap; }
   .progress-copy strong { white-space: nowrap; }
   .answer-layout { display: flex; flex-direction: column; }
-  .answer-sidebar { position: static; width: 100%; order: -1; }
+  .answer-sidebar { position: static; width: 100%; order: -1; max-height: none; overflow: visible; }
   .navigator-card :deep(.el-card__body) { padding: 12px; }
   .question-nav-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); margin-bottom: 12px; }
-  .question-item { padding: 13px; scroll-margin-top: 170px; }
+  .question-item { padding: 13px; scroll-margin-top: 16px; }
   .question-status { display: none; }
   .problem-row { gap: 9px; }
   .problem-info strong { max-width: 44vw; }
