@@ -39,6 +39,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.never;
 
 /**
  * 限时作答会话（seam：ExamPaperService.startAttempt / finishAttempt）。
@@ -81,6 +83,7 @@ class ExamPaperAttemptTest {
         ExamPaper paper = new ExamPaper();
         paper.setId(10L);
         paper.setDurationMinutes(duration);
+        paper.setTotalScore(100);
         paper.setIsPublished(1);
         return paper;
     }
@@ -88,7 +91,7 @@ class ExamPaperAttemptTest {
     @Test
     void startAttemptUsesPaperDurationAsDeadline() {
         when(examPaperMapper.selectByIdForUpdate(10L)).thenReturn(paper(90));
-        when(examAttemptMapper.selectOne(any())).thenReturn(null);
+        when(examAttemptMapper.selectRunningByPaperUserForUpdate(anyLong(), anyLong())).thenReturn(null);
         doAnswer(inv -> {
             ((ExamAttempt) inv.getArgument(0)).setId(1L); // 模拟 MyBatis-Plus 回填自增 ID
             return 1;
@@ -120,7 +123,7 @@ class ExamPaperAttemptTest {
         running.setStatus(ExamAttempt.STATUS_RUNNING);
         running.setStartTime(LocalDateTime.now().minusMinutes(10));
         running.setEndTime(LocalDateTime.now().plusMinutes(80));
-        when(examAttemptMapper.selectOne(any())).thenReturn(running);
+        when(examAttemptMapper.selectRunningByPaperUserForUpdate(anyLong(), anyLong())).thenReturn(running);
 
         ExamAnswer a1 = new ExamAnswer();
         a1.setScore(5);
@@ -130,8 +133,10 @@ class ExamPaperAttemptTest {
 
         ExamPaperProblem p1 = new ExamPaperProblem();
         p1.setProblemId(100L);
+        p1.setScore(100);
         ExamPaperProblem p2 = new ExamPaperProblem();
         p2.setProblemId(200L);
+        p2.setScore(100);
         when(examPaperProblemMapper.selectList(any())).thenReturn(List.of(p1, p2));
         when(submissionAttemptQuery.findBestScores(anyLong(), any(), any(), any()))
                 .thenReturn(List.of(
@@ -148,6 +153,50 @@ class ExamPaperAttemptTest {
     }
 
     @Test
+    void codingScoreUsesPaperPointsAndManualFinishDeadline() {
+        ExamAttempt running = runningAttempt();
+        running.setEndTime(LocalDateTime.now().plusMinutes(20));
+        when(examAttemptMapper.selectRunningByPaperUserForUpdate(anyLong(), anyLong())).thenReturn(running);
+        when(examAnswerMapper.selectList(any())).thenReturn(List.of());
+
+        ExamPaperProblem p1 = new ExamPaperProblem();
+        p1.setProblemId(100L);
+        p1.setScore(20);
+        ExamPaperProblem p2 = new ExamPaperProblem();
+        p2.setProblemId(200L);
+        p2.setScore(10);
+        when(examPaperProblemMapper.selectList(any())).thenReturn(List.of(p1, p2));
+        when(submissionAttemptQuery.findBestScores(anyLong(), any(), any(), any()))
+                .thenReturn(List.of(
+                        new SubmissionAttemptQuery.SubmissionAttemptScore(100L, 50),
+                        new SubmissionAttemptQuery.SubmissionAttemptScore(200L, 100)));
+
+        ExamAttemptVO result = attemptFlow.finishAttempt(10L, 1L);
+
+        assertEquals(20, result.getCodingScore());
+        assertEquals(20, result.getTotalScore());
+        org.mockito.ArgumentCaptor<LocalDateTime> deadline = org.mockito.ArgumentCaptor.forClass(LocalDateTime.class);
+        verify(submissionAttemptQuery).findBestScores(anyLong(), any(), any(), deadline.capture());
+        assertTrue(deadline.getValue().isBefore(running.getEndTime()));
+    }
+
+    @Test
+    void zeroConfiguredCodingPointsRemainZero() {
+        when(examAttemptMapper.selectRunningByPaperUserForUpdate(anyLong(), anyLong())).thenReturn(runningAttempt());
+        when(examAnswerMapper.selectList(any())).thenReturn(List.of());
+        ExamPaperProblem problem = new ExamPaperProblem();
+        problem.setProblemId(100L);
+        problem.setScore(0);
+        when(examPaperProblemMapper.selectList(any())).thenReturn(List.of(problem));
+        when(submissionAttemptQuery.findBestScores(anyLong(), any(), any(), any()))
+                .thenReturn(List.of(new SubmissionAttemptQuery.SubmissionAttemptScore(100L, 100)));
+
+        ExamAttemptVO result = attemptFlow.finishAttempt(10L, 1L);
+
+        assertEquals(0, result.getCodingScore());
+    }
+
+    @Test
     void autoFinalizeExpiredMarksTimedOut() {
         ExamAttempt expired = new ExamAttempt();
         expired.setId(2L);
@@ -157,6 +206,7 @@ class ExamPaperAttemptTest {
         expired.setStartTime(LocalDateTime.now().minusHours(2));
         expired.setEndTime(LocalDateTime.now().minusMinutes(10));
         when(examAttemptMapper.selectList(any())).thenReturn(List.of(expired));
+        when(examAttemptMapper.selectByIdForUpdate(2L)).thenReturn(expired);
         when(examAnswerMapper.selectList(any())).thenReturn(List.of());
         when(examPaperProblemMapper.selectList(any())).thenReturn(List.of());
 
@@ -171,7 +221,7 @@ class ExamPaperAttemptTest {
     void finishingExpiredAttemptMarksTimedOut() {
         ExamAttempt expired = runningAttempt();
         expired.setEndTime(LocalDateTime.now().minusSeconds(1));
-        when(examAttemptMapper.selectOne(any())).thenReturn(expired);
+        when(examAttemptMapper.selectRunningByPaperUserForUpdate(anyLong(), anyLong())).thenReturn(expired);
         when(examAnswerMapper.selectList(any())).thenReturn(List.of());
         when(examPaperProblemMapper.selectList(any())).thenReturn(List.of());
 
@@ -182,7 +232,7 @@ class ExamPaperAttemptTest {
 
     @Test
     void objectiveAnswersRequireRunningAttempt() {
-        when(examAttemptMapper.selectOne(any())).thenReturn(null);
+        when(examAttemptMapper.selectRunningByPaperUserForUpdate(anyLong(), anyLong())).thenReturn(null);
         ExamAnswerSubmitDTO submit = answerSubmit(1L, "A");
 
         assertThrows(com.musealgo.oj.common.exception.BusinessException.class, () -> attemptFlow.submitAnswers(10L, 1L, submit));
@@ -191,7 +241,7 @@ class ExamPaperAttemptTest {
     @Test
     void objectiveAnswersBelongToCurrentAttempt() {
         ExamAttempt running = runningAttempt();
-        when(examAttemptMapper.selectOne(any())).thenReturn(running);
+        when(examAttemptMapper.selectRunningByPaperUserForUpdate(anyLong(), anyLong())).thenReturn(running);
         ExamQuestion question = new ExamQuestion();
         question.setId(1L);
         question.setPaperId(10L);
@@ -199,7 +249,6 @@ class ExamPaperAttemptTest {
         question.setAnswer("A");
         question.setScore(5);
         when(examQuestionMapper.selectList(any())).thenReturn(List.of(question));
-        when(examAnswerMapper.selectOne(any())).thenReturn(null);
         when(examAnswerMapper.selectList(any())).thenReturn(List.of());
 
         attemptFlow.submitAnswers(10L, 1L, answerSubmit(1L, "A"));
@@ -207,13 +256,39 @@ class ExamPaperAttemptTest {
         org.mockito.ArgumentCaptor<ExamAnswer> captor = org.mockito.ArgumentCaptor.forClass(ExamAnswer.class);
         verify(examAnswerMapper).insert(captor.capture());
         assertEquals(7L, captor.getValue().getAttemptId());
+        verify(examAnswerMapper, times(1)).selectList(any());
+    }
+
+    @Test
+    void getAttemptRestoresSavedAnswersAndTheirImmediateResults() {
+        ExamAttempt running = runningAttempt();
+        when(examAttemptMapper.selectRunningByPaperUserForUpdate(anyLong(), anyLong())).thenReturn(running);
+        ExamAnswer saved = new ExamAnswer();
+        saved.setQuestionId(8L);
+        saved.setAnswer("A");
+        saved.setIsCorrect(1);
+        saved.setScore(5);
+        when(examAnswerMapper.selectList(any())).thenReturn(List.of(saved));
+        ExamQuestion question = new ExamQuestion();
+        question.setId(8L);
+        question.setAnswer("A");
+        question.setExplanation("说明");
+        when(examQuestionMapper.selectBatchIds(any())).thenReturn(List.of(question));
+
+        ExamAttemptVO result = attemptFlow.getAttempt(10L, 1L);
+
+        assertEquals(1, result.getAnswers().size());
+        assertEquals("A", result.getAnswers().get(0).getAnswer());
+        assertEquals(1, result.getResults().size());
+        assertEquals(true, result.getResults().get(0).getCorrect());
+        assertEquals("说明", result.getResults().get(0).getExplanation());
     }
 
     @Test
     void expiredAttemptIsFinalizedAndRejectsLateAnswers() {
         ExamAttempt expired = runningAttempt();
         expired.setEndTime(LocalDateTime.now().minusSeconds(1));
-        when(examAttemptMapper.selectOne(any())).thenReturn(expired);
+        when(examAttemptMapper.selectRunningByPaperUserForUpdate(anyLong(), anyLong())).thenReturn(expired);
         when(examAnswerMapper.selectList(any())).thenReturn(List.of());
         when(examPaperProblemMapper.selectList(any())).thenReturn(List.of());
 
@@ -244,9 +319,9 @@ class ExamPaperAttemptTest {
     }
 
     @Test
-    void updatingPaperInvalidatesExistingAttemptsWithOldQuestions() {
+    void updatingPaperWithNoAttemptsRebuildsStructure() {
         ExamPaper existing = paper(90);
-        when(examPaperMapper.selectById(10L)).thenReturn(existing);
+        when(examPaperMapper.selectByIdForUpdate(10L)).thenReturn(existing);
         ExamPaperDTO dto = new ExamPaperDTO();
         dto.setId(10L);
         dto.setTitle("更新后的试卷");
@@ -259,6 +334,89 @@ class ExamPaperAttemptTest {
         service.savePaper(dto, 1L);
 
         verify(examAttemptMapper).delete(any());
+    }
+
+    @Test
+    void updatingMetadataPreservesPaperWithAttemptHistory() {
+        when(examPaperMapper.selectByIdForUpdate(10L)).thenReturn(paper(90));
+        when(examAttemptMapper.selectCount(any())).thenReturn(1L);
+        when(examPaperProblemMapper.selectList(any())).thenReturn(List.of());
+        when(examQuestionMapper.selectList(any())).thenReturn(List.of());
+        ExamPaperDTO dto = new ExamPaperDTO();
+        dto.setId(10L);
+        dto.setTitle("改过标题");
+        dto.setDescription("新的说明");
+        dto.setCategory("MOCK");
+        dto.setDurationMinutes(90);
+        dto.setTotalScore(100);
+        dto.setProblems(List.of());
+        dto.setQuestions(List.of());
+
+        service.savePaper(dto, 1L);
+
+        verify(examPaperMapper).updateById(any(ExamPaper.class));
+        verify(examAttemptMapper, never()).delete(any());
+        verify(examAnswerMapper, never()).delete(any());
+        verify(examQuestionMapper, never()).delete(any());
+        verify(examPaperProblemMapper, never()).delete(any());
+    }
+
+    @Test
+    void structuralPaperEditIsRejectedAfterAnyAttemptExists() {
+        when(examPaperMapper.selectByIdForUpdate(10L)).thenReturn(paper(90));
+        when(examAttemptMapper.selectCount(any())).thenReturn(1L);
+        ExamPaperDTO dto = new ExamPaperDTO();
+        dto.setId(10L);
+        dto.setTitle("标题");
+        dto.setCategory("MOCK");
+        dto.setDurationMinutes(60);
+        dto.setTotalScore(100);
+        dto.setProblems(List.of());
+        dto.setQuestions(List.of());
+
+        var error = assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
+                () -> service.savePaper(dto, 1L));
+
+        assertEquals("EXAM_PAPER_HAS_ATTEMPTS", error.getErrorCode().key());
+        verify(examPaperMapper, never()).updateById(any(ExamPaper.class));
+    }
+
+    @Test
+    void deletingPaperWithAttemptHistoryIsRejected() {
+        when(examPaperMapper.selectByIdForUpdate(10L)).thenReturn(paper(90));
+        when(examAttemptMapper.selectCount(any())).thenReturn(1L);
+
+        var error = assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
+                () -> service.deletePaper(10L));
+
+        assertEquals("EXAM_PAPER_HAS_ATTEMPTS", error.getErrorCode().key());
+        verify(examPaperMapper, never()).deleteById(any());
+    }
+
+    @Test
+    void invalidObjectiveAnswerKeysAreRejectedBeforeSavingPaper() {
+        ExamPaperDTO dto = new ExamPaperDTO();
+        dto.setTitle("新试卷");
+        dto.setCategory("MOCK");
+        dto.setDurationMinutes(60);
+        dto.setTotalScore(100);
+        dto.setProblems(List.of());
+        ExamPaperDTO.ExamQuestionItem question = new ExamPaperDTO.ExamQuestionItem();
+        question.setQuestionType("MULTIPLE");
+        question.setStatement("选出答案");
+        question.setAnswer("AA");
+        question.setScore(10);
+        ExamPaperDTO.ExamOptionItem option = new ExamPaperDTO.ExamOptionItem();
+        option.setKey("A");
+        option.setText("选项 A");
+        question.setOptions(List.of(option));
+        dto.setQuestions(List.of(question));
+
+        var error = assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
+                () -> service.savePaper(dto, 1L));
+
+        assertEquals("PROBLEM_INPUT_INVALID", error.getErrorCode().key());
+        verify(examPaperMapper, never()).insert(any(ExamPaper.class));
     }
 
     private ExamAttempt runningAttempt() {
@@ -304,7 +462,7 @@ class ExamPaperAttemptTest {
     void timedOutAnswerRejectionCommitsThroughSpringTransactionBoundary() {
         ExamAttempt expired = runningAttempt();
         expired.setEndTime(LocalDateTime.now().minusSeconds(1));
-        when(examAttemptMapper.selectOne(any())).thenReturn(expired);
+        when(examAttemptMapper.selectRunningByPaperUserForUpdate(anyLong(), anyLong())).thenReturn(expired);
         when(examAnswerMapper.selectList(any())).thenReturn(List.of());
         when(examPaperProblemMapper.selectList(any())).thenReturn(List.of());
         var transactionManager = org.mockito.Mockito.mock(org.springframework.transaction.PlatformTransactionManager.class);

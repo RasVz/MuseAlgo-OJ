@@ -12,6 +12,7 @@ public enum ProblemErrorCode implements ErrorCode {
     AI_UNAVAILABLE(503, "AI 服务暂不可用，请稍后重试"),
     EXAM_ATTEMPT_NOT_ACTIVE(409, "请先开始作答，或当前试卷已交卷"),
     EXAM_PAPER_NOT_FOUND(404, "试卷不存在: "),
+    EXAM_PAPER_HAS_ATTEMPTS(409, "试卷已有作答记录，请复制新卷后修改题目、分值或时长"),
     PROBLEM_CASE_NOT_FOUND(404, "测试用例不存在"),
     PROBLEM_INPUT_INVALID(400, "请求参数不合法"),
     PROBLEM_LIST_ITEM_ALREADY_EXISTS(409, "该题目已在题单中"),
