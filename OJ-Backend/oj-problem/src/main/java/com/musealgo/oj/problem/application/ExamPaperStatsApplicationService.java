@@ -17,6 +17,8 @@ import com.musealgo.oj.problem.entity.vo.ExamPaperVO;
 import com.musealgo.oj.problem.mapper.ExamAnswerMapper;
 import com.musealgo.oj.problem.mapper.ExamAttemptMapper;
 import com.musealgo.oj.problem.mapper.ExamQuestionMapper;
+import com.musealgo.oj.problem.mapper.ExamPaperMapper;
+import com.musealgo.oj.problem.entity.ExamPaper;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -40,6 +42,7 @@ public class ExamPaperStatsApplicationService {
     private final ExamAttemptMapper examAttemptMapper;
     private final ExamQuestionMapper examQuestionMapper;
     private final ExamAnswerMapper examAnswerMapper;
+    private final ExamPaperMapper examPaperMapper;
     private final UserQuery userQuery;
     private final SystemConfigQuery systemConfigQuery;
 
@@ -47,6 +50,9 @@ public class ExamPaperStatsApplicationService {
     public ExamPaperStatsVO paperStats(Long paperId) {
         List<ExamAttempt> attempts = latestCompletedAttempts(paperId);
         ExamPaperStatsVO stats = new ExamPaperStatsVO();
+        ExamPaper paper = examPaperMapper.selectById(paperId);
+        int fullScore = paper == null || paper.getTotalScore() == null ? 100 : Math.max(1, paper.getTotalScore());
+        stats.setTotalScore(fullScore);
         if (attempts.isEmpty()) {
             return stats;
         }
@@ -64,21 +70,22 @@ public class ExamPaperStatsApplicationService {
         List<ExamQuestion> questions = examQuestionMapper.selectList(
                 new LambdaQueryWrapper<ExamQuestion>().eq(ExamQuestion::getPaperId, paperId)
                         .orderByAsc(ExamQuestion::getQuestionOrder));
+        Map<Long, List<ExamAnswer>> answersByQuestion = examAnswerMapper.selectList(
+                        new LambdaQueryWrapper<ExamAnswer>()
+                                .eq(ExamAnswer::getPaperId, paperId)
+                                .in(ExamAnswer::getAttemptId, attempts.stream().map(ExamAttempt::getId).toList()))
+                .stream().collect(Collectors.groupingBy(ExamAnswer::getQuestionId));
         for (ExamQuestion question : questions) {
-            List<ExamAnswer> answers = examAnswerMapper.selectList(
-                    new LambdaQueryWrapper<ExamAnswer>()
-                            .eq(ExamAnswer::getPaperId, paperId)
-                            .eq(ExamAnswer::getQuestionId, question.getId())
-                            .in(ExamAnswer::getAttemptId, attempts.stream().map(ExamAttempt::getId).toList()));
+            List<ExamAnswer> answers = answersByQuestion.getOrDefault(question.getId(), List.of());
             long correct = answers.stream()
                     .filter(a -> a.getIsCorrect() != null && a.getIsCorrect() == 1).count();
             ExamPaperStatsVO.QuestionStatVO vo = new ExamPaperStatsVO.QuestionStatVO();
             vo.setQuestionId(question.getId());
             vo.setQuestionOrder(question.getQuestionOrder());
             vo.setStatement(truncate(question.getStatement(), 80));
-            vo.setAttemptCount(answers.size());
+            vo.setAttemptCount(attempts.size());
             vo.setCorrectCount(correct);
-            vo.setCorrectRate(answers.isEmpty() ? 0 : (double) correct / answers.size() * 100);
+            vo.setCorrectRate((double) correct / attempts.size() * 100);
             stats.getQuestionStats().add(vo);
         }
 
@@ -91,7 +98,7 @@ public class ExamPaperStatsApplicationService {
         buckets.put("90-100", 0);
         for (ExamAttempt attempt : attempts) {
             int total = attempt.getTotalScore() == null ? 0 : attempt.getTotalScore();
-            buckets.merge(bucketOf(total), 1, Integer::sum);
+            buckets.merge(bucketOf((int) Math.floor(total * 100.0 / fullScore)), 1, Integer::sum);
         }
         buckets.forEach((bucket, count) -> {
             ExamPaperStatsVO.ScoreBucketVO vo = new ExamPaperStatsVO.ScoreBucketVO();
@@ -122,12 +129,18 @@ public class ExamPaperStatsApplicationService {
 
     /** 某卷作答明细分页（不含进行中会话，按交卷时间倒序，带用户名）。 */
     public Page<ExamPaperVO.ExamAttemptRowVO> listAttempts(Long paperId, Integer page, Integer size) {
+        return selectAttempts(paperId, page == null ? 1 : Math.max(1, page),
+                size == null ? 20 : Math.min(100, Math.max(1, size)));
+    }
+
+    private Page<ExamPaperVO.ExamAttemptRowVO> selectAttempts(Long paperId, int page, int size) {
         Page<ExamAttempt> raw = examAttemptMapper.selectPage(
-                new Page<>(page == null ? 1 : page, size == null ? 20 : size),
+                new Page<>(page, size),
                 new LambdaQueryWrapper<ExamAttempt>()
                         .eq(ExamAttempt::getPaperId, paperId)
                         .ne(ExamAttempt::getStatus, ExamAttempt.STATUS_RUNNING)
-                        .orderByDesc(ExamAttempt::getSubmitTime));
+                        .orderByDesc(ExamAttempt::getSubmitTime)
+                        .orderByDesc(ExamAttempt::getId));
         Page<ExamPaperVO.ExamAttemptRowVO> result = new Page<>(raw.getCurrent(), raw.getSize(), raw.getTotal());
         if (raw.getRecords().isEmpty()) {
             return result;
@@ -135,6 +148,8 @@ public class ExamPaperStatsApplicationService {
         Set<Long> userIds = raw.getRecords().stream()
                 .map(ExamAttempt::getUserId).collect(Collectors.toSet());
         Map<Long, UserDisplayInfo> userMap = userQuery.findDisplayInfoBatch(userIds);
+        Map<Integer, Integer> thresholds = GespLevelEstimator.thresholdsFromConfig(
+                systemConfigQuery.get("exam.gesp-thresholds", null));
         List<ExamPaperVO.ExamAttemptRowVO> rows = raw.getRecords().stream().map(attempt -> {
             ExamPaperVO.ExamAttemptRowVO row = new ExamPaperVO.ExamAttemptRowVO();
             row.setId(attempt.getId());
@@ -152,8 +167,7 @@ public class ExamPaperStatsApplicationService {
             row.setTotalScore(attempt.getTotalScore());
             row.setGespLevel(GespLevelEstimator.estimate(
                     attempt.getTotalScore() == null ? 0 : attempt.getTotalScore(),
-                    GespLevelEstimator.thresholdsFromConfig(
-                            systemConfigQuery.get("exam.gesp-thresholds", null))));
+                    thresholds));
             return row;
         }).toList();
         result.setRecords(rows);
@@ -162,7 +176,7 @@ public class ExamPaperStatsApplicationService {
 
     /** 作答明细 CSV（教师导出用，最多 1 万行）。 */
     public String buildAttemptsCsv(Long paperId) {
-        List<ExamPaperVO.ExamAttemptRowVO> rows = listAttempts(paperId, 1, 10000).getRecords();
+        List<ExamPaperVO.ExamAttemptRowVO> rows = selectAttempts(paperId, 1, 10000).getRecords();
         StringBuilder csv = new StringBuilder();
         csv.append("会话ID,用户名,状态,开始时间,结束时间,交卷时间,客观题,编程题,总分,GESP等第\n");
         for (ExamPaperVO.ExamAttemptRowVO row : rows) {
@@ -208,7 +222,12 @@ public class ExamPaperStatsApplicationService {
         if (value == null) {
             return "";
         }
-        if (value.contains(",") || value.contains("\"") || value.contains("\n")) {
+        String trimmed = value.stripLeading();
+        if ((!trimmed.isEmpty() && "=+-@".indexOf(trimmed.charAt(0)) >= 0)
+                || value.startsWith("\t") || value.startsWith("\r")) {
+            value = "'" + value;
+        }
+        if (value.contains(",") || value.contains("\"") || value.contains("\n") || value.contains("\r")) {
             return "\"" + value.replace("\"", "\"\"") + "\"";
         }
         return value;
