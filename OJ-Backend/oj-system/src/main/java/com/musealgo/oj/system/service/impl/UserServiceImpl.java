@@ -90,13 +90,15 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
 
     @Override
     public boolean updateProfile(Long userId, User user) {
+        validatePresentation(user);
         User dbUser = this.getById(userId);
         if (dbUser == null) {
             return false;
         }
 
         if (java.util.stream.Stream.of(user.getNickname(), user.getRealName(), user.getAvatar(),
-                user.getMotto(), user.getSchool(), user.getMajor()).allMatch(java.util.Objects::isNull)
+                user.getMotto(), user.getSchool(), user.getMajor(), user.getCoverUrl(),
+                user.getCoverPosition(), user.getIntroduction()).allMatch(java.util.Objects::isNull)
                 && (user.getEmail() == null || user.getEmail().isBlank())) {
             return true;
         }
@@ -107,6 +109,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         dbUser.setRealName(user.getRealName());
         dbUser.setAvatar(user.getAvatar());
         dbUser.setMotto(user.getMotto());
+        dbUser.setCoverUrl(user.getCoverUrl());
+        dbUser.setCoverPosition(user.getCoverPosition());
+        dbUser.setIntroduction(user.getIntroduction());
         dbUser.setSchool(user.getSchool());
         dbUser.setMajor(user.getMajor());
         // 邮箱绑定（当前为壳子：仅保存，不发送验证邮件）
@@ -115,6 +120,34 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         }
 
         return this.updateById(dbUser);
+    }
+
+    private void validatePresentation(User profile) {
+        if (profile.getIntroduction() != null && profile.getIntroduction().length() > 20000) {
+            throw new com.musealgo.oj.common.exception.BusinessException(
+                    com.musealgo.oj.system.error.SystemErrorCode.SYSTEM_INPUT_INVALID, "个人介绍不能超过20000字");
+        }
+        if (profile.getCoverPosition() != null
+                && (profile.getCoverPosition() < 0 || profile.getCoverPosition() > 100)) {
+            throw new com.musealgo.oj.common.exception.BusinessException(
+                    com.musealgo.oj.system.error.SystemErrorCode.SYSTEM_INPUT_INVALID, "封面位置须在0至100之间");
+        }
+        String url = profile.getCoverUrl();
+        if (url == null || url.isEmpty()) return;
+        boolean valid = url.length() <= 1024 && url.chars().noneMatch(c -> Character.isWhitespace(c) || Character.isISOControl(c));
+        try {
+            java.net.URI uri = java.net.URI.create(url);
+            valid &= (url.startsWith("/uploads/") && !url.contains("\\") && !url.contains("..")
+                    && uri.getRawAuthority() == null)
+                    || (("https".equalsIgnoreCase(uri.getScheme()) || "http".equalsIgnoreCase(uri.getScheme()))
+                    && uri.getHost() != null && uri.getUserInfo() == null);
+        } catch (IllegalArgumentException e) {
+            valid = false;
+        }
+        if (!valid) {
+            throw new com.musealgo.oj.common.exception.BusinessException(
+                    com.musealgo.oj.system.error.SystemErrorCode.SYSTEM_INPUT_INVALID, "封面地址无效，请重新上传图片");
+        }
     }
 
     @Override
