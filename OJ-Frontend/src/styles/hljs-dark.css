@@ -1,0 +1,116 @@
+/* =============================================================================
+   GitHub Dark 语法配色（仅深色主题）
+   -----------------------------------------------------------------------------
+   来源：highlight.js/styles/github-dark.css
+   原因：markdown-basic.js 固定引入 github.css，深色模式下代码块底色已变深，
+        token 仍是浅色取值（关键字 #d73a49 对 #1c2129 约 3.4:1，低于 AA 4.5:1）。
+        这里把官方深色配色限定在 html.dark 下覆盖；底色沿用站点 token，
+         不写死库里的 #0d1117。
+   升级 highlight.js 时请用同一脚本重新生成，勿手工增删。
+   ============================================================================= */
+
+html.dark .hljs {
+  color: #c9d1d9;
+  background: transparent
+}
+
+html.dark .hljs-doctag,
+html.dark .hljs-keyword,
+html.dark .hljs-meta .hljs-keyword,
+html.dark .hljs-template-tag,
+html.dark .hljs-template-variable,
+html.dark .hljs-type,
+html.dark .hljs-variable.language_ {
+  /* prettylights-syntax-keyword */
+  color: #ff7b72
+}
+
+html.dark .hljs-title,
+html.dark .hljs-title.class_,
+html.dark .hljs-title.class_.inherited__,
+html.dark .hljs-title.function_ {
+  /* prettylights-syntax-entity */
+  color: #d2a8ff
+}
+
+html.dark .hljs-attr,
+html.dark .hljs-attribute,
+html.dark .hljs-literal,
+html.dark .hljs-meta,
+html.dark .hljs-number,
+html.dark .hljs-operator,
+html.dark .hljs-variable,
+html.dark .hljs-selector-attr,
+html.dark .hljs-selector-class,
+html.dark .hljs-selector-id {
+  /* prettylights-syntax-constant */
+  color: #79c0ff
+}
+
+html.dark .hljs-regexp,
+html.dark .hljs-string,
+html.dark .hljs-meta .hljs-string {
+  /* prettylights-syntax-string */
+  color: #a5d6ff
+}
+
+html.dark .hljs-built_in,
+html.dark .hljs-symbol {
+  /* prettylights-syntax-variable */
+  color: #ffa657
+}
+
+html.dark .hljs-comment,
+html.dark .hljs-code,
+html.dark .hljs-formula {
+  /* prettylights-syntax-comment */
+  color: #8b949e
+}
+
+html.dark .hljs-name,
+html.dark .hljs-quote,
+html.dark .hljs-selector-tag,
+html.dark .hljs-selector-pseudo {
+  /* prettylights-syntax-entity-tag */
+  color: #7ee787
+}
+
+html.dark .hljs-subst {
+  /* prettylights-syntax-storage-modifier-import */
+  color: #c9d1d9
+}
+
+html.dark .hljs-section {
+  /* prettylights-syntax-markup-heading */
+  color: #1f6feb;
+  font-weight: bold
+}
+
+html.dark .hljs-bullet {
+  /* prettylights-syntax-markup-list */
+  color: #f2cc60
+}
+
+html.dark .hljs-emphasis {
+  /* prettylights-syntax-markup-italic */
+  color: #c9d1d9;
+  font-style: italic
+}
+
+html.dark .hljs-strong {
+  /* prettylights-syntax-markup-bold */
+  color: #c9d1d9;
+  font-weight: bold
+}
+
+html.dark .hljs-addition {
+  /* prettylights-syntax-markup-inserted */
+  color: #aff5b4;
+  background-color: #033a16
+}
+
+html.dark .hljs-deletion {
+  /* prettylights-syntax-markup-deleted */
+  color: #ffdcd7;
+  background-color: #67060c
+}

@@ -198,19 +198,58 @@
   --el-mask-color-extra-light:   rgba(0,0,0,0.24);
 }
 
-/* github-markdown-css 只在 prefers-color-scheme 或 [data-theme=dark] 下变暗，
-   而站点用的是 html.dark。不显式接管的话，"系统浅色 + 站点深色" 时
-   题面/文章/AI 解读会是深色页面里的一块白纸。 */
-.dark .markdown-body {
+/* github-markdown-css 5.x 把明暗变量放在 prefers-color-scheme 媒体查询里，
+   与站点自己的 html.dark 开关是两套机制。只补单向会漏另一边：
+   - 系统深色 + 站点浅色 → 题面/文章/AI 解读仍是 #0d1117 黑底白字；
+   - 系统浅色 + 站点深色 → 题面在深色页面里是一块白纸。
+   下面按站点主题显式接管两套取值，不再跟随系统偏好。
+   选择器带 html 前缀，特异性高于库里的 .markdown-body / [data-theme]。 */
+html:not(.dark) .markdown-body {
+  color-scheme: light;
+  --bgColor-default: transparent;
+  --bgColor-muted: var(--bg-surface-hover);
+  --bgColor-neutral-muted: var(--bg-surface-hover);
+  --bgColor-attention-muted: #fff8c5;
+  --fgColor-default: var(--text-primary);
+  --fgColor-muted: var(--text-regular);
+  --fgColor-accent: var(--accent-primary);
+  --fgColor-danger: #d1242f;
+  --fgColor-success: #1a7f37;
+  --fgColor-attention: #9a6700;
+  --fgColor-done: #8250df;
+  --borderColor-default: var(--border-base);
+  --borderColor-muted: var(--border-light);
+  --borderColor-neutral-muted: var(--border-light);
+  --borderColor-accent-emphasis: var(--accent-primary);
+  --borderColor-success-emphasis: #1a7f37;
+  --borderColor-attention-emphasis: #9a6700;
+  --borderColor-danger-emphasis: #cf222e;
+  --borderColor-done-emphasis: #8250df;
+  --focus-outlineColor: var(--accent-primary);
+}
+
+html.dark .markdown-body {
   color-scheme: dark;
   --bgColor-default: transparent;
   --bgColor-muted: var(--bg-surface-hover);
   --bgColor-neutral-muted: var(--bg-surface-hover);
+  --bgColor-attention-muted: #bb800926;
   --fgColor-default: var(--text-primary);
   --fgColor-muted: var(--text-secondary);
   --fgColor-accent: #4493f8; /* 与库自带暗色取值一致 */
+  --fgColor-danger: #f85149;
+  --fgColor-success: #3fb950;
+  --fgColor-attention: #d29922;
+  --fgColor-done: #ab7df8;
   --borderColor-default: var(--border-base);
   --borderColor-muted: var(--border-light);
+  --borderColor-neutral-muted: var(--border-light);
+  --borderColor-accent-emphasis: #1f6feb;
+  --borderColor-success-emphasis: #238636;
+  --borderColor-attention-emphasis: #9e6a03;
+  --borderColor-danger-emphasis: #da3633;
+  --borderColor-done-emphasis: #8957e5;
+  --focus-outlineColor: #1f6feb;
 }
 
 /* 空状态插图是浅色 SVG，深底上会变成一块白。 */
