@@ -155,7 +155,8 @@ import { showApiError } from '@/utils/errorFeedback'
 //
 // 周报生成是 enqueue-only：批量 POST 只受理/复用任务，PENDING/GENERATING 不是失败。
 // 本组件用一个共享轮询循环（班级报告列表，每 2 秒一次）更新每名学生的任务状态，
-// 不为每个学生各自发请求；列表行从不加载 HTML，查看内容交给单学生预览弹窗。
+// 不为每个学生各自发请求；列表行从不加载 HTML。弹窗负责受理与快速预览，
+// 完整正文（目录、结构化视图、打印导出）统一交给 /admin/reports/view/:jobId。
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Document } from '@element-plus/icons-vue'
