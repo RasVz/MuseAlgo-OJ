@@ -32,6 +32,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -60,11 +62,9 @@ public class ExamAttemptApplicationService {
     @Transactional(rollbackFor = Exception.class, noRollbackFor = AttemptExpiredException.class)
     public List<ExamPaperVO.ExamQuestionResultVO> submitAnswers(
             Long paperId, Long userId, ExamAnswerSubmitDTO submit) {
-        requirePublishedOrAdmin(requireExistingPaper(paperId));
-        if (submit.getAnswers() == null || submit.getAnswers().isEmpty()) {
-            return Collections.emptyList();
-        }
+        ExamPaper paper = requireExistingPaper(paperId);
         ExamAttempt running = findRunningAttempt(paperId, userId);
+        requirePublishedOrAdminOrOwnAttempt(paper, running);
         if (running == null) {
             throw new BusinessException(ProblemErrorCode.EXAM_ATTEMPT_NOT_ACTIVE, "请先开始作答，或当前试卷已交卷");
         }
@@ -73,25 +73,36 @@ public class ExamAttemptApplicationService {
             finalizeAttempt(running, true);
             throw new AttemptExpiredException("作答时间已结束，试卷已自动交卷");
         }
+        if (submit.getAnswers() == null || submit.getAnswers().isEmpty()) {
+            return Collections.emptyList();
+        }
         List<ExamQuestion> questions = examQuestionMapper.selectList(
                 new LambdaQueryWrapper<ExamQuestion>().eq(ExamQuestion::getPaperId, paperId));
         Map<Long, ExamQuestion> questionMap = questions.stream()
                 .collect(Collectors.toMap(ExamQuestion::getId, Function.identity()));
+        Set<Long> submittedQuestionIds = new HashSet<>();
+        for (ExamAnswerSubmitDTO.AnswerItem item : submit.getAnswers()) {
+            if (item == null || item.getQuestionId() == null || !submittedQuestionIds.add(item.getQuestionId())) {
+                throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID,
+                        "答案列表包含空题目或重复题目");
+            }
+            if (!questionMap.containsKey(item.getQuestionId())) {
+                throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID,
+                        "答案中包含不属于当前试卷的题目");
+            }
+        }
+
+        Map<Long, ExamAnswer> answerMap = examAnswerMapper.selectList(
+                        new LambdaQueryWrapper<ExamAnswer>().eq(ExamAnswer::getAttemptId, running.getId()))
+                .stream().collect(Collectors.toMap(ExamAnswer::getQuestionId, Function.identity()));
 
         List<ExamPaperVO.ExamQuestionResultVO> results = new ArrayList<>();
         for (ExamAnswerSubmitDTO.AnswerItem item : submit.getAnswers()) {
             ExamQuestion question = questionMap.get(item.getQuestionId());
-            if (question == null) {
-                continue;
-            }
             boolean correct = ObjectiveJudge.isCorrect(question, item.getAnswer());
             int gained = correct ? (question.getScore() == null ? 0 : question.getScore()) : 0;
 
-            ExamAnswer existing = examAnswerMapper.selectOne(
-                    new LambdaQueryWrapper<ExamAnswer>()
-                            .eq(ExamAnswer::getAttemptId, running.getId())
-                            .eq(ExamAnswer::getQuestionId, question.getId())
-                            .last("LIMIT 1"));
+            ExamAnswer existing = answerMap.get(question.getId());
             if (existing == null) {
                 ExamAnswer answer = new ExamAnswer();
                 answer.setPaperId(paperId);
@@ -104,6 +115,7 @@ public class ExamAttemptApplicationService {
                 answer.setCreateTime(now);
                 answer.setUpdateTime(now);
                 examAnswerMapper.insert(answer);
+                answerMap.put(question.getId(), answer);
             } else {
                 existing.setAnswer(item.getAnswer());
                 existing.setIsCorrect(correct ? 1 : 0);
@@ -121,7 +133,7 @@ public class ExamAttemptApplicationService {
             result.setExplanation(question.getExplanation());
             results.add(result);
         }
-        refreshAttemptObjectiveScore(running);
+        refreshAttemptObjectiveScore(running, answerMap.values());
         return results;
     }
 
@@ -135,7 +147,7 @@ public class ExamAttemptApplicationService {
         requirePublishedOrAdmin(paper);
         ExamAttempt running = findRunningAttempt(paperId, userId);
         if (running != null) {
-            if (running.getEndTime().isBefore(LocalDateTime.now())) {
+            if (!running.getEndTime().isAfter(LocalDateTime.now())) {
                 finalizeAttempt(running, true); // 过期会话先自动交卷
             } else {
                 return toAttemptVO(running);
@@ -163,24 +175,28 @@ public class ExamAttemptApplicationService {
     /** 读取当前会话（无进行中会话返回最近一次已交卷记录）。 */
     @Transactional(rollbackFor = Exception.class)
     public ExamAttemptVO getAttempt(Long paperId, Long userId) {
-        requirePublishedOrAdmin(requireExistingPaper(paperId));
+        ExamPaper paper = requireExistingPaper(paperId);
         ExamAttempt running = findRunningAttempt(paperId, userId);
+        ExamAttempt latest = running == null ? latestAttempt(paperId, userId) : running;
+        requirePublishedOrAdminOrOwnAttempt(paper, latest);
         if (running != null) {
-            if (running.getEndTime().isBefore(LocalDateTime.now())) {
+            if (!running.getEndTime().isAfter(LocalDateTime.now())) {
                 return finalizeAttempt(running, true);
             }
             return toAttemptVO(running);
         }
-        return toAttemptVO(latestAttempt(paperId, userId));
+        return toAttemptVO(latest);
     }
 
     /** 主动交卷（过期会话标记为超时交卷）。 */
     @Transactional(rollbackFor = Exception.class)
     public ExamAttemptVO finishAttempt(Long paperId, Long userId) {
-        requirePublishedOrAdmin(requireExistingPaper(paperId));
+        ExamPaper paper = requireExistingPaper(paperId);
         ExamAttempt running = findRunningAttempt(paperId, userId);
+        ExamAttempt latest = running == null ? latestAttempt(paperId, userId) : running;
+        requirePublishedOrAdminOrOwnAttempt(paper, latest);
         if (running == null) {
-            return toAttemptVO(latestAttempt(paperId, userId));
+            return toAttemptVO(latest);
         }
         boolean expired = !running.getEndTime().isAfter(LocalDateTime.now());
         return finalizeAttempt(running, expired);
@@ -192,11 +208,15 @@ public class ExamAttemptApplicationService {
         List<ExamAttempt> expired = examAttemptMapper.selectList(
                 new LambdaQueryWrapper<ExamAttempt>()
                         .eq(ExamAttempt::getStatus, ExamAttempt.STATUS_RUNNING)
-                        .lt(ExamAttempt::getEndTime, LocalDateTime.now()));
+                        .le(ExamAttempt::getEndTime, LocalDateTime.now()));
         int count = 0;
-        for (ExamAttempt attempt : expired) {
-            finalizeAttempt(attempt, true);
-            count++;
+        for (ExamAttempt candidate : expired) {
+            ExamAttempt attempt = examAttemptMapper.selectByIdForUpdate(candidate.getId());
+            if (attempt != null && ExamAttempt.STATUS_RUNNING.equals(attempt.getStatus())
+                    && !attempt.getEndTime().isAfter(LocalDateTime.now())) {
+                finalizeAttempt(attempt, true);
+                count++;
+            }
         }
         if (count > 0) {
             log.info("【训练会话】自动交卷 {} 个过期会话", count);
@@ -205,12 +225,7 @@ public class ExamAttemptApplicationService {
     }
 
     private ExamAttempt findRunningAttempt(Long paperId, Long userId) {
-        return examAttemptMapper.selectOne(
-                new LambdaQueryWrapper<ExamAttempt>()
-                        .eq(ExamAttempt::getPaperId, paperId)
-                        .eq(ExamAttempt::getUserId, userId)
-                        .eq(ExamAttempt::getStatus, ExamAttempt.STATUS_RUNNING)
-                        .last("LIMIT 1"));
+        return examAttemptMapper.selectRunningByPaperUserForUpdate(paperId, userId);
     }
 
     private ExamPaper requireExistingPaper(Long paperId) {
@@ -227,6 +242,15 @@ public class ExamAttemptApplicationService {
         }
     }
 
+    private void requirePublishedOrAdminOrOwnAttempt(ExamPaper paper, ExamAttempt attempt) {
+        if (Integer.valueOf(1).equals(paper.getIsPublished()) || SecurityUtils.isAdmin()) {
+            return;
+        }
+        if (attempt == null) {
+            throw new ForbiddenException("试卷尚未发布");
+        }
+    }
+
     private ExamAttempt latestAttempt(Long paperId, Long userId) {
         return examAttemptMapper.selectOne(
                 new LambdaQueryWrapper<ExamAttempt>()
@@ -236,7 +260,7 @@ public class ExamAttemptApplicationService {
                         .last("LIMIT 1"));
     }
 
-    /** 交卷：客观题 = 最新作答判分之和；编程题 = 会话时间窗内每题最好成绩之和 */
+    /** 交卷：客观题按最新作答判分；编程题将会话内最好判分折算到试卷设置的单题分值。 */
     private ExamAttemptVO finalizeAttempt(ExamAttempt attempt, boolean auto) {
         LocalDateTime now = LocalDateTime.now();
         int objectiveScore = examAnswerMapper.selectList(
@@ -252,10 +276,20 @@ public class ExamAttemptApplicationService {
         if (!problems.isEmpty()) {
             List<Long> problemIds = problems.stream()
                     .map(ExamPaperProblem::getProblemId).toList();
-            codingScore = submissionAttemptQuery.findBestScores(
+            LocalDateTime scoreDeadline = now.isBefore(attempt.getEndTime()) ? now : attempt.getEndTime();
+            Map<Long, Integer> bestScoreByProblem = submissionAttemptQuery.findBestScores(
                             attempt.getUserId(), problemIds,
-                            attempt.getStartTime(), attempt.getEndTime())
-                    .stream().mapToInt(SubmissionAttemptQuery.SubmissionAttemptScore::bestScore).sum();
+                            attempt.getStartTime(), scoreDeadline)
+                    .stream().collect(Collectors.toMap(
+                            SubmissionAttemptQuery.SubmissionAttemptScore::problemId,
+                            SubmissionAttemptQuery.SubmissionAttemptScore::bestScore,
+                            Math::max));
+            codingScore = problems.stream().mapToInt(problem -> {
+                int paperPoints = problem.getScore() == null ? 0 : Math.max(0, problem.getScore());
+                int rawPercent = bestScoreByProblem.getOrDefault(problem.getProblemId(), 0);
+                int boundedPercent = Math.max(0, Math.min(100, rawPercent));
+                return (int) Math.round((double) paperPoints * boundedPercent / 100.0);
+            }).sum();
         }
 
         attempt.setStatus(auto ? ExamAttempt.STATUS_TIMEOUT : ExamAttempt.STATUS_SUBMITTED);
@@ -271,17 +305,14 @@ public class ExamAttemptApplicationService {
     }
 
     /** 作答提交后刷新进行中会话的客观题得分 */
-    private void refreshAttemptObjectiveScore(ExamAttempt running) {
-        int objectiveScore = examAnswerMapper.selectList(
-                        new LambdaQueryWrapper<ExamAnswer>()
-                                .eq(ExamAnswer::getAttemptId, running.getId()))
-                .stream().mapToInt(a -> a.getScore() == null ? 0 : a.getScore()).sum();
+    private void refreshAttemptObjectiveScore(ExamAttempt running, java.util.Collection<ExamAnswer> answers) {
+        int objectiveScore = answers.stream().mapToInt(a -> a.getScore() == null ? 0 : a.getScore()).sum();
         running.setObjectiveScore(objectiveScore);
         running.setUpdateTime(LocalDateTime.now());
         examAttemptMapper.updateById(running);
     }
 
-    private static ExamAttemptVO toAttemptVO(ExamAttempt attempt) {
+    private ExamAttemptVO toAttemptVO(ExamAttempt attempt) {
         if (attempt == null) {
             return null;
         }
@@ -298,6 +329,32 @@ public class ExamAttemptApplicationService {
         vo.setRemainingSeconds(ExamAttempt.STATUS_RUNNING.equals(attempt.getStatus())
                 ? Math.max(0, java.time.Duration.between(LocalDateTime.now(), attempt.getEndTime()).getSeconds())
                 : 0L);
+        List<ExamAnswer> answers = examAnswerMapper.selectList(
+                new LambdaQueryWrapper<ExamAnswer>().eq(ExamAnswer::getAttemptId, attempt.getId()));
+        if (answers != null && !answers.isEmpty()) {
+            List<ExamQuestion> questionRows = examQuestionMapper.selectBatchIds(
+                    answers.stream().map(ExamAnswer::getQuestionId).toList());
+            Map<Long, ExamQuestion> questionsById = (questionRows == null ? List.<ExamQuestion>of() : questionRows).stream()
+                    .collect(Collectors.toMap(ExamQuestion::getId, Function.identity()));
+            for (ExamAnswer answer : answers) {
+                ExamPaperVO.ExamAttemptAnswerVO answerVO = new ExamPaperVO.ExamAttemptAnswerVO();
+                answerVO.setQuestionId(answer.getQuestionId());
+                answerVO.setAnswer(answer.getAnswer());
+                vo.getAnswers().add(answerVO);
+
+                ExamQuestion question = questionsById.get(answer.getQuestionId());
+                if (question != null) {
+                    ExamPaperVO.ExamQuestionResultVO resultVO = new ExamPaperVO.ExamQuestionResultVO();
+                    resultVO.setQuestionId(question.getId());
+                    resultVO.setCorrect(Integer.valueOf(1).equals(answer.getIsCorrect()));
+                    resultVO.setScore(answer.getScore() == null ? 0 : answer.getScore());
+                    resultVO.setCorrectAnswer(question.getAnswer());
+                    resultVO.setMyAnswer(answer.getAnswer());
+                    resultVO.setExplanation(question.getExplanation());
+                    vo.getResults().add(resultVO);
+                }
+            }
+        }
         return vo;
     }
 }

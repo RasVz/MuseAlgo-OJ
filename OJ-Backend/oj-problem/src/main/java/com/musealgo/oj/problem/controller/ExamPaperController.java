@@ -66,7 +66,17 @@ public class ExamPaperController {
         boolean admin = SecurityUtils.isAdmin();
         ExamPaperVO paper = examPaperService.detail(id, admin);
         if (paper != null && !admin && !Integer.valueOf(1).equals(paper.getIsPublished())) {
-            return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "试卷尚未发布");
+            Long userId = SecurityUtils.getUserId();
+            if (userId == null) {
+                return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "试卷尚未发布");
+            }
+            try {
+                if (examPaperService.getAttempt(id, userId) == null) {
+                    return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "试卷尚未发布");
+                }
+            } catch (ForbiddenException denied) {
+                return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "试卷尚未发布");
+            }
         }
         return Result.success(paper);
     }
