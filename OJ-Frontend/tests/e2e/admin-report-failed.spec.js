@@ -117,6 +117,8 @@ test.describe('报告 FAILED 分支', () => {
     await retry.click()
 
     await expect(reader.getByText('已生成', { exact: true }).first()).toBeVisible({ timeout: 60000 })
+    // 重试生成的新报告带结构化数据节点，默认网页阅读；切回 A4 原始版验证 iframe。
+    await reader.getByText('A4 原始版', { exact: true }).click()
     await expect(reader.locator('iframe.report-iframe')).toBeVisible({ timeout: 20000 })
     await expect(reader).not.toContainText('错误码：GENERATOR_UNAVAILABLE')
 

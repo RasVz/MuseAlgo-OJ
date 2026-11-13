@@ -70,7 +70,8 @@ test.describe('QA-02 学习周报', () => {
     await expect(reader.locator('.title-text').first()).toContainText(fixture.report.snapshotName)
     await expect(reader.locator('.title-meta').first()).toContainText(fixture.report.periodEnd)
 
-    // 历史报告没有结构化数据节点，阅读页自动落到 A4 原始版。
+    // 新生成的报告带结构化数据节点，阅读页默认「网页阅读」；显式切到 A4 原始版验证权威 iframe。
+    await reader.getByText('A4 原始版', { exact: true }).click()
     const iframe = reader.locator('iframe.report-iframe')
     await expect(iframe).toBeVisible()
     await expect(iframe).toHaveAttribute('title', '学习周报预览')
