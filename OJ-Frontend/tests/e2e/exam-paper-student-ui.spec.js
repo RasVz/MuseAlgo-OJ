@@ -280,8 +280,9 @@ test('timeout preserves local edits and explains they were not counted', async (
   expect(state.events).toEqual([])
 })
 
-test('mobile workbench remains readable in light and dark themes and saves screenshots', async ({ page }, testInfo) => {
-  await page.setViewportSize({ width: 390, height: 844 })
+for (const width of [1024, 1366, 1440, 1920]) {
+test(`desktop workbench ${width} remains readable in light and dark themes`, async ({ page }, testInfo) => {
+  await page.setViewportSize({ width, height: 900 })
   await installSyntheticApi(page, { attempt: makeAttempt({ id: 1001 }) })
   await page.goto(`${WEB_BASE}/training/${PAPER_ID}`, { waitUntil: 'networkidle' })
   await expect(page.getByRole('heading', { name: '合成训练试卷' })).toBeVisible()
@@ -290,14 +291,15 @@ test('mobile workbench remains readable in light and dark themes and saves scree
     await page.evaluate((value) => document.documentElement.classList.toggle('dark', value === 'dark'), theme)
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true)
     const screenshot = await page.screenshot({ fullPage: true })
-    await testInfo.attach(`training-exam-mobile-${theme}.png`, { body: screenshot, contentType: 'image/png' })
+    await testInfo.attach(`training-exam-desktop-${width}-${theme}.png`, { body: screenshot, contentType: 'image/png' })
     if (process.env.OJ_TEST_OUTPUT_DIR) {
-      const path = join(process.env.OJ_TEST_OUTPUT_DIR, `training-exam-mobile-${theme}.png`)
+      const path = join(process.env.OJ_TEST_OUTPUT_DIR, `training-exam-desktop-${width}-${theme}.png`)
       await mkdir(dirname(path), { recursive: true })
       await page.screenshot({ path, fullPage: true })
     }
   }
 })
+}
 
 test('expired attempt waits for pending coding judgement without permitting answer edits', async ({ page }) => {
   const state = await installSyntheticApi(page, { attempt: makeAttempt({ id: 1101, remainingSeconds: 0, gradingPending: true }) })

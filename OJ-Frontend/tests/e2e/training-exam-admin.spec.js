@@ -64,7 +64,7 @@ test('未保存离开可以取消并继续编辑', async ({ page }) => {
   await fixture(page); await page.goto('/admin/exam-paper/create'); await title(page).fill('暂未保存'); await page.getByRole('button', { name: '返回', exact: true }).click()
   await expect(page.getByRole('dialog', { name: '离开编辑器' })).toBeVisible(); await page.getByRole('button', { name: '继续编辑' }).click(); await expect(title(page)).toHaveValue('暂未保存')
 })
-for (const [name, width, dark] of [['desktop-light', 1440, false], ['mobile-dark', 390, true]]) {
+for (const [name, width, dark] of [1024, 1366, 1440, 1920].flatMap(width => [false, true].map(dark => [`desktop-${width}-${dark ? 'dark' : 'light'}`, width, dark]))) {
   test(`管理与编辑布局 ${name}`, async ({ page }) => {
     await fixture(page); await page.setViewportSize({ width, height: 960 })
     await page.addInitScript((value) => { if (value) document.addEventListener('DOMContentLoaded', () => document.documentElement.classList.add('dark')) }, dark)
@@ -75,12 +75,8 @@ for (const [name, width, dark] of [['desktop-light', 1440, false], ['mobile-dark
     if (dark) await expect(page.locator('html')).toHaveClass(/dark/)
     const saveButton = await page.getByRole('button', { name: '保存试卷', exact: true }).boundingBox()
     expect(saveButton.x + saveButton.width).toBeLessThanOrEqual(width)
-    if (width < 720) {
-      await page.getByRole('button', { name: '管理导航', exact: true }).click()
-      await expect(page.getByRole('button', { name: '关闭导航', exact: true })).toBeVisible()
-      await page.keyboard.press('Escape')
-      await expect(page.locator('.admin-side')).not.toHaveClass(/mobile-open/)
-    }
+    await expect(page.locator('.admin-side')).toBeVisible()
+    await expect(page.getByRole('button', { name: '返回主站', exact: true })).toBeVisible()
     await page.screenshot({ path: join(output, `editor-${name}.png`), fullPage: true }); expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true); expect(errors).toEqual([])
   })
 }

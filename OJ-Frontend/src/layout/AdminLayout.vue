@@ -1,9 +1,7 @@
 <template>
-  <div class="admin-layout" @keydown.esc="closeMobileMenu">
-    <button v-if="isMobile && mobileMenuOpen" class="mobile-backdrop" aria-label="关闭管理导航" @click="closeMobileMenu"></button>
-    <aside ref="sidePanel" class="admin-side" :class="{ 'mobile-open': mobileMenuOpen }" :inert="isMobile && !mobileMenuOpen || undefined" aria-label="管理导航">
-      <button class="mobile-close" @click="closeMobileMenu">关闭导航</button>
-      <button type="button" class="admin-brand" @click="router.push('/admin')" title="回到管理中心首页">
+  <div class="admin-layout">
+    <aside class="admin-side" aria-label="管理导航">
+      <button type="button" class="admin-brand" @click="router.push('/admin')" title="回到管理中心首页" aria-label="回到管理中心首页">
         <span class="brand-dot"></span>
         睿思学院管理中心
       </button>
@@ -33,15 +31,11 @@
           </el-sub-menu>
         </el-menu>
       </nav>
-      <button type="button" class="admin-back" @click="router.push('/')">
+      <button type="button" class="admin-back" @click="router.push('/')" title="返回主站" aria-label="返回主站">
         <el-icon><Back /></el-icon> 返回主站
       </button>
     </aside>
-    <div class="admin-body" :inert="isMobile && mobileMenuOpen || undefined">
-      <header class="admin-mobile-toolbar">
-        <button ref="menuToggle" type="button" :aria-expanded="mobileMenuOpen" @click="openMobileMenu">管理导航</button>
-        <span>{{ route.meta.title || '管理中心' }}</span>
-      </header>
+    <div class="admin-body">
       <main class="admin-main">
         <router-view />
       </main>
@@ -50,7 +44,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch, nextTick, onBeforeUnmount } from 'vue'
+import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/userStore'
 import { getAdminMenuGroups } from '@/constants/adminMenu'
@@ -59,27 +53,6 @@ import { Back, HomeFilled } from '@element-plus/icons-vue'
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
-const mobileMedia = window.matchMedia('(max-width: 720px)')
-const isMobile = ref(mobileMedia.matches)
-const mobileMenuOpen = ref(false)
-const sidePanel = ref(null)
-const menuToggle = ref(null)
-const openMobileMenu = async () => {
-  mobileMenuOpen.value = true
-  await nextTick()
-  sidePanel.value?.querySelector('button')?.focus()
-}
-const closeMobileMenu = () => {
-  mobileMenuOpen.value = false
-  if (isMobile.value) nextTick(() => menuToggle.value?.focus())
-}
-const onMediaChange = (event) => {
-  isMobile.value = event.matches
-  mobileMenuOpen.value = false
-}
-mobileMedia.addEventListener('change', onMediaChange)
-onBeforeUnmount(() => mobileMedia.removeEventListener('change', onMediaChange))
-watch(() => route.fullPath, () => { if (mobileMenuOpen.value) closeMobileMenu() })
 
 const menuGroups = computed(() => getAdminMenuGroups(userStore.role || 0))
 
@@ -141,6 +114,7 @@ const activeMenu = computed(() => {
   border: 0;
   background: transparent;
   font-family: inherit;
+  text-align: left;
   width: 100%;
   display: flex;
   align-items: center;
@@ -178,6 +152,8 @@ const activeMenu = computed(() => {
   background: transparent;
   color: inherit;
   font-family: inherit;
+  text-align: left;
+  width: 100%;
   padding: 14px 16px;
   border-top: 1px solid var(--admin-side-hover);
   cursor: pointer;
@@ -187,6 +163,7 @@ const activeMenu = computed(() => {
   font-size: 13px;
 }
 .admin-back:hover { color: var(--admin-side-active-text); }
+.admin-brand:focus-visible, .admin-back:focus-visible { outline: 2px solid var(--admin-side-active-text); outline-offset: -4px; }
 .admin-main {
   flex: 1;
   min-width: 0;
@@ -209,15 +186,5 @@ const activeMenu = computed(() => {
   display: block;
   overflow-y: auto;
   box-sizing: border-box;
-}
-.admin-mobile-toolbar, .mobile-close, .mobile-backdrop { display: none; }
-@media (max-width: 720px) {
-  .admin-side { position: fixed; left: 0; top: 0; width: min(280px, 85vw); height: 100dvh; z-index: 2101; transform: translateX(-100%); }
-  .admin-side.mobile-open { transform: translateX(0); }
-  .admin-body { height: 100dvh; }
-  .admin-mobile-toolbar { display: flex; flex-shrink: 0; align-items: center; gap: 16px; min-height: 56px; padding: 0 12px; background: var(--bg-surface); border-bottom: 1px solid var(--border-light); color: var(--text-primary); }
-  .admin-mobile-toolbar button, .mobile-close { min-height: 40px; padding: 8px 12px; border: 1px solid var(--border-light); border-radius: 6px; background: var(--bg-surface); color: var(--text-primary); cursor: pointer; font: inherit; }
-  .mobile-close { display: block; margin: 12px 12px 0; }
-  .mobile-backdrop { display: block; position: fixed; inset: 0; border: 0; padding: 0; background: rgba(0,0,0,.45); z-index: 2100; }
 }
 </style>
