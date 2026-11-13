@@ -147,12 +147,6 @@
         @open-item="openJobItem"
         @finished="handleJobFinished"
       />
-      <ProblemFormatWorkbench
-        v-model="workbenchVisible"
-        :problem-id="workbenchProblemId"
-        :job-id="workbenchJobId"
-        @applied="handleWorkbenchApplied"
-      />
     </div>
   </el-config-provider>
 </template>
@@ -178,7 +172,6 @@ import {
 } from '@/utils/adminProblemColumns'
 import FpsImportResultDialog from './components/FpsImportResultDialog.vue'
 import ProblemFormatJobPanel from './problemFormat/ProblemFormatJobPanel.vue'
-import ProblemFormatWorkbench from './problemFormat/ProblemFormatWorkbench.vue'
 import { useFpsImport } from './composables/useFpsImport'
 
 const getDiffColor = getDifficultyColor
@@ -208,14 +201,11 @@ const keyword = ref('')
 const statusFilter = ref('all')
 const sortOrder = ref('ascending')
 
-// ---- 批量优化（异步任务）与单题工作台 ----
+// ---- 批量优化（异步任务）：待审项统一跳到题面工作区 ----
 const selectedProblems = ref([])
 const handleSelectionChange = (rows) => { selectedProblems.value = rows }
 const jobPanelVisible = ref(false)
 const batchProblemIds = ref([])
-const workbenchVisible = ref(false)
-const workbenchProblemId = ref(null)
-const workbenchJobId = ref(null)
 
 const openFormatJob = () => {
   batchProblemIds.value = selectedProblems.value.map((item) => item.id).filter(Boolean)
@@ -226,15 +216,11 @@ const openFormatJob = () => {
   jobPanelVisible.value = true
 }
 
-// 任务里的待审项：直接读任务保存的提案，不重新调用模型
-const openJobItem = ({ jobId, problemId }) => {
-  workbenchJobId.value = jobId
-  workbenchProblemId.value = problemId
-  workbenchVisible.value = true
-}
-
-const handleWorkbenchApplied = () => {
-  fetchData()
+// 任务里的待审项：带着候选版本号进题面工作区，AI 结果直接作为草稿打开
+const openJobItem = ({ problemId, versionId }) => {
+  jobPanelVisible.value = false
+  const query = versionId ? `?version=${versionId}` : ''
+  router.push(`/admin/problem/edit/${problemId}${query}`)
 }
 
 const handleJobFinished = () => {

@@ -418,7 +418,16 @@ public class ProblemFormatJobService {
                         : sampleRisk ? "样例存在风险，等待人工审阅"
                         : needsHuman ? "正文明显缩短，等待人工确认"
                         : "已生成，等待人工审阅";
-                markItem(item.getId(), ITEM_REVIEW, reason, null, proposal, null, null);
+                // 待审项也落成候选版本：审阅入口统一到题面工作区，不再需要单独的对照弹窗
+                Long candidateId = null;
+                try {
+                    ProblemStatementVersion live = versionService.ensureLive(problem, job.getCreatorId());
+                    candidateId = versionService.createCandidate(item.getProblemId(), live.getId(),
+                            job.getId(), job.getCreatorId(), proposal).getId();
+                } catch (RuntimeException e) {
+                    log.warn("批量整理生成候选版本失败 problemId={}", item.getProblemId(), e);
+                }
+                markItem(item.getId(), ITEM_REVIEW, reason, null, proposal, null, candidateId);
             }
         } catch (Exception e) {
             log.warn("题面整理失败 problemId={} jobId={}", item.getProblemId(), job.getId(), e);

@@ -28,6 +28,7 @@ import com.musealgo.oj.problem.format.ProblemFormatJobRequest;
 import com.musealgo.oj.problem.format.ProblemFormatJobVO;
 import com.musealgo.oj.problem.format.ProblemFormatPreviewItem;
 import com.musealgo.oj.problem.format.ProblemFormatRequest;
+import com.musealgo.oj.problem.format.StatementComposeRequest;
 import com.musealgo.oj.problem.format.StatementOptimizeRequest;
 import com.musealgo.oj.problem.format.StatementVersionApplyRequest;
 import com.musealgo.oj.problem.format.StatementVersionDetailVO;
@@ -212,6 +213,15 @@ public class ProblemController {
         Long baseVersionId = request == null ? null : request.baseVersionId();
         boolean ipMode = request != null && request.ipEnabled();
         return Result.success(formatJobService.createVersionJob(problemId, baseVersionId, ipMode));
+    }
+
+    @Operation(summary = "保存编辑器内容为新版本（编辑与 AI 改写共用）")
+    @AuditLog(module = "problem", action = "statement_compose")
+    @PostMapping("/{problemId}/statement/versions/compose")
+    @PreAuthorize("hasAuthority('problem:manage')")
+    public Result<StatementVersionVO> composeStatement(@PathVariable Long problemId,
+                                                       @RequestBody StatementComposeRequest request) {
+        return Result.success(statementVersionService.compose(problemId, request));
     }
 
     @Operation(summary = "把当前题面记录为新版本")

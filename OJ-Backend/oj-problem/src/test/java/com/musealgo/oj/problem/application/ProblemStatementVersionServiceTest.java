@@ -10,6 +10,7 @@ import com.musealgo.oj.problem.format.FormatSample;
 import com.musealgo.oj.problem.format.ProblemFormatApplyResult;
 import com.musealgo.oj.problem.format.ProblemFormattedContent;
 import com.musealgo.oj.problem.format.ProblemStatementSnapshot;
+import com.musealgo.oj.problem.format.StatementComposeRequest;
 import com.musealgo.oj.problem.format.StatementVersionApplyRequest;
 import com.musealgo.oj.problem.mapper.ProblemStatementVersionMapper;
 import com.musealgo.oj.problem.service.ProblemService;
@@ -48,6 +49,7 @@ class ProblemStatementVersionServiceTest {
     private ProblemStatementVersionMapper versionMapper;
     private ProblemFormatApplicationService formatService;
     private ProblemStatementVersionService service;
+    private ProblemService problemService;
     private Problem problem;
 
     @BeforeAll
@@ -73,10 +75,11 @@ class ProblemStatementVersionServiceTest {
 
         ProblemAccessGuard accessGuard = mock(ProblemAccessGuard.class);
         when(accessGuard.requireManagedProblem(PROBLEM_ID)).thenReturn(problem);
-        ProblemService problemService = mock(ProblemService.class);
+        problemService = mock(ProblemService.class);
         when(problemService.getById(PROBLEM_ID)).thenReturn(problem);
 
         service = new ProblemStatementVersionService(versionMapper, formatService, accessGuard, problemService,
+                mock(com.musealgo.oj.problem.infrastructure.ProblemSearchIndexer.class),
                 new ObjectMapper(), new NoopTransactionManager());
     }
 
@@ -120,6 +123,39 @@ class ProblemStatementVersionServiceTest {
 
         assertEquals("存在阻断问题，无法应用：题目正文为空，无法保存", failure.getMessage());
         verify(formatService, never()).applyFieldsForVersion(any(), any(), any());
+    }
+
+    @Test
+    void composeRejectsBlankContent() {
+        StatementComposeRequest request = new StatementComposeRequest(VERSION_ID, "MANUAL", null,
+                new ProblemFormattedContent("题名", "   ", "", "", "", 1000, 512, List.of()));
+
+        BusinessException failure = assertThrows(BusinessException.class,
+                () -> service.compose(PROBLEM_ID, request));
+
+        assertEquals("题目正文不能为空", failure.getMessage());
+        verify(versionMapper, never()).insert(any(ProblemStatementVersion.class));
+    }
+
+    @Test
+    void composeArchivesLiveAndCreatesOneNewVersion() {
+        ProblemStatementVersion base = version(ProblemStatementVersionService.STATUS_LIVE);
+        when(versionMapper.selectById(VERSION_ID)).thenReturn(base);
+        when(versionMapper.selectOne(any())).thenReturn(base);
+        when(problemService.getById(PROBLEM_ID)).thenReturn(problem);
+        when(problemService.updateById(any(Problem.class))).thenReturn(true);
+
+        StatementComposeRequest request = new StatementComposeRequest(VERSION_ID, "MANUAL", "改了正文",
+                new ProblemFormattedContent("新题名", "整理后的正文，长度足够避免触发过短规则。".repeat(4),
+                        "输入", "输出", "提示", 1000, 512, List.of(new FormatSample("1", "1"))));
+
+        var result = service.compose(PROBLEM_ID, request);
+
+        assertEquals(3, result.versionNo());
+        assertEquals(ProblemStatementVersionService.STATUS_LIVE, result.status());
+        assertEquals(ProblemStatementVersionService.SOURCE_MANUAL, result.source());
+        verify(versionMapper, times(1)).insert(any(ProblemStatementVersion.class));
+        verify(problemService, times(1)).updateById(any(Problem.class));
     }
 
     private ProblemStatementVersion version(String status) {

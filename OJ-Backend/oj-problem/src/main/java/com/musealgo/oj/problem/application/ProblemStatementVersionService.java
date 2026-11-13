@@ -22,11 +22,13 @@ import com.musealgo.oj.problem.format.ProblemFormatPreviewItem;
 import com.musealgo.oj.problem.format.ProblemFormattedContent;
 import com.musealgo.oj.problem.format.ProblemStatementHasher;
 import com.musealgo.oj.problem.format.ProblemStatementSnapshot;
+import com.musealgo.oj.problem.format.StatementComposeRequest;
 import com.musealgo.oj.problem.format.StatementIssue;
 import com.musealgo.oj.problem.format.StatementVersionApplyRequest;
 import com.musealgo.oj.problem.format.StatementVersionDetailVO;
 import com.musealgo.oj.problem.format.StatementVersionVO;
 import com.musealgo.oj.problem.format.quality.StatementQualityChecker;
+import com.musealgo.oj.problem.infrastructure.ProblemSearchIndexer;
 import com.musealgo.oj.problem.mapper.ProblemStatementVersionMapper;
 import com.musealgo.oj.problem.service.ProblemService;
 
@@ -73,6 +75,7 @@ public class ProblemStatementVersionService {
     private final ProblemFormatApplicationService formatApplicationService;
     private final ProblemAccessGuard accessGuard;
     private final ProblemService problemService;
+    private final ProblemSearchIndexer searchIndexer;
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
 
@@ -80,12 +83,14 @@ public class ProblemStatementVersionService {
                                           ProblemFormatApplicationService formatApplicationService,
                                           ProblemAccessGuard accessGuard,
                                           ProblemService problemService,
+                                          ProblemSearchIndexer searchIndexer,
                                           ObjectMapper objectMapper,
                                           PlatformTransactionManager transactionManager) {
         this.versionMapper = versionMapper;
         this.formatApplicationService = formatApplicationService;
         this.accessGuard = accessGuard;
         this.problemService = problemService;
+        this.searchIndexer = searchIndexer;
         this.objectMapper = objectMapper;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
@@ -201,6 +206,85 @@ public class ProblemStatementVersionService {
         });
     }
 
+    /**
+     * 编辑器保存：把编辑区内容写成新的 LIVE 版本并回写题目。
+     * <p>
+     * 这是「编辑」与「AI 改写后继续手改」共用的唯一保存路径：调用方只提交最终内容，
+     * 不区分这段文字是人写的还是 AI 写的——来源只记在版本上。
+     * </p>
+     * <p>
+     * 质量检查只写进版本快照用于回看，不阻断保存：用户在编辑器里逐段看过内容，
+     * 再拿规则拦住保存属于重复约束；无人值守的自动应用仍走带闸门的那条路径。
+     * </p>
+     */
+    public StatementVersionVO compose(Long problemId, StatementComposeRequest request) {
+        SecurityUtils.requireTeacherOrAdmin();
+        Problem problem = accessGuard.requireManagedProblem(problemId);
+        if (request == null || request.formatted() == null) {
+            throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "题面内容不能为空");
+        }
+        ProblemFormattedContent formatted = request.formatted();
+        validateComposed(formatted);
+
+        ProblemStatementVersion base = request.baseVersionId() == null
+                ? ensureLive(problem)
+                : requireVersion(problemId, request.baseVersionId());
+        if (STATUS_CANDIDATE.equals(base.getStatus())) {
+            throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "待审候选版本不能作为编辑基线");
+        }
+        List<StatementIssue> issues = StatementQualityChecker.check(toSnapshot(base), formatted);
+        ProblemStatementSnapshot snapshot = formatted.asSnapshot();
+
+        ProblemStatementVersion created = transactionTemplate.execute(status -> {
+            archiveLive(problemId);
+            ProblemStatementVersion version = new ProblemStatementVersion();
+            version.setProblemId(problemId);
+            version.setVersionNo(nextVersionNo(problemId));
+            version.setStatus(STATUS_LIVE);
+            version.setSource(request.aiApplied() ? SOURCE_AI_APPLIED : SOURCE_MANUAL);
+            fillFromSnapshot(version, snapshot);
+            version.setBaseVersionId(base.getId());
+            version.setIssuesJson(writeIssues(issues));
+            version.setNote(StringUtils.hasText(request.note()) ? truncate(request.note(), 255)
+                    : (request.aiApplied() ? "AI 整理后手工调整" : "手工编辑"));
+            version.setCreatedBy(SecurityUtils.getUserId());
+            version.setCreateTime(LocalDateTime.now());
+            version.setUpdateTime(LocalDateTime.now());
+            versionMapper.insert(version);
+
+            writeSnapshotToProblem(problem, snapshot, ALL_FIELDS);
+            if (!problemService.updateById(problem)) {
+                throw new IllegalStateException("题目保存失败");
+            }
+            return version;
+        });
+        if (created == null) {
+            throw new IllegalStateException("题面保存失败");
+        }
+        searchIndexer.indexProblem(problem);
+        return toVO(created, true, false);
+    }
+
+    private void validateComposed(ProblemFormattedContent formatted) {
+        String title = nullToEmpty(formatted.title()).trim();
+        if (title.isEmpty()) {
+            throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "题名不能为空");
+        }
+        if (title.codePointCount(0, title.length()) > 128) {
+            throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "题名最多 128 个字符");
+        }
+        if (nullToEmpty(formatted.content()).isBlank()) {
+            throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "题目正文不能为空");
+        }
+        if (formatted.samples() != null && formatted.samples().size() > 50) {
+            throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "样例数量超过 50 组");
+        }
+    }
+
+    private static String truncate(String value, int max) {
+        return value.length() <= max ? value : value.substring(0, max);
+    }
+
     /** 把当前题面记录为新版本；与 LIVE 内容一致时不产生新行。 */
     public StatementVersionVO recordCurrent(Long problemId) {
         SecurityUtils.requireTeacherOrAdmin();
@@ -261,6 +345,8 @@ public class ProblemStatementVersionService {
         if (activated == null) {
             throw new IllegalStateException("版本启用失败");
         }
+        // 库里已经改成 LIVE，返回体必须跟着改，否则前端会拿到「刚启用却仍是历史」的状态
+        activated.setStatus(STATUS_LIVE);
         return toVO(activated, true, false);
     }
 
@@ -321,6 +407,8 @@ public class ProblemStatementVersionService {
         if (promoted == null) {
             throw new IllegalStateException("版本应用失败");
         }
+        promoted.setStatus(STATUS_LIVE);
+        promoted.setSource(SOURCE_AI_APPLIED);
         return toVO(promoted, true, false);
     }
 

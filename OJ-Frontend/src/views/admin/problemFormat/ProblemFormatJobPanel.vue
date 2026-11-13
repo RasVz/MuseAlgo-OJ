@@ -174,7 +174,12 @@ function canOpen(item) {
 
 function openItem(item) {
   if (!canOpen(item)) return
-  emit('open-item', { jobId: job.value.id, problemId: item.problemId })
+  // 打开题面工作区并载入该候选版本；没有版本 id 时退化为打开题目
+  emit('open-item', {
+    jobId: job.value.id,
+    problemId: item.problemId,
+    versionId: item.resultVersionId || null
+  })
 }
 
 function close() {

@@ -216,6 +216,15 @@ export function optimizeStatementVersion(problemId, baseVersionId, ipMode = fals
   })
 }
 
+// 编辑器保存：把当前编辑区内容写成新的当前版本（编辑与 AI 改写共用）
+export function composeStatement(problemId, { baseVersionId, source, note, formatted }) {
+  return request({
+    url: `/problem/${problemId}/statement/versions/compose`,
+    method: 'post',
+    data: { baseVersionId, source, note, formatted }
+  })
+}
+
 export function recordCurrentStatement(problemId) {
   return request({
     url: `/problem/${problemId}/statement/versions/current`,
