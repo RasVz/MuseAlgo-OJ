@@ -20,4 +20,19 @@ class SubmissionMapperExamScoreScopeTest {
         assertTrue(sql.contains("create_time &gt;= #{from}"));
         assertTrue(sql.contains("create_time &lt;= #{to}"));
     }
+
+    @Test
+    void pendingScoreQueryIgnoresContestAndTerminalSubmissions() throws Exception {
+        String sql = SubmissionMapper.class.getMethod("countPendingExamScores",
+                        Long.class, java.util.Collection.class,
+                        java.time.LocalDateTime.class, java.time.LocalDateTime.class)
+                .getAnnotation(Select.class).value()[0];
+
+        assertTrue(sql.contains("contest_id IS NULL"));
+        assertTrue(sql.contains("vp_attempt_id IS NULL"));
+        assertTrue(sql.contains("'FAILED','FINISHED'"));
+        assertTrue(sql.contains("'QUEUED','COMPILING','JUDGING'"));
+        assertTrue(sql.contains("create_time &gt;= #{from}"));
+        assertTrue(sql.contains("create_time &lt;= #{to}"));
+    }
 }

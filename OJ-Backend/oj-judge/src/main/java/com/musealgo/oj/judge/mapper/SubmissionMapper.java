@@ -105,6 +105,19 @@ public interface SubmissionMapper extends BaseMapper<Submission> {
             @Param("from") LocalDateTime from,
             @Param("to") LocalDateTime to);
 
+    /** 限时作答交卷前检查题目范围内仍在判题的普通练习提交。 */
+    @Select("<script>SELECT COUNT(*) FROM submission " +
+            "WHERE user_id = #{userId} AND contest_id IS NULL AND vp_attempt_id IS NULL " +
+            "AND problem_id IN <foreach collection='problemIds' item='pid' open='(' separator=',' close=')'>#{pid}</foreach> " +
+            "AND create_time &gt;= #{from} AND create_time &lt;= #{to} " +
+            "AND ((COALESCE(status,0)=0 AND COALESCE(judge_phase,'') NOT IN ('FAILED','FINISHED')) " +
+            "OR judge_phase IN ('QUEUED','COMPILING','JUDGING'))</script>")
+    long countPendingExamScores(
+            @Param("userId") Long userId,
+            @Param("problemIds") java.util.Collection<Long> problemIds,
+            @Param("from") LocalDateTime from,
+            @Param("to") LocalDateTime to);
+
     @Update("UPDATE submission SET judge_phase = #{phase}, update_time = NOW() WHERE id = #{submissionId}")
     int updateJudgePhase(@Param("submissionId") Long submissionId, @Param("phase") String phase);
     Page<Submission> selectContestSubmissionPage(
