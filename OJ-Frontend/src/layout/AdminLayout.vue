@@ -1,15 +1,17 @@
 <template>
-  <div class="admin-layout">
+  <div class="admin-layout" :class="{ 'admin-layout--compact-directory': compactClassDirectory }">
     <aside class="admin-side">
-      <div class="admin-brand" @click="router.push('/admin')" title="回到管理中心首页">
+      <button class="admin-brand" @click="router.push('/admin')" title="回到管理中心首页" aria-label="回到管理中心首页">
         <span class="brand-dot"></span>
-        睿思学院管理中心
-      </div>
+        <span v-if="!compactClassDirectory">睿思学院管理中心</span>
+      </button>
       <nav class="admin-nav">
         <el-menu
           :default-active="activeMenu"
           :default-openeds="defaultOpeneds"
           router
+          :collapse="compactClassDirectory"
+          :collapse-transition="false"
           class="admin-el-menu"
           background-color="transparent"
           text-color="var(--admin-side-text)"
@@ -22,6 +24,7 @@
 
           <el-sub-menu v-for="group in menuGroups" :key="group.title" :index="group.title">
             <template #title>
+              <el-icon v-if="compactClassDirectory"><component :is="group.items[0]?.icon" /></el-icon>
               <span class="group-title">{{ group.title }}</span>
             </template>
             <el-menu-item v-for="item in group.items" :key="item.path" :index="item.path">
@@ -31,9 +34,9 @@
           </el-sub-menu>
         </el-menu>
       </nav>
-      <div class="admin-back" @click="router.push('/')">
-        <el-icon><Back /></el-icon> 返回主站
-      </div>
+      <button class="admin-back" @click="router.push('/')" title="返回主站" aria-label="返回主站">
+        <el-icon><Back /></el-icon><span v-if="!compactClassDirectory">返回主站</span>
+      </button>
     </aside>
     <div class="admin-body">
       <main class="admin-main">
@@ -44,7 +47,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/userStore'
 import { getAdminMenuGroups } from '@/constants/adminMenu'
@@ -53,6 +56,12 @@ import { Back, HomeFilled } from '@element-plus/icons-vue'
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
+const narrowScreen = window.matchMedia('(max-width: 760px)')
+const narrow = ref(narrowScreen.matches)
+const updateNarrow = (event) => { narrow.value = event.matches }
+narrowScreen.addEventListener('change', updateNarrow)
+onBeforeUnmount(() => narrowScreen.removeEventListener('change', updateNarrow))
+const compactClassDirectory = computed(() => route.name === 'AdminClasses' && narrow.value)
 
 const menuGroups = computed(() => getAdminMenuGroups(userStore.role || 0))
 
@@ -111,6 +120,10 @@ const activeMenu = computed(() => {
   flex-direction: column;
 }
 .admin-brand {
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  text-align: left;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -143,6 +156,11 @@ const activeMenu = computed(() => {
 }
 .group-title { font-size: 12px; color: var(--admin-side-muted); }
 .admin-back {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
   padding: 14px 16px;
   border-top: 1px solid var(--admin-side-hover);
   cursor: pointer;
@@ -152,6 +170,11 @@ const activeMenu = computed(() => {
   font-size: 13px;
 }
 .admin-back:hover { color: var(--admin-side-active-text); }
+.admin-brand:focus-visible, .admin-back:focus-visible { outline: 2px solid var(--admin-side-active-text); outline-offset: -4px; }
+.admin-layout--compact-directory .admin-side { width: 64px; }
+.admin-layout--compact-directory .admin-brand { justify-content: center; min-height: 58px; padding-inline: 0; }
+.admin-layout--compact-directory .admin-nav { padding-inline: 0; }
+.admin-layout--compact-directory .admin-back { justify-content: center; min-height: 48px; padding-inline: 0; }
 .admin-main {
   flex: 1;
   min-width: 0;
