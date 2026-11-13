@@ -40,6 +40,21 @@ public final class StatementQualityChecker {
     private static final Pattern LIMIT_DECLARATION = Pattern.compile(
             "(?i)(time\\s*limit\\s*[:：]?|memory\\s*limit\\s*[:：]?|运行?时限\\s*[:：]|内存(限制|上限)\\s*[:：])");
 
+    /**
+     * 判断原文是否真的声明过时限/内存。
+     * <p>
+     * 模型在「题面没有声明」时会按提示词填入平台默认值（1000ms / 512MB），
+     * 如果原题本来就是 256MB，直接采纳就会把 256 改成 512。所以自动应用前必须
+     * 先确认原文确实写了对应的限制；没写就保留原值。
+     * 时限与内存分开判断：题面只写了 "Time Limit: 2s" 时，内存不应被默认值覆盖。
+     * </p>
+     */
+    private static final Pattern TIME_LIMIT_MENTION = Pattern.compile(
+            "(?i)(time\\s*limit|运行?时限|时限)");
+
+    private static final Pattern MEMORY_LIMIT_MENTION = Pattern.compile(
+            "(?i)(memory\\s*limit|内存(限制|上限)?|空间限制|空间大小)");
+
     /** 独立的输入/输出/样例章节标题：这些内容应分别落到 inputDesc / outputDesc / samples。 */
     private static final Pattern IO_SECTION = Pattern.compile(
             "(?im)^[\\s>#*+\\-]*"
@@ -108,6 +123,30 @@ public final class StatementQualityChecker {
             case "SAMPLES_LOST", "SAMPLES_REDUCED", "SAMPLE_DUPLICATED", "SAMPLE_EMPTY_PAIR" -> true;
             default -> false;
         });
+    }
+
+    /** 原文是否真的写过时限。 */
+    public static boolean declaresTimeLimit(ProblemStatementSnapshot source) {
+        return matchesMention(source, TIME_LIMIT_MENTION);
+    }
+
+    /** 原文是否真的写过内存。 */
+    public static boolean declaresMemoryLimit(ProblemStatementSnapshot source) {
+        return matchesMention(source, MEMORY_LIMIT_MENTION);
+    }
+
+    private static boolean matchesMention(ProblemStatementSnapshot source, Pattern pattern) {
+        if (source == null) {
+            return false;
+        }
+        String text = String.join("\n",
+                nullToEmpty(source.content()), nullToEmpty(source.inputDesc()),
+                nullToEmpty(source.outputDesc()), nullToEmpty(source.hint()));
+        return pattern.matcher(text).find();
+    }
+
+    private static String nullToEmpty(String value) {
+        return value == null ? "" : value;
     }
 
     private static void checkTitle(ProblemFormattedContent formatted, List<StatementIssue> issues) {

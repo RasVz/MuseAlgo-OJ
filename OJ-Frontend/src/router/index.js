@@ -148,6 +148,7 @@ const adminLayoutRoutes = [
       { path: 'problem', name: 'AdminProblem', component: () => import('@/views/admin/AdminProblemView.vue'), meta: { title: '公共题库' } },
       { path: 'problem/edit', name: 'AdminProblemCreate', component: () => import('@/views/admin/AdminProblemEditView.vue'), meta: { title: '新建题目', requiresAuth: true } },
       { path: 'problem/edit/:id', name: 'AdminProblemEdit', component: () => import('@/views/admin/AdminProblemEditView.vue'), meta: { title: '编辑题目', requiresAuth: true } },
+      { path: 'problem/:id/statement', name: 'AdminProblemStatement', component: () => import('@/views/admin/AdminProblemStatementView.vue'), meta: { title: '题面版本', requiresAuth: true } },
       { path: 'contest', name: 'AdminContest', component: () => import('@/views/admin/AdminContestView.vue'), meta: { title: '比赛管理', requiresAuth: true } },
       { path: 'contest/create', name: 'AdminContestCreate', component: () => import('@/views/admin/ContestEditorView.vue'), meta: { title: '新建比赛', requiresAuth: true } },
       { path: 'contest/:id/edit', name: 'AdminContestEdit', component: () => import('@/views/admin/ContestEditorView.vue'), meta: { title: '编辑比赛', requiresAuth: true } },
@@ -191,6 +192,13 @@ const router = createRouter({
     ...authRoutes,
     ...studyRoutes,
     ...standaloneRoutes,
+    // 学习周报全屏阅读页：脱离管理侧栏，便于浏览器新标签页打开与并排对比。
+    {
+      path: '/admin/reports/view/:jobId',
+      name: 'AdminWeeklyReportReader',
+      component: () => import('@/views/admin/report/ReportReaderView.vue'),
+      meta: { title: '学习周报阅读', requiresAuth: true, teacherOnly: true }
+    },
     ...adminLayoutRoutes,
     {
       path: '/',

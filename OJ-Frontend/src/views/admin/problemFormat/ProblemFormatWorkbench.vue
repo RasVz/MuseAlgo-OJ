@@ -40,6 +40,16 @@
         </div>
       </header>
 
+      <div v-if="!loading && preview && !hasSource" class="fw-warnbar">
+        <el-alert
+          type="error"
+          :closable="false"
+          show-icon
+          title="服务端没有返回原文快照"
+          description="无法与原文对照，也无法校验题目是否在整理期间被改动。通常是后端仍是旧版本：请重启或升级后端后重新整理。当前只能查看结果，不能应用。"
+        />
+      </div>
+
       <div v-if="loading" class="fw-state">
         <el-icon class="is-loading fw-state-icon"><Loading /></el-icon>
         <div>
@@ -109,7 +119,7 @@
             </div>
             <div class="fw-field-actions">
               <el-radio-group
-                v-if="activeField.kind === 'text'"
+                v-if="activeField.kind === 'text' && hasSource"
                 v-model="viewMode"
                 size="small"
                 :disabled="applying"
@@ -173,6 +183,9 @@
             >
               用原文值
             </el-button>
+            <span v-if="limitsSkipped.includes(activeField.key)" class="fw-limit-note">
+              原文没有声明{{ activeField.label }}，这里填的是平台默认值；默认不采纳
+            </span>
           </div>
 
           <template v-else-if="activeField.kind === 'samples'">
@@ -280,7 +293,7 @@
             :disabled="!canApply"
             @click="handleApply"
           >
-            应用选中字段{{ selectedCount ? `（${selectedCount}）` : '' }}
+            {{ applyLabel }}<template v-if="selectedCount">（{{ selectedCount }}）</template>
           </el-button>
         </div>
       </footer>
@@ -298,7 +311,13 @@
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Loading, RefreshRight, WarningFilled } from '@element-plus/icons-vue'
-import { applyFormatProblem, getFormatJobItem, previewFormatProblem } from '@/api/problem'
+import {
+  applyFormatProblem,
+  applyStatementVersion,
+  getFormatJobItem,
+  getStatementVersionProposal,
+  previewFormatProblem
+} from '@/api/problem'
 import { createMarkdown } from '@/utils/markdown'
 import { sanitizeStatementMarkup } from '@/utils/statement-markup'
 import { getErrorCode } from '@/utils/apiError'
@@ -322,6 +341,8 @@ const props = defineProps({
   modelValue: { type: Boolean, default: false },
   problemId: { type: [Number, String], default: null },
   jobId: { type: [Number, String], default: null },
+  /** 候选版本 id：传了就走「版本提案 → 应用为新版本」的链路 */
+  versionId: { type: [Number, String], default: null },
   initialPreview: { type: Object, default: null },
   defaultIpMode: { type: Boolean, default: false }
 })
@@ -346,6 +367,9 @@ const values = ref(normalizeFormatted(null))
 const sourceValues = ref(normalizeSource(null))
 
 const busy = computed(() => loading.value || applying.value)
+// 服务端没回 source 时（例如后端版本较旧）不能假装在对照：既看不到原文，
+// 也无法用哈希校验并发修改。此时明确降级为「只读结果」，并禁用应用。
+const hasSource = computed(() => Boolean(preview.value?.source))
 const activeField = computed(() => FORMAT_FIELDS.find((field) => field.key === activeKey.value) || FORMAT_FIELDS[1])
 const summary = computed(() => buildSummary(sourceValues.value, values.value))
 const changedCount = computed(() => summary.value.changedKeys.length)
@@ -376,10 +400,11 @@ const statusTagText = computed(() => {
 })
 
 const skippedByBlocking = ref([])
+const limitsSkipped = ref([])
 
 const canApply = computed(() => Boolean(
-  preview.value && preview.value.success && preview.value.baseHash &&
-  selectedCount.value > 0 && !busy.value && !hasSelectedBlocking.value
+  preview.value && preview.value.success && hasSource.value && selectedCount.value > 0 &&
+  !busy.value && !hasSelectedBlocking.value
 ))
 const hasSelectedBlocking = computed(() => selectedKeys.value.some((key) => errorCount(key) > 0))
 
@@ -389,8 +414,11 @@ const displayTitle = computed(() => {
   return preview.value.formatted?.title || preview.value.title || `题目 #${props.problemId}`
 })
 
+const applyLabel = computed(() => (props.versionId ? '应用为新版本' : '应用选中字段'))
+
 const displaySubtitle = computed(() => {
   if (!preview.value) return 'AI 整理题面结构、抽取时限与样例，并翻译成中文；确认后才会写入。'
+  if (!hasSource.value) return `${preview.value.message || '整理完成'} · 原文快照缺失，无法对照`
   const before = sourceValues.value.content.length
   const after = values.value.content.length
   return `正文 ${before} → ${after} 字 · 样例 ${sourceValues.value.samples.length} → ${values.value.samples.length} 组 · ${preview.value.message || '整理完成'}`
@@ -433,6 +461,8 @@ function hasError(key) {
 }
 
 function badgeOf(key) {
+  // 没有原文基线时任何「已改」都是假的（拿默认值当原文比出来的），不显示
+  if (!hasSource.value) return ''
   const change = summary.value.fields[key]
   if (!change || change.kind === 'same') return ''
   if (change.kind === 'added') return '新增'
@@ -503,12 +533,22 @@ function adopt(data) {
   failure.value = ''
   sourceValues.value = normalizeSource(data.source)
   values.value = normalizeFormatted(data.formatted)
-  const next = defaultSelection(summary.value, data.issues)
+  const sourceText = [
+    sourceValues.value.content,
+    sourceValues.value.inputDesc,
+    sourceValues.value.outputDesc,
+    sourceValues.value.hint
+  ].join('\n')
+  const next = data.source
+    ? defaultSelection(summary.value, data.issues, { sourceText })
+    : { selection: {}, skipped: [], limitsSkipped: [] }
   selection.value = next.selection
   skippedByBlocking.value = next.skipped
+  limitsSkipped.value = next.limitsSkipped || []
   const firstChanged = FORMAT_FIELDS.find((field) => summary.value.fields[field.key]?.kind !== 'same')
   activeKey.value = firstChanged?.key || 'content'
-  viewMode.value = 'compare'
+  // 没有原文快照时「对照」没有意义，直接落到结果视图
+  viewMode.value = data.source ? 'compare' : 'result'
   editing.value = false
 }
 
@@ -518,10 +558,17 @@ async function runPreview() {
   failure.value = ''
   preview.value = null
   try {
-    const res = props.jobId
-      ? await getFormatJobItem(props.jobId, props.problemId)
-      : await previewFormatProblem(props.problemId, ipRename.value)
-    const data = res?.data ?? res
+    let data
+    if (props.versionId) {
+      const res = await getStatementVersionProposal(props.problemId, props.versionId)
+      data = res?.data ?? res
+    } else if (props.jobId) {
+      const res = await getFormatJobItem(props.jobId, props.problemId)
+      data = res?.data ?? res
+    } else {
+      const res = await previewFormatProblem(props.problemId, ipRename.value)
+      data = res?.data ?? res
+    }
     adopt(data)
   } catch (error) {
     failure.value = error?.response?.data?.message || error?.message || '整理失败，请稍后重试'
@@ -540,10 +587,23 @@ async function handleApply() {
       selection: selection.value,
       values: values.value
     })
-    const res = await applyFormatProblem(payload.problemId, payload)
-    const applied = res?.data?.appliedFields || payload.fields
-    ElMessage.success(`已保存 ${applied.length} 个字段`)
-    emit('applied', { problemId: payload.problemId, appliedFields: applied })
+    const res = props.versionId
+      ? await applyStatementVersion(props.problemId, props.versionId, {
+        fields: payload.fields,
+        formatted: payload.formatted
+      })
+      : await applyFormatProblem(payload.problemId, payload)
+    const applied = props.versionId
+      ? payload.fields
+      : (res?.data?.appliedFields || payload.fields)
+    ElMessage.success(props.versionId
+      ? `已生成新版本，采纳 ${applied.length} 个字段`
+      : `已保存 ${applied.length} 个字段`)
+    emit('applied', {
+      problemId: payload.problemId,
+      versionId: res?.data?.id ?? props.versionId ?? null,
+      appliedFields: applied
+    })
     close()
   } catch (error) {
     if (getErrorCode(error) === 'PROBLEM_CONTENT_CHANGED') {
@@ -575,7 +635,10 @@ watch(
       return
     }
     runPreview()
-  }
+  },
+  // 版本页会以 :key 重挂载组件并直接传 visible=true，此时没有 false→true 的变化，
+  // 必须立即执行一次，否则抽屉会是空的。
+  { immediate: true }
 )
 
 // 供父组件在外部拿到当前提案（例如批量任务里预填标题）
@@ -803,6 +866,7 @@ defineExpose({
 .fw-number-label { font-size: 12px; color: var(--text-secondary); }
 .fw-number-input { width: 180px; }
 .fw-number-unit { font-size: 13px; color: var(--text-secondary); }
+.fw-limit-note { font-size: 12px; color: var(--el-color-warning-dark-2); }
 
 .fw-samples-meta { font-size: 12px; color: var(--text-secondary); margin-bottom: 10px; }
 .fw-samples { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; }

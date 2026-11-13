@@ -44,6 +44,12 @@ public class ProblemFormatJobItem {
 
     private String baseHash;
 
+    /** 单题版本优化时为基线版本；批量模式为空 */
+    private Long baseVersionId;
+
+    /** 版本优化产出的候选版本 */
+    private Long resultVersionId;
+
     private Integer attempts;
 
     private String appliedFields;

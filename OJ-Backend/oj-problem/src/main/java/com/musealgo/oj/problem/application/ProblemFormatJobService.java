@@ -14,6 +14,7 @@ import com.musealgo.oj.common.utils.SecurityUtils;
 import com.musealgo.oj.problem.entity.Problem;
 import com.musealgo.oj.problem.entity.ProblemFormatJob;
 import com.musealgo.oj.problem.entity.ProblemFormatJobItem;
+import com.musealgo.oj.problem.entity.ProblemStatementVersion;
 import com.musealgo.oj.problem.error.ProblemErrorCode;
 import com.musealgo.oj.problem.format.IssueSeverity;
 import com.musealgo.oj.problem.format.ProblemFormatApplyResult;
@@ -68,6 +69,7 @@ public class ProblemFormatJobService {
     private final ProblemFormatJobMapper jobMapper;
     private final ProblemFormatJobItemMapper itemMapper;
     private final ProblemFormatApplicationService formatApplicationService;
+    private final ProblemStatementVersionService versionService;
     private final ProblemAccessGuard accessGuard;
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
@@ -76,6 +78,7 @@ public class ProblemFormatJobService {
     public ProblemFormatJobService(ProblemFormatJobMapper jobMapper,
                                    ProblemFormatJobItemMapper itemMapper,
                                    ProblemFormatApplicationService formatApplicationService,
+                                   ProblemStatementVersionService versionService,
                                    ProblemAccessGuard accessGuard,
                                    ObjectMapper objectMapper,
                                    PlatformTransactionManager transactionManager,
@@ -83,6 +86,7 @@ public class ProblemFormatJobService {
         this.jobMapper = jobMapper;
         this.itemMapper = itemMapper;
         this.formatApplicationService = formatApplicationService;
+        this.versionService = versionService;
         this.accessGuard = accessGuard;
         this.objectMapper = objectMapper;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
@@ -170,6 +174,60 @@ public class ProblemFormatJobService {
                 nz(job.getReview()), nz(job.getFailed()), nz(job.getSkipped()),
                 Boolean.TRUE.equals(job.getCancelRequested()), job.getMessage(), job.getCreateTime(),
                 job.getFinishTime(), List.copyOf(itemViews));
+    }
+
+    /**
+     * 单题版本优化：以指定版本为基线创建 1 条任务，产出候选版本等待审阅。
+     * <p>不自动应用：候选必须经过人工勾选字段后才写入题面。</p>
+     */
+    public ProblemFormatJobVO createVersionJob(Long problemId, Long baseVersionId, boolean ipMode) {
+        SecurityUtils.requireTeacherOrAdmin();
+        Long creatorId = SecurityUtils.getUserId();
+        if (creatorId == null) {
+            throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "未登录，无法创建整理任务");
+        }
+        Problem problem = accessGuard.requireManagedProblem(problemId);
+        ProblemStatementVersion base = baseVersionId == null
+                ? versionService.ensureLive(problem)
+                : versionService.requireVersion(problemId, baseVersionId);
+        if (ProblemStatementVersionService.STATUS_CANDIDATE.equals(base.getStatus())) {
+            throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "候选版本不能作为优化基线");
+        }
+        requireNoActiveJob(creatorId);
+
+        Long jobId = transactionTemplate.execute(status -> {
+            ProblemFormatJob job = new ProblemFormatJob();
+            job.setCreatorId(creatorId);
+            job.setStatus(JOB_PENDING);
+            job.setIpMode(ipMode);
+            job.setAutoApply(false);
+            job.setTotal(1);
+            job.setApplied(0);
+            job.setReview(0);
+            job.setFailed(0);
+            job.setSkipped(0);
+            job.setCancelRequested(false);
+            job.setCreateTime(LocalDateTime.now());
+            job.setUpdateTime(LocalDateTime.now());
+            jobMapper.insert(job);
+
+            ProblemFormatJobItem item = new ProblemFormatJobItem();
+            item.setJobId(job.getId());
+            item.setProblemId(problemId);
+            item.setStatus(ITEM_PENDING);
+            item.setTitle(base.getTitle());
+            item.setBaseVersionId(base.getId());
+            item.setAttempts(0);
+            item.setCreateTime(LocalDateTime.now());
+            item.setUpdateTime(LocalDateTime.now());
+            itemMapper.insert(item);
+            return job.getId();
+        });
+        if (jobId == null) {
+            throw new IllegalStateException("整理任务创建失败");
+        }
+        eventPublisher.publishEvent(new ProblemFormatJobCreatedEvent(jobId));
+        return detail(jobId);
     }
 
     /**
@@ -306,22 +364,46 @@ public class ProblemFormatJobService {
         }
         try {
             Problem problem = formatApplicationService.requireProblemForJob(item.getProblemId());
+            // 版本模式下必须以「基线版本」为输入：教师可能选的是两版之前的题面
+            ProblemStatementSnapshot source = item.getBaseVersionId() == null
+                    ? formatApplicationService.snapshot(problem)
+                    : versionService.snapshotOf(item.getProblemId(), item.getBaseVersionId());
             ProblemFormatApplicationService.Proposal proposal = formatApplicationService
-                    .generateProposal(problem, Boolean.TRUE.equals(job.getIpMode()), job.getCreatorId());
+                    .generateProposal(source, Boolean.TRUE.equals(job.getIpMode()), job.getCreatorId());
+
+            if (item.getBaseVersionId() != null) {
+                // 单题版本优化：只产出候选版本，绝不自动写题面
+                ProblemStatementVersion candidate = versionService.createCandidate(item.getProblemId(),
+                        item.getBaseVersionId(), job.getId(), job.getCreatorId(), proposal);
+                markItem(item.getId(), ITEM_REVIEW,
+                        "已生成候选版本 v" + candidate.getVersionNo() + "，等待审阅",
+                        null, proposal, null, candidate.getId());
+                return;
+            }
+
             List<StatementIssue> issues = proposal.issues();
             boolean blocking = StatementQualityChecker.hasBlockingIssue(issues);
             boolean sampleRisk = StatementQualityChecker.hasSampleRisk(issues);
 
             if (Boolean.TRUE.equals(job.getAutoApply()) && !blocking && !sampleRisk) {
+                // 原文没写时限/内存时，模型给的是平台默认值；自动应用不采纳，避免把 256MB 改成 512MB
+                List<String> autoFields = new ArrayList<>(List.of(
+                        "title", "content", "inputDesc", "outputDesc", "hint", "samples"));
+                if (StatementQualityChecker.declaresTimeLimit(proposal.source())) {
+                    autoFields.add("timeLimit");
+                }
+                if (StatementQualityChecker.declaresMemoryLimit(proposal.source())) {
+                    autoFields.add("memoryLimit");
+                }
                 ProblemFormatApplyResult applied = formatApplicationService.applyFormattedProposal(
-                        item.getProblemId(), proposal.baseHash(), proposal.formatted());
+                        item.getProblemId(), proposal.baseHash(), proposal.formatted(), autoFields);
                 markItem(item.getId(), ITEM_APPLIED, "已自动应用：" + String.join("、", applied.appliedFields()),
-                        null, proposal, String.join(",", applied.appliedFields()));
+                        null, proposal, String.join(",", applied.appliedFields()), null);
             } else {
                 String reason = blocking ? "存在阻断问题，等待人工审阅"
                         : sampleRisk ? "样例存在风险，等待人工审阅"
                         : "已生成，等待人工审阅";
-                markItem(item.getId(), ITEM_REVIEW, reason, null, proposal, null);
+                markItem(item.getId(), ITEM_REVIEW, reason, null, proposal, null, null);
             }
         } catch (Exception e) {
             log.warn("题面整理失败 problemId={} jobId={}", item.getProblemId(), job.getId(), e);
@@ -338,12 +420,8 @@ public class ProblemFormatJobService {
         }
     }
 
-    /**
-     * worker 侧读取题目：不经过 SecurityUtils（线程无上下文），
-     * 授权已在 create 阶段按创建人身份完成。
-     */
-    public void markRemainingSkipped(Long jobId) {
-        itemMapper.update(null, new LambdaUpdateWrapper<ProblemFormatJobItem>()
+    /** 取消后把未开始的项统一标为跳过，已完成/已应用的项保持原状。 */
+    public void markRemainingSkipped(Long jobId) {        itemMapper.update(null, new LambdaUpdateWrapper<ProblemFormatJobItem>()
                 .eq(ProblemFormatJobItem::getJobId, jobId)
                 .in(ProblemFormatJobItem::getStatus, ITEM_PENDING, ITEM_RUNNING)
                 .set(ProblemFormatJobItem::getStatus, ITEM_SKIPPED)
@@ -416,7 +494,8 @@ public class ProblemFormatJobService {
     }
 
     private void markItem(Long itemId, String status, String message, String errorCode,
-                          ProblemFormatApplicationService.Proposal proposal, String appliedFields) {
+                          ProblemFormatApplicationService.Proposal proposal, String appliedFields,
+                          Long resultVersionId) {
         itemMapper.update(null, new LambdaUpdateWrapper<ProblemFormatJobItem>()
                 .eq(ProblemFormatJobItem::getId, itemId)
                 .set(ProblemFormatJobItem::getStatus, status)
@@ -428,6 +507,7 @@ public class ProblemFormatJobService {
                 .set(ProblemFormatJobItem::getIssuesJson, writeJson(proposal.issues()))
                 .set(ProblemFormatJobItem::getBaseHash, proposal.baseHash())
                 .set(ProblemFormatJobItem::getAppliedFields, appliedFields)
+                .set(ProblemFormatJobItem::getResultVersionId, resultVersionId)
                 .set(ProblemFormatJobItem::getUpdateTime, LocalDateTime.now()));
     }
 
@@ -512,7 +592,8 @@ public class ProblemFormatJobService {
                 : List.of(item.getAppliedFields().split(","));
         return new ProblemFormatJobItemVO(item.getProblemId(), item.getTitle(), item.getStatus(),
                 item.getMessage(), item.getErrorCode(), nz(item.getAttempts()), errors, warnings,
-                item.getFormattedJson() != null && !item.getFormattedJson().isBlank(), applied);
+                item.getFormattedJson() != null && !item.getFormattedJson().isBlank(), applied,
+                item.getBaseVersionId(), item.getResultVersionId());
     }
 
     private String writeJson(Object value) {

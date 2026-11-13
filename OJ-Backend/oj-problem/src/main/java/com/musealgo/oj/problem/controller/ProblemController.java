@@ -28,12 +28,17 @@ import com.musealgo.oj.problem.format.ProblemFormatJobRequest;
 import com.musealgo.oj.problem.format.ProblemFormatJobVO;
 import com.musealgo.oj.problem.format.ProblemFormatPreviewItem;
 import com.musealgo.oj.problem.format.ProblemFormatRequest;
+import com.musealgo.oj.problem.format.StatementOptimizeRequest;
+import com.musealgo.oj.problem.format.StatementVersionApplyRequest;
+import com.musealgo.oj.problem.format.StatementVersionDetailVO;
+import com.musealgo.oj.problem.format.StatementVersionVO;
 import com.musealgo.oj.problem.importer.FpsImportResult;
 import com.musealgo.oj.problem.importer.FpsImportService;
 import com.musealgo.oj.problem.application.CaseSetChangedException;
 import com.musealgo.oj.problem.application.ProblemFormatJobService;
 import com.musealgo.oj.problem.application.ProblemManagementApplicationService;
 import com.musealgo.oj.problem.application.ProblemSearchService;
+import com.musealgo.oj.problem.application.ProblemStatementVersionService;
 import com.musealgo.oj.problem.application.TestDataGenerationService;
 import com.musealgo.oj.problem.infrastructure.ProblemSearchIndexer;
 import com.musealgo.oj.problem.service.ProblemService;
@@ -68,6 +73,7 @@ public class ProblemController {
     private final ProblemSearchService problemSearchService;
     private final TestDataGenerationService testDataGenerationService;
     private final ProblemFormatJobService formatJobService;
+    private final ProblemStatementVersionService statementVersionService;
 
     @Operation(summary = "新增题目")
     @AuditLog(module = "problem", action = "create_problem")
@@ -172,6 +178,76 @@ public class ProblemController {
             @RequestParam(defaultValue = "ascending") String sortOrder) {
         return Result.success(appService.adminList(
                 page, 50, keyword, difficulty, tag, privacy, isPublic, sortBy, sortOrder));
+    }
+
+    @Operation(summary = "题面版本列表（含 LIVE/历史/待审候选）")
+    @GetMapping("/{problemId}/statement/versions")
+    @PreAuthorize("hasAuthority('problem:manage')")
+    public Result<List<StatementVersionVO>> listStatementVersions(@PathVariable Long problemId) {
+        return Result.success(statementVersionService.list(problemId));
+    }
+
+    @Operation(summary = "题面版本详情")
+    @GetMapping("/{problemId}/statement/versions/{versionId}")
+    @PreAuthorize("hasAuthority('problem:manage')")
+    public Result<StatementVersionDetailVO> getStatementVersion(@PathVariable Long problemId,
+                                                                @PathVariable Long versionId) {
+        return Result.success(statementVersionService.detail(problemId, versionId));
+    }
+
+    @Operation(summary = "候选版本的审阅数据（原文取基线版本，不调用 AI）")
+    @GetMapping("/{problemId}/statement/versions/{versionId}/proposal")
+    @PreAuthorize("hasAuthority('problem:manage')")
+    public Result<ProblemFormatPreviewItem> getStatementVersionProposal(@PathVariable Long problemId,
+                                                                        @PathVariable Long versionId) {
+        return Result.success(statementVersionService.proposal(problemId, versionId));
+    }
+
+    @Operation(summary = "基于指定版本发起优化（异步任务，单题）")
+    @AuditLog(module = "problem", action = "statement_optimize")
+    @PostMapping("/{problemId}/statement/versions/optimize")
+    @PreAuthorize("hasAuthority('problem:manage')")
+    public Result<ProblemFormatJobVO> optimizeStatement(@PathVariable Long problemId,
+                                                        @RequestBody StatementOptimizeRequest request) {
+        Long baseVersionId = request == null ? null : request.baseVersionId();
+        boolean ipMode = request != null && request.ipEnabled();
+        return Result.success(formatJobService.createVersionJob(problemId, baseVersionId, ipMode));
+    }
+
+    @Operation(summary = "把当前题面记录为新版本")
+    @AuditLog(module = "problem", action = "statement_version_record")
+    @PostMapping("/{problemId}/statement/versions/current")
+    @PreAuthorize("hasAuthority('problem:manage')")
+    public Result<StatementVersionVO> recordCurrentStatement(@PathVariable Long problemId) {
+        return Result.success(statementVersionService.recordCurrent(problemId));
+    }
+
+    @Operation(summary = "把历史版本设为题目当前版本")
+    @AuditLog(module = "problem", action = "statement_version_activate")
+    @PostMapping("/{problemId}/statement/versions/{versionId}/activate")
+    @PreAuthorize("hasAuthority('problem:manage')")
+    public Result<StatementVersionVO> activateStatementVersion(@PathVariable Long problemId,
+                                                                @PathVariable Long versionId) {
+        return Result.success(statementVersionService.activate(problemId, versionId));
+    }
+
+    @Operation(summary = "应用候选版本（字段白名单）")
+    @AuditLog(module = "problem", action = "statement_version_apply")
+    @PostMapping("/{problemId}/statement/versions/{versionId}/apply")
+    @PreAuthorize("hasAuthority('problem:manage')")
+    public Result<StatementVersionVO> applyStatementVersion(@PathVariable Long problemId,
+                                                            @PathVariable Long versionId,
+                                                            @RequestBody StatementVersionApplyRequest request) {
+        return Result.success(statementVersionService.applyCandidate(problemId, versionId, request));
+    }
+
+    @Operation(summary = "丢弃候选版本")
+    @AuditLog(module = "problem", action = "statement_version_discard")
+    @DeleteMapping("/{problemId}/statement/versions/{versionId}")
+    @PreAuthorize("hasAuthority('problem:manage')")
+    public Result<String> discardStatementVersion(@PathVariable Long problemId, @PathVariable Long versionId) {
+        statementVersionService.discardCandidate(problemId, versionId);
+        return Result.success("已丢弃");
     }
 
     @Operation(summary = "创建批量整理任务（异步，立即返回任务详情）")

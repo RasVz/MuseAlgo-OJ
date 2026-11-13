@@ -16,4 +16,10 @@ public record ProblemFormattedContent(
         Integer memoryLimitMb,
         List<FormatSample> samples
 ) {
+
+    /** 同一份内容的结构化视图：版本快照、哈希基线与质量检查都基于它。 */
+    public ProblemStatementSnapshot asSnapshot() {
+        return new ProblemStatementSnapshot(title, content, inputDesc, outputDesc, hint,
+                timeLimitMs, memoryLimitMb, samples == null ? List.of() : samples);
+    }
 }

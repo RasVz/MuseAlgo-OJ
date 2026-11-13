@@ -272,18 +272,41 @@ export function fieldsWithBlockingIssue(issues) {
 /**
  * 默认勾选策略：变化过的字段才勾；有阻断问题的字段不勾，
  * 让「应用」在默认状态下就能通过服务端质量闸门，用户看清红点后可主动放开。
+ *
+ * 时限/内存额外加一条：原文没写过限制时，模型返回的是平台默认值（1000ms/512MB），
+ * 采纳会把题目原有的 256MB 改成 512MB。这类「无中生有」的变更默认不勾选。
  */
-export function defaultSelection(summary, issues) {
+export function defaultSelection(summary, issues, { sourceText = '' } = {}) {
   const blocking = new Set(fieldsWithBlockingIssue(issues))
+  const declared = {
+    timeLimit: declaresTimeLimit(sourceText),
+    memoryLimit: declaresMemoryLimit(sourceText)
+  }
   const selection = {}
   const skipped = []
+  const limitsSkipped = []
   for (const field of FORMAT_FIELDS) {
     const changed = summary?.fields?.[field.key]?.kind !== 'same'
     const blocked = blocking.has(field.key)
-    selection[field.key] = changed && !blocked
+    const limitField = field.key === 'timeLimit' || field.key === 'memoryLimit'
+    const keepOriginal = limitField && changed && !declared[field.key]
+    selection[field.key] = changed && !blocked && !keepOriginal
     if (blocked && changed) skipped.push(field.key)
+    if (keepOriginal) limitsSkipped.push(field.key)
   }
-  return { selection, skipped }
+  return { selection, skipped, limitsSkipped }
+}
+
+/** 原文是否真的写过时限（与后端 StatementQualityChecker.declaresTimeLimit 同口径） */
+export function declaresTimeLimit(text) {
+  if (!text) return false
+  return /(time\s*limit|运行?时限|时限)/i.test(String(text))
+}
+
+/** 原文是否真的写过内存（与后端 StatementQualityChecker.declaresMemoryLimit 同口径） */
+export function declaresMemoryLimit(text) {
+  if (!text) return false
+  return /(memory\s*limit|内存(限制|上限)?|空间限制|空间大小)/i.test(String(text))
 }
 
 /** 样例逐组对照：same / changed / added / removed */

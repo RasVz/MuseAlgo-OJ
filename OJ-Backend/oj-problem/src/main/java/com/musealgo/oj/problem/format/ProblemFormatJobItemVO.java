@@ -22,6 +22,8 @@ public record ProblemFormatJobItemVO(
         int issueErrors,
         int issueWarnings,
         boolean hasProposal,
-        List<String> appliedFields
+        List<String> appliedFields,
+        Long baseVersionId,
+        Long resultVersionId
 ) {
 }

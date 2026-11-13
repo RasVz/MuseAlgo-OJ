@@ -7,6 +7,7 @@ import com.musealgo.oj.problem.application.CaseSetChangedException;
 import com.musealgo.oj.problem.application.ProblemFormatJobService;
 import com.musealgo.oj.problem.application.ProblemManagementApplicationService;
 import com.musealgo.oj.problem.application.ProblemSearchService;
+import com.musealgo.oj.problem.application.ProblemStatementVersionService;
 import com.musealgo.oj.problem.application.TestDataGenerationService;
 import com.musealgo.oj.problem.importer.FpsImportService;
 import com.musealgo.oj.problem.service.ProblemService;
@@ -43,7 +44,7 @@ class ProblemControllerStdTestAndSaveTest {
         testDataGenerationService = mock(TestDataGenerationService.class);
         controller = new ProblemController(problemService, appService,
                 mock(FpsImportService.class), mock(ProblemSearchService.class), testDataGenerationService,
-                mock(ProblemFormatJobService.class));
+                mock(ProblemFormatJobService.class), mock(ProblemStatementVersionService.class));
     }
 
     @SuppressWarnings("unchecked")

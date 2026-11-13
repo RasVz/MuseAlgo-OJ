@@ -135,6 +135,24 @@ class StatementQualityCheckerTest {
         assertFalse(StatementQualityChecker.hasBlockingIssue(issues, Set.of("title")));
     }
 
+    @Test
+    void detectsWhetherSourceDeclaresLimits() {
+        ProblemStatementSnapshot english = new ProblemStatementSnapshot(
+                "题名", "Time Limit: 2 seconds", "", "", "", 1000, 512, List.of());
+        assertTrue(StatementQualityChecker.declaresTimeLimit(english));
+        assertFalse(StatementQualityChecker.declaresMemoryLimit(english));
+
+        ProblemStatementSnapshot chinese = new ProblemStatementSnapshot(
+                "题名", "内存限制 256MB", "", "", "", 1000, 512, List.of());
+        assertFalse(StatementQualityChecker.declaresTimeLimit(chinese));
+        assertTrue(StatementQualityChecker.declaresMemoryLimit(chinese));
+
+        ProblemStatementSnapshot none = new ProblemStatementSnapshot(
+                "题名", "求两个数的和", "", "", "", 1000, 512, List.of());
+        assertFalse(StatementQualityChecker.declaresTimeLimit(none));
+        assertFalse(StatementQualityChecker.declaresMemoryLimit(none));
+    }
+
     private static void assertIssue(List<StatementIssue> issues, String code, IssueSeverity severity, String field) {
         StatementIssue matched = issues.stream().filter(issue -> issue.code().equals(code)).findFirst().orElse(null);
         assertEquals(code, matched == null ? null : matched.code(), "缺少问题码 " + code);

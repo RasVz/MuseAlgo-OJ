@@ -122,6 +122,34 @@ test('默认勾选排除有阻断问题的字段', () => {
   assert.equal(selection.samples, false, '样例未变化时不应被勾选')
 })
 
+test('原文未声明时限时默认不采纳模型填的平台默认值', () => {
+  const summary = buildSummary(normalizeSource(source()), normalizeFormatted(formatted()))
+  const { selection, limitsSkipped } = defaultSelection(summary, [], {
+    sourceText: '给定一个整数数组，求和为目标值的两个下标。'
+  })
+  assert.equal(selection.timeLimit, false, '原文没写限制，不应把 1000ms 改成 2000ms')
+  assert.deepEqual(limitsSkipped, ['timeLimit'])
+})
+
+test('原文声明了时限时默认采纳 AI 换算出的值', () => {
+  const summary = buildSummary(normalizeSource(source()), normalizeFormatted(formatted()))
+  const { selection } = defaultSelection(summary, [], { sourceText: 'Time Limit: 2 seconds / Memory Limit: 512 MB' })
+  assert.equal(selection.timeLimit, true)
+})
+
+test('只声明时限时，内存不被平台默认值覆盖', () => {
+  const summary = buildSummary(
+    normalizeSource(source({ memoryLimitMb: 256 })),
+    normalizeFormatted(formatted({ memoryLimitMb: 512 }))
+  )
+  const { selection, limitsSkipped } = defaultSelection(summary, [], {
+    sourceText: 'Time Limit: 2 seconds'
+  })
+  assert.equal(selection.timeLimit, true)
+  assert.equal(selection.memoryLimit, false)
+  assert.deepEqual(limitsSkipped, ['memoryLimit'])
+})
+
 test('问题按字段归并，未知字段落到正文', () => {
   const grouped = groupIssuesByField([
     { code: 'A', field: 'title', severity: 'ERROR' },

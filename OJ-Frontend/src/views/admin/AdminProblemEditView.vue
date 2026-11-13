@@ -18,10 +18,10 @@
       <el-tab-pane label="基本信息" name="basic">
         <div class="basic-toolbar">
           <el-button :icon="MagicStick" :disabled="!form.id" @click="openFormatWorkbench">
-            AI 优化题面
+            AI 优化与版本
           </el-button>
           <span class="basic-toolbar-hint">
-            打开优化工作台：左右对照原文与整理结果、逐字段勾选采纳、可先修改再保存；未应用的改动不会写库
+            进入题面版本页：基于任一历史版本异步整理，逐字段审阅后生成新版本；未应用的改动不会写库
           </span>
         </div>
         <el-card class="panel-card" shadow="never">
@@ -37,12 +37,6 @@
         <StdManagerPanel ref="stdPanelRef" :problem-id="form.id" @saved="handleStdSaved" />
       </el-tab-pane>
     </el-tabs>
-
-    <ProblemFormatWorkbench
-      v-model="formatWorkbenchVisible"
-      :problem-id="form.id"
-      @applied="refreshAfterFormat"
-    />
   </div>
 </template>
 
@@ -65,11 +59,9 @@ import {
 import ProblemBasicForm from './components/ProblemBasicForm.vue'
 import ProblemCaseManager from './components/ProblemCaseManager.vue'
 import StdManagerPanel from './components/StdManagerPanel.vue'
-import ProblemFormatWorkbench from './problemFormat/ProblemFormatWorkbench.vue'
 import {
   changedFormattedFields,
   describeFieldChanges,
-  mergeFormattedFields,
   pickFormattedFields
 } from './problemFormatMerge'
 import { MagicStick } from '@element-plus/icons-vue'
@@ -93,11 +85,8 @@ const stdPanelRef = ref(null)
 // 用于在应用格式化前判断用户是否还有未保存修改会被覆盖。
 const formatBaseline = ref(null)
 
-// ---- AI 题面优化（单题工作台；IP 改名在工作台内即时切换） ----
-const formatWorkbenchVisible = ref(false)
-
-// 打开工作台前先提醒：优化结果会直接写服务端，本地这些字段的未保存修改会被覆盖。
-// 不阻止打开——用户可能只想看差异——但必须在动手前说清楚。
+// ---- AI 题面优化：统一跳到「题面版本」页，先选版本再异步整理 ----
+// 打开前先提醒：优化结果会直接写服务端，本地这些字段的未保存修改会被覆盖。
 const openFormatWorkbench = async () => {
   if (!form.id) return
   const dirtyFields = changedFormattedFields(form, formatBaseline.value)
@@ -105,33 +94,15 @@ const openFormatWorkbench = async () => {
     try {
       await ElMessageBox.confirm(
         `以下字段有尚未保存的修改：${describeFieldChanges(dirtyFields)}。` +
-        '优化结果保存后会以服务端内容为准，这些修改将丢失，是否继续？',
+        '进入题面版本页后，优化结果保存时会以服务端内容为准，这些修改将丢失，是否继续？',
         '优化将覆盖未保存的修改',
-        { type: 'warning', confirmButtonText: '继续打开', cancelButtonText: '取消' }
+        { type: 'warning', confirmButtonText: '继续进入', cancelButtonText: '取消' }
       )
     } catch {
       return
     }
   }
-  formatWorkbenchVisible.value = true
-}
-
-// 优化结果落库后再回读服务端内容：服务端会做 HTML 消毒与字段裁剪，
-// 直接拿预览对象回填会和数据库真实值不一致。
-async function refreshAfterFormat() {
-  if (!form.id) return
-  try {
-    const res = await getProblemDetail(form.id)
-    if (res.code !== 200 || !res.data) {
-      ElMessage.warning('优化已保存，但刷新题目内容失败，请手动刷新页面确认')
-      return
-    }
-    formatBaseline.value = mergeFormattedFields(form, res.data)
-    stdPanelRef.value?.reloadProblem?.()
-  } catch (e) {
-    console.error(e)
-    ElMessage.warning('优化已保存，但刷新题目内容失败，请手动刷新页面确认')
-  }
+  router.push(`/admin/problem/${form.id}/statement`)
 }
 
 // 用例增删改后，标准答案的「已测试」状态可能已失效：只刷新状态，不动编辑器内容。

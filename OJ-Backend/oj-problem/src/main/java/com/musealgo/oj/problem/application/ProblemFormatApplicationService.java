@@ -169,7 +169,14 @@ public class ProblemFormatApplicationService {
      * @param actorUserId 记录 AI 用量归属的用户；后台任务传任务创建人，请求内调用传当前登录用户
      */
     public Proposal generateProposal(Problem problem, boolean ipMode, Long actorUserId) {
-        ProblemStatementSnapshot source = snapshot(problem);
+        return generateProposal(snapshot(problem), ipMode, actorUserId);
+    }
+
+    /**
+     * 以任意原文快照为起点生成提案：版本优化要基于指定历史版本，
+     * 不能总是读题目当前内容。
+     */
+    public Proposal generateProposal(ProblemStatementSnapshot source, boolean ipMode, Long actorUserId) {
         String baseHash = ProblemStatementHasher.hash(source);
         ProblemFormattedContent raw = formatWithRetry(source, ipMode, actorUserId);
         // 出口统一消毒：预览会被前端当富文本渲染，写入也会再消毒一次。
@@ -227,7 +234,7 @@ public class ProblemFormatApplicationService {
      */
     public ProblemFormatApplyResult applyFormattedProblem(ProblemFormatApplyRequest request) {
         SecurityUtils.requireTeacherOrAdmin();
-        return applyInternal(request, true);
+        return applyInternal(request, true, true);
     }
 
     /**
@@ -237,10 +244,31 @@ public class ProblemFormatApplicationService {
      */
     public ProblemFormatApplyResult applyFormattedProposal(Long problemId, String baseHash,
                                                            ProblemFormattedContent formatted) {
-        return applyInternal(new ProblemFormatApplyRequest(problemId, baseHash, null, formatted), false);
+        return applyFormattedProposal(problemId, baseHash, formatted, null);
     }
 
-    private ProblemFormatApplyResult applyInternal(ProblemFormatApplyRequest request, boolean checkAccess) {
+    /** 自动应用时可按字段收敛：题面没声明时限/内存时就不写这两项。 */
+    public ProblemFormatApplyResult applyFormattedProposal(Long problemId, String baseHash,
+                                                           ProblemFormattedContent formatted, List<String> fields) {
+        return applyInternal(new ProblemFormatApplyRequest(problemId, baseHash, fields, formatted), false, true);
+    }
+
+    /**
+     * 版本域专用入口：候选版本已经包含「基于哪个版本」的信息，
+     * 并发保护由版本表的 LIVE 唯一索引与题目行锁共同承担，不再要求原文哈希。
+     */
+    public ProblemFormatApplyResult applyFieldsForVersion(Long problemId, ProblemFormattedContent formatted,
+                                                          List<String> fields) {
+        return applyInternal(new ProblemFormatApplyRequest(problemId, null, fields, formatted), false, false);
+    }
+
+    /** 版本启用时整体替换样例；与格式化共用同一实现，保证顺序与上限一致。 */
+    public void replaceSamples(Long problemId, List<FormatSample> samples) {
+        sampleApplicationService.replaceFormatSamples(problemId, samples);
+    }
+
+    private ProblemFormatApplyResult applyInternal(ProblemFormatApplyRequest request, boolean checkAccess,
+                                                   boolean requireBaseHash) {
         if (request == null || request.problemId() == null || request.formatted() == null) {
             throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID, "整理结果无效");
         }
@@ -255,14 +283,16 @@ public class ProblemFormatApplicationService {
                 throw new BusinessException(ProblemErrorCode.PROBLEM_NOT_FOUND, "题目不存在");
             }
             ProblemStatementSnapshot current = snapshot(problem);
-            if (!StringUtils.hasText(request.baseHash())) {
-                // 没有基线就无法判断结果是否基于最新内容：直接拒绝，避免绕过并发保护
-                throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID,
-                        "缺少原文基线，请重新整理后再应用");
-            }
-            if (!ProblemStatementHasher.hash(current).equals(request.baseHash())) {
-                throw new BusinessException(ProblemErrorCode.PROBLEM_CONTENT_CHANGED,
-                        "题目内容在整理之后已被修改，本次结果已过期，请重新整理");
+            if (requireBaseHash) {
+                if (!StringUtils.hasText(request.baseHash())) {
+                    // 没有基线就无法判断结果是否基于最新内容：直接拒绝，避免绕过并发保护
+                    throw new BusinessException(ProblemErrorCode.PROBLEM_INPUT_INVALID,
+                            "缺少原文基线，请重新整理后再应用");
+                }
+                if (!ProblemStatementHasher.hash(current).equals(request.baseHash())) {
+                    throw new BusinessException(ProblemErrorCode.PROBLEM_CONTENT_CHANGED,
+                            "题目内容在整理之后已被修改，本次结果已过期，请重新整理");
+                }
             }
             // 服务端二次闸门：前端可以取消勾选某个字段，但不能带着该字段的阻断问题强行写入
             List<StatementIssue> issues = StatementQualityChecker.check(current, request.formatted());

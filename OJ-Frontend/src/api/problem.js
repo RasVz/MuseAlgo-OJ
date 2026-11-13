@@ -183,6 +183,68 @@ export function importFpsProblemSet(data) {
   })
 }
 
+// ---- 题面版本：记录、审阅、启用 ----
+
+export function listStatementVersions(problemId) {
+  return request({
+    url: `/problem/${problemId}/statement/versions`,
+    method: 'get'
+  })
+}
+
+export function getStatementVersion(problemId, versionId) {
+  return request({
+    url: `/problem/${problemId}/statement/versions/${versionId}`,
+    method: 'get'
+  })
+}
+
+// 候选版本的审阅数据：原文取基线版本，不触发 AI 调用
+export function getStatementVersionProposal(problemId, versionId) {
+  return request({
+    url: `/problem/${problemId}/statement/versions/${versionId}/proposal`,
+    method: 'get'
+  })
+}
+
+// 基于指定版本发起优化（异步单题任务）
+export function optimizeStatementVersion(problemId, baseVersionId, ipMode = false) {
+  return request({
+    url: `/problem/${problemId}/statement/versions/optimize`,
+    method: 'post',
+    data: { baseVersionId, ipMode }
+  })
+}
+
+export function recordCurrentStatement(problemId) {
+  return request({
+    url: `/problem/${problemId}/statement/versions/current`,
+    method: 'post'
+  })
+}
+
+export function activateStatementVersion(problemId, versionId) {
+  return request({
+    url: `/problem/${problemId}/statement/versions/${versionId}/activate`,
+    method: 'post'
+  })
+}
+
+export function applyStatementVersion(problemId, versionId, { fields, formatted }) {
+  return request({
+    url: `/problem/${problemId}/statement/versions/${versionId}/apply`,
+    method: 'post',
+    data: { fields, formatted }
+  })
+}
+
+export function discardStatementVersion(problemId, versionId) {
+  return request({
+    url: `/problem/${problemId}/statement/versions/${versionId}`,
+    method: 'delete'
+  })
+}
+
 // 创建批量题面优化任务（异步）：HTTP 只受理，进度与逐项结果靠轮询
 export function createFormatJob(problemIds, { ipMode = false, autoApply = true } = {}) {
   return request({

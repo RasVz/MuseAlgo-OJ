@@ -236,6 +236,27 @@ class ProblemFormatApplyTest {
         assertEquals("再改一次", problem.getTitle());
     }
 
+    @Test
+    void versionApplySkipsHashCheckButStillWritesOnlySelectedFields() {
+        ProblemFormatApplyResult result = service.applyFieldsForVersion(
+                PROBLEM_ID, content("版本题名"), List.of("title"));
+
+        assertEquals(List.of("title"), result.appliedFields());
+        assertEquals("版本题名", problem.getTitle());
+        assertEquals("旧正文内容", problem.getContent());
+        verify(sampleService, never()).replaceFormatSamples(anyLong(), anyList());
+    }
+
+    @Test
+    void versionApplyStillBlocksOnQualityError() {
+        BusinessException failure = assertThrows(BusinessException.class, () -> service.applyFieldsForVersion(
+                PROBLEM_ID, new ProblemFormattedContent("新题名", "   ", "", "", "", 1000, 512, List.of()),
+                List.of("content")));
+
+        assertEquals(ProblemErrorCode.PROBLEM_INPUT_INVALID, failure.getErrorCode());
+        assertEquals("旧正文内容", problem.getContent());
+    }
+
     private String currentHash() {
         return ProblemStatementHasher.hash(service.snapshot(problem));
     }
