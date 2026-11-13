@@ -1,12 +1,12 @@
 <template>
-  <div class="exam-paper-editor admin-scroll-page">
+  <div class="exam-paper-editor admin-scroll-page" :aria-busy="saving">
     <div class="page-header">
       <div>
         <div class="page-title">{{ isEditMode ? '编辑试卷' : '新建试卷' }}</div>
         <div class="page-desc">填写基本信息并添加编程题与客观题，保存后可在训练试卷管理中继续维护</div>
       </div>
       <div class="header-actions">
-        <el-button @click="goBack">返回</el-button>
+        <el-button :disabled="saving" @click="goBack">返回</el-button>
         <el-button type="primary" :loading="saving" @click="onSave">保存试卷</el-button>
       </div>
     </div>
@@ -25,7 +25,7 @@
       </div>
     </div>
 
-    <el-card shadow="never" class="section-card" v-loading="loadingDetail">
+    <el-card shadow="never" class="section-card" v-loading="loadingDetail" :inert="saving || loadingDetail || undefined">
       <template #header>基本信息</template>
       <el-form :model="form" label-width="110px" class="basic-form">
         <el-form-item label="试卷标题" required>
@@ -50,7 +50,7 @@
       </el-form>
     </el-card>
 
-    <el-card shadow="never" class="section-card">
+    <el-card shadow="never" class="section-card" :inert="saving || loadingDetail || undefined">
       <template #header>题目设置</template>
 
       <div class="sub-section">
@@ -218,12 +218,13 @@ const confirmDiscard = () => ElMessageBox.confirm('当前试卷有未保存的�
 })
 
 const beforeUnload = (event) => {
-  if (!hasUnsavedChanges.value || saving.value) return
+  if (!hasUnsavedChanges.value && !saving.value) return
   event.preventDefault()
   event.returnValue = ''
 }
 onBeforeRouteLeave(async () => {
-  if (!hasUnsavedChanges.value || saving.value) return true
+  if (saving.value) return false
+  if (!hasUnsavedChanges.value) return true
   try { await confirmDiscard(); return true } catch { return false }
 })
 window.addEventListener('beforeunload', beforeUnload)
@@ -337,6 +338,7 @@ const loadDetail = async () => {
 }
 
 const onSave = async () => {
+  if (saving.value) return
   if (detailFailed.value || !editorReady.value) {
     ElMessage.error('试卷详情未加载成功，无法保存')
     return
@@ -383,13 +385,12 @@ const onSave = async () => {
     }
     ElMessage.success('保存成功')
     baseline.value = snapshot()
-    setTimeout(() => {
-      if (window.opener) {
-        window.close()
-      } else {
-        router.push('/admin/exam-paper')
-      }
-    }, 800)
+    saving.value = false
+    if (window.opener) {
+      window.close()
+    } else {
+      await router.push('/admin/exam-paper')
+    }
   } finally {
     saving.value = false
   }
@@ -407,6 +408,7 @@ const applyBatch = () => {
 }
 
 const goBack = () => {
+  if (saving.value) return
   if (window.opener) {
     window.close()
   } else {
@@ -464,7 +466,15 @@ onMounted(loadDetail)
 .batch-error { margin-top: 8px; }
 @media (max-width: 720px) {
   .overview-strip { grid-template-columns: 1fr; gap: 8px; }
-  .page-header { align-items: flex-start; gap: 12px; }
+  .page-header { align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+  .page-header > div:first-child { width: 100%; }
+  .header-actions { width: 100%; justify-content: flex-end; }
+  .basic-form :deep(.el-form-item) { display: block; }
+  .basic-form :deep(.el-form-item__label) { width: auto !important; height: auto; margin-bottom: 6px; justify-content: flex-start; }
+  .basic-form :deep(.el-form-item__content) { margin-left: 0 !important; gap: 8px; }
+  .basic-form :deep(.el-input), .basic-form :deep(.el-select) { width: 100% !important; margin-left: 0 !important; }
+  .q-card-head { flex-wrap: wrap; }
+  .q-index { flex-basis: 100%; }
   .selected-item { flex-wrap: wrap; }
   .item-label { flex-basis: calc(100% - 50px); }
   .item-actions { margin-left: auto; }

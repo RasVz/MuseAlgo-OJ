@@ -81,3 +81,13 @@ test('computes a deadline from wall time so timer display catches up after throt
   assert.equal(remainingExamSeconds(deadline, 129_100), 1)
   assert.equal(remainingExamSeconds(deadline, 130_100), 0)
 })
+
+test('does not claim a saved draft when local storage is absent', () => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: undefined })
+  try { assert.equal(createExamDraftStorage({ userId: 7, paperId: 20, attemptId: 30 }).save({ 11: 'A' }), false) }
+  finally {
+    if (previous) Object.defineProperty(globalThis, 'localStorage', previous)
+    else delete globalThis.localStorage
+  }
+})

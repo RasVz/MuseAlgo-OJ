@@ -82,8 +82,10 @@ export const createExamDraftStorage = ({ userId, paperId, attemptId, storage } =
     },
     save(answers) {
       try {
+        const target = getStorage()
+        if (!target) return false
         const normalized = Object.entries(answers ?? {}).map(([questionId, answer]) => ({ questionId, answer }))
-        getStorage()?.setItem(key, JSON.stringify({ answers: normalized, savedAt: Date.now() }))
+        target.setItem(key, JSON.stringify({ answers: normalized, savedAt: Date.now() }))
         return true
       } catch {
         return false

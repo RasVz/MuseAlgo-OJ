@@ -162,6 +162,7 @@ async function installSyntheticApi(page, options = {}) {
       }
     } else if (path === `/exam-paper/${PAPER_ID}/attempt/finish` && method === 'POST') {
       state.events.push('finish')
+      if (state.pendingFinish) return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ code: 409, errorCode: 'EXAM_ATTEMPT_GRADING_PENDING', message: '编程题仍在判题，请等待判题完成后交卷' }) })
       state.currentAttempt = {
         ...state.currentAttempt,
         status: 'SUBMITTED',
@@ -184,7 +185,7 @@ async function installSyntheticApi(page, options = {}) {
 }
 
 const answerOption = (page, questionIndex, label) =>
-  page.locator('.boolean-group').nth(questionIndex).getByText(label, { exact: true })
+  page.locator('.boolean-group').nth(questionIndex).locator('.el-radio').filter({ hasText: label })
 
 test('training library keeps search, category and server pagination in the URL', async ({ page }) => {
   const api = await installSyntheticApi(page)
@@ -296,4 +297,29 @@ test('mobile workbench remains readable in light and dark themes and saves scree
       await page.screenshot({ path, fullPage: true })
     }
   }
+})
+
+test('expired attempt waits for pending coding judgement without permitting answer edits', async ({ page }) => {
+  const state = await installSyntheticApi(page, { attempt: makeAttempt({ id: 1101, remainingSeconds: 0, gradingPending: true }) })
+  await page.goto(`${WEB_BASE}/training/${PAPER_ID}`, { waitUntil: 'networkidle' })
+  await expect(page.getByText('编程题仍在判题，正在等待判题完成后自动交卷。作答时间已结束，不能继续修改答案。')).toBeVisible()
+  await expect(page.locator('.boolean-group').first().getByRole('radio').first()).toBeDisabled()
+  state.currentAttempt = { ...state.currentAttempt, status: 'TIMEOUT', gradingPending: false }
+  await expect(page.getByText('时间到，已自动交卷', { exact: true }).first()).toBeVisible({ timeout: 10000 })
+})
+
+test('early finish with pending judgement explains how to retry and keeps the attempt open', async ({ page }) => {
+  const state = await installSyntheticApi(page, { attempt: makeAttempt() })
+  state.pendingFinish = true
+  await page.goto(`${WEB_BASE}/training/${PAPER_ID}`, { waitUntil: 'networkidle' })
+  await answerOption(page, 0, '对').click()
+  await page.getByRole('button', { name: '交卷', exact: true }).click()
+  await page.getByRole('button', { name: '确认交卷', exact: true }).click()
+  await expect(page.getByText('编程题仍在判题，客观题已保存。请等待判题完成后再次交卷')).toBeVisible()
+  expect(state.currentAttempt.status).toBe('RUNNING')
+  await expect(page.getByText('本次作答已交卷')).toHaveCount(0)
+  state.pendingFinish = false
+  await page.getByRole('button', { name: '交卷', exact: true }).click()
+  await page.getByRole('button', { name: '确认交卷', exact: true }).click()
+  await expect(page.getByText('本次作答已交卷')).toBeVisible()
 })

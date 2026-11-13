@@ -62,7 +62,8 @@
               </el-button>
             </div>
           </div>
-          <div v-if="autoFinishFailed" class="timeout-hint" role="status">
+          <div v-if="attempt.gradingPending" class="timeout-hint" role="status">编程题仍在判题，正在等待判题完成后自动交卷。作答时间已结束，不能继续修改答案。</div>
+          <div v-else-if="autoFinishFailed" class="timeout-hint" role="status">
             自动交卷暂未完成，答案仍保留。请重试交卷，系统会继续自动重试。
           </div>
         </el-card>
@@ -127,7 +128,7 @@
                   v-if="q.questionType === 'SINGLE'"
                   v-model="answers[q.id]"
                   class="option-group"
-                  :disabled="!sessionActive || submitting || finishing"
+                  :disabled="!sessionActive || remaining === 0 || submitting || finishing"
                 >
                   <el-radio
                     v-for="opt in q.options"
@@ -144,7 +145,7 @@
                   v-else-if="q.questionType === 'MULTIPLE'"
                   v-model="answers[q.id]"
                   class="option-group"
-                  :disabled="!sessionActive || submitting || finishing"
+                  :disabled="!sessionActive || remaining === 0 || submitting || finishing"
                   @change="saveAnswersDraft"
                 >
                   <el-checkbox v-for="opt in q.options" :key="opt.key" :value="opt.key" class="option-row">
@@ -156,7 +157,7 @@
                   v-else
                   v-model="answers[q.id]"
                   class="option-group boolean-group"
-                  :disabled="!sessionActive || submitting || finishing"
+                  :disabled="!sessionActive || remaining === 0 || submitting || finishing"
                   @change="saveAnswersDraft"
                 >
                   <el-radio value="T" class="option-row">对</el-radio>
@@ -369,6 +370,7 @@ const setupAttemptState = (nextAttempt, paperId, options = {}) => {
     draftStorage = userId && nextAttempt.id != null
       ? createExamDraftStorage({ userId, paperId, attemptId: nextAttempt.id })
       : null
+    draftAvailable.value = Boolean(draftStorage)
   } else {
     draftStorage = null
   }
@@ -526,7 +528,7 @@ const syncAttemptAfterDeadline = async (paperId, sequence) => {
     return 'finished'
   }
   autoRetryAt = Date.now() + 5000
-  return 'running'
+  return latest.gradingPending ? 'grading' : 'running'
 }
 
 const finishSession = async (auto) => {
@@ -557,7 +559,7 @@ const finishSession = async (auto) => {
     if (auto || remainingExamSeconds(deadlineAt) === 0) {
       const status = await syncAttemptAfterDeadline(paperId, sequence)
       if (status === 'finished') return true
-      if (status === 'stale') return false
+      if (status === 'stale' || status === 'grading') return false
       autoFinishFailed.value = true
       ElMessage.warning('正在确认服务端交卷状态，系统会继续重试')
       return false
@@ -597,14 +599,24 @@ const finishSession = async (auto) => {
       autoRetryAt = Date.now() + 5000
       return false
     }
+    if (finishedAttempt.status === 'RUNNING') {
+      attempt.value = finishedAttempt
+      ElMessage.info('编程题仍在判题，请等待完成后再交卷')
+      return false
+    }
     attempt.value = finishedAttempt
     stopTimer()
     draftStorage?.clear()
     draftStorage = null
     if (auto) ElMessage.info('时间到，已自动交卷')
     return true
-  } catch {
+  } catch (error) {
     if (sequence !== loadSequence || paperId !== String(route.params.id)) return false
+    if (error?.errorCode === 'EXAM_ATTEMPT_GRADING_PENDING' || error?.response?.data?.errorCode === 'EXAM_ATTEMPT_GRADING_PENDING') {
+      autoFinishFailed.value = false
+      ElMessage.info('编程题仍在判题，客观题已保存。请等待判题完成后再次交卷')
+      return false
+    }
     autoFinishFailed.value = true
     ElMessage.error(auto ? '自动交卷暂未完成，系统会继续重试' : '交卷失败，答案已保留，请检查网络后重试')
     autoRetryAt = Date.now() + 5000
@@ -751,6 +763,11 @@ onBeforeUnmount(() => {
   .save-hint { width: 100%; font-size: 10px; line-height: 1.35; }
 }
 @media (max-width: 720px) {
+  .nav-header { min-width: 0; width: 100%; overflow: hidden; }
+  .nav-header :deep(.el-page-header__title), .nav-header :deep(.el-divider--vertical) { display: none; }
+  .nav-header :deep(.el-page-header__left) { margin-right: 8px; flex-shrink: 0; }
+  .nav-header :deep(.el-page-header__content) { min-width: 0; overflow: hidden; display: block; }
+  .nav-title { display: block; max-width: 100%; font-size: 14px; }
   .main-content { padding: 12px 12px 36px; gap: 12px; }
   .info-title { font-size: 20px; }
   .start-panel { align-items: stretch; flex-direction: column; gap: 16px; }
@@ -760,8 +777,11 @@ onBeforeUnmount(() => {
   .timer-block { min-width: 88px; }
   .timer { font-size: 21px; }
   .progress-block { flex: 1; width: auto; min-width: 110px; }
-  .session-actions { width: 100%; margin-left: 0; }
-  .session-actions .el-button { flex: 1; }
+  .session-actions { width: 100%; margin-left: 0; flex-wrap: wrap; }
+  .save-hint { flex: 0 0 100%; margin: 0; line-height: 1.6; font-size: 11px; }
+  .session-actions .el-button { flex: 1; min-width: 0; margin-left: 0; }
+  .progress-copy { flex-wrap: wrap; }
+  .progress-copy strong { white-space: nowrap; }
   .answer-layout { display: flex; flex-direction: column; }
   .answer-sidebar { position: static; width: 100%; order: -1; }
   .navigator-card :deep(.el-card__body) { padding: 12px; }
