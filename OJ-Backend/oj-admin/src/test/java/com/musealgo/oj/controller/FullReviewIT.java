@@ -279,8 +279,80 @@ class FullReviewIT extends SyntheticReviewDatabase {
   var principal=new com.musealgo.oj.system.entity.User();principal.setId(user);
   org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(principal,null,List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN"))));
   try {
-   var record=adminClasses.list(1,20,"synthetic stale count").getData().getRecords().stream().filter(row->((Number)row.get("id")).longValue()==id).findFirst().orElseThrow();
-   assertEquals(1,((Number)record.get("studentCount")).intValue());
+   var record=adminClasses.list(1,20,"synthetic stale count","all","newest").getData().getRecords().stream().filter(row->row.getId()==id).findFirst().orElseThrow();
+   assertEquals(1,record.getStudentCount().intValue());
+  }finally{org.springframework.security.core.context.SecurityContextHolder.clearContext();}
+ }
+
+ @Test void adminClassDirectoryAppliesMemberFiltersSearchAndStableSortsInSql() {
+  long teacher=user();
+  String marker="directory_"+UUID.randomUUID().toString().replace("-", "");
+  jdbc.update("INSERT INTO `class`(name,teacher_id,school,create_time,student_count) VALUES (?,?,?,?,'0')",
+          marker+"_A",teacher,marker+"_school",java.sql.Timestamp.valueOf("2026-01-01 10:00:00"));
+  long firstId=jdbc.queryForObject("SELECT MAX(id) FROM `class` WHERE teacher_id=?",Long.class,teacher);
+  jdbc.update("INSERT INTO `class`(name,teacher_id,school,create_time,student_count) VALUES (?,?,?,?,'0')",
+          marker+"_B",teacher,marker+"_school",java.sql.Timestamp.valueOf("2026-01-01 10:00:00"));
+  long secondId=jdbc.queryForObject("SELECT MAX(id) FROM `class` WHERE teacher_id=?",Long.class,teacher);
+  jdbc.update("INSERT INTO class_student(class_id,student_id) VALUES (?,?)",firstId,teacher);
+  jdbc.update("INSERT INTO `class`(name,teacher_id,is_deleted) VALUES (?,?,1)",marker+"_deleted",teacher);
+  var principal=new com.musealgo.oj.system.entity.User();principal.setId(teacher);
+  org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+          new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(principal,null,
+                  List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN"))));
+  try {
+   var withMembers=adminClasses.list(1,20,marker,"hasMembers","newest").getData();
+   assertEquals(List.of(firstId),withMembers.getRecords().stream().map(com.musealgo.oj.dto.AdminClassSummary::getId).toList());
+   assertEquals(1L,withMembers.getRecords().get(0).getStudentCount());
+   var empty=adminClasses.list(1,20,marker,"empty","newest").getData();
+   assertEquals(List.of(secondId),empty.getRecords().stream().map(com.musealgo.oj.dto.AdminClassSummary::getId).toList());
+   var newest=adminClasses.list(1,20,marker,"all","newest").getData();
+   assertEquals(List.of(secondId,firstId),newest.getRecords().stream().map(com.musealgo.oj.dto.AdminClassSummary::getId).toList());
+   var oldest=adminClasses.list(1,20,marker,"all","oldest").getData();
+   assertEquals(List.of(firstId,secondId),oldest.getRecords().stream().map(com.musealgo.oj.dto.AdminClassSummary::getId).toList());
+   var byName=adminClasses.list(1,20,marker,"all","name").getData();
+   assertEquals(List.of(firstId,secondId),byName.getRecords().stream().map(com.musealgo.oj.dto.AdminClassSummary::getId).toList());
+   assertEquals(secondId,adminClasses.list(1,20,String.valueOf(secondId),"all","newest")
+           .getData().getRecords().get(0).getId());
+  }finally{org.springframework.security.core.context.SecurityContextHolder.clearContext();}
+ }
+
+ @Test void adminClassDirectorySearchesActiveTeachersAndHidesDeletedTeacherNames() {
+  long activeTeacher=user();
+  String activeName="active_directory_teacher_"+UUID.randomUUID().toString().replace("-", "");
+  jdbc.update("UPDATE user SET username=?,nickname=? WHERE id=?",activeName,activeName,activeTeacher);
+  jdbc.update("INSERT INTO `class`(name,teacher_id) VALUES ('neutral active class',?)",activeTeacher);
+  long activeClassId=jdbc.queryForObject("SELECT MAX(id) FROM `class` WHERE teacher_id=?",Long.class,activeTeacher);
+
+  long deletedTeacher=user();
+  String deletedName="deleted_directory_teacher_"+UUID.randomUUID().toString().replace("-", "");
+  jdbc.update("UPDATE user SET username=?,nickname=?,is_deleted=1 WHERE id=?",deletedName,deletedName,deletedTeacher);
+  jdbc.update("INSERT INTO `class`(name,teacher_id) VALUES ('neutral deleted class',?)",deletedTeacher);
+  long deletedClassId=jdbc.queryForObject("SELECT MAX(id) FROM `class` WHERE teacher_id=?",Long.class,deletedTeacher);
+
+  var principal=new com.musealgo.oj.system.entity.User();principal.setId(activeTeacher);
+  org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+          new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(principal,null,
+                  List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN"))));
+  try {
+   var activeMatches=adminClasses.list(1,20,activeName,"all","newest").getData();
+   assertEquals(List.of(activeClassId),activeMatches.getRecords().stream()
+           .map(com.musealgo.oj.dto.AdminClassSummary::getId).toList());
+   var deletedMatches=adminClasses.list(1,20,deletedName,"all","newest").getData();
+   assertEquals(0L,deletedMatches.getTotal());
+   var deletedClass=adminClasses.list(1,20,String.valueOf(deletedClassId),"all","newest")
+           .getData().getRecords().get(0);
+   assertNull(deletedClass.getTeacherName());
+  }finally{org.springframework.security.core.context.SecurityContextHolder.clearContext();}
+ }
+
+ @Test void adminClassDirectoryRequiresAdministratorRole() {
+  var principal=new com.musealgo.oj.system.entity.User();principal.setId(987654321L);
+  org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+          new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(principal,null,
+                  List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_TEACHER"))));
+  try {
+   assertThrows(org.springframework.security.access.AccessDeniedException.class,
+           ()->adminClasses.list(1,20,null,"all","newest"));
   }finally{org.springframework.security.core.context.SecurityContextHolder.clearContext();}
  }
  @Test void concurrentClassJoinIsIdempotentAndDoesNotBecomeInternalError() throws Exception {
