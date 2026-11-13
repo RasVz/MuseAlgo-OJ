@@ -2,7 +2,7 @@
   <div class="exam-paper-detail">
     <NavbarContext>
       <div class="nav-header">
-        <el-page-header @back="goBack" title="返回训练">
+        <el-page-header @back="goBack" title="返回试卷库">
           <template #content>
             <span class="nav-title">{{ paper?.title || '试卷详情' }}</span>
           </template>
@@ -10,181 +10,289 @@
       </div>
     </NavbarContext>
 
-    <div class="main-content" v-loading="loading">
-      <el-card shadow="never" class="paper-info" v-if="paper">
-        <div class="info-header">
-          <el-tag type="primary" effect="plain">{{ categoryLabel(paper.category) }}</el-tag>
-          <el-tag v-if="paper.level" effect="plain">{{ paper.level }}</el-tag>
-        </div>
-        <div class="info-title">{{ paper.title }}</div>
-        <div class="info-meta">
-          <span>{{ paper.problemCount ?? 0 }} 题</span>
-          <span>满分 {{ paper.totalScore ?? 100 }}</span>
-          <span>建议时长 {{ paper.durationMinutes ?? 120 }} 分钟</span>
-        </div>
-        <div v-if="paper.description" class="info-desc">{{ paper.description }}</div>
-      </el-card>
-
-      <!-- 限时作答会话 -->
-      <el-card v-if="paper" shadow="never" class="session-card">
-        <template v-if="!attempt">
-          <div class="session-row">
-            <el-icon><Timer /></el-icon>
-            <span class="session-tip">
-              本卷限时 {{ paper.durationMinutes ?? 120 }} 分钟，开始后计时、到时自动交卷；
-              客观题提交即时判分，编程题得分取会话时间内每题最好成绩。
-            </span>
-            <el-button type="primary" :loading="starting" @click="startSession">开始作答</el-button>
+    <main class="main-content" v-loading="loading">
+      <template v-if="paper">
+        <el-card shadow="never" class="paper-info">
+          <div class="info-header">
+            <el-tag type="primary" effect="plain">{{ categoryLabel(paper.category) }}</el-tag>
+            <el-tag v-if="paper.level" effect="plain">{{ paper.level }}</el-tag>
           </div>
-        </template>
-
-        <template v-else-if="attempt.status === 'RUNNING'">
-          <div class="session-row">
-            <el-icon><Timer /></el-icon>
-            <span class="timer" :class="{ 'timer-warn': remaining <= 300 }">剩余 {{ formatTime(remaining) }}</span>
-            <el-button :loading="finishing" @click="finishSession(false)">交卷</el-button>
+          <h1 class="info-title">{{ paper.title }}</h1>
+          <div class="info-meta">
+            <span>{{ paper.problemCount ?? 0 }} 题</span>
+            <span>满分 {{ paper.totalScore ?? 100 }}</span>
+            <span>建议时长 {{ paper.durationMinutes ?? 120 }} 分钟</span>
           </div>
-        </template>
+          <div v-if="paper.description" class="info-desc">{{ paper.description }}</div>
+        </el-card>
 
-        <template v-else>
-          <div class="session-row session-result">
-            <el-tag type="success">
-              已交卷{{ attempt.status === 'TIMEOUT' ? '（到时自动交卷）' : '' }}
-            </el-tag>
-            <span>客观题 {{ attempt.objectiveScore ?? 0 }} 分</span>
-            <span>编程题 {{ attempt.codingScore ?? 0 }} 分</span>
-            <span class="total">总分 {{ attempt.totalScore ?? 0 }}</span>
-            <el-button type="primary" plain :loading="starting" @click="startSession">再次作答</el-button>
+        <el-card v-if="!attempt" shadow="never" class="session-card">
+          <div class="start-panel">
+            <div class="start-copy">
+              <div class="start-icon"><el-icon><Timer /></el-icon></div>
+              <div>
+                <div class="start-title">准备好开始了吗？</div>
+                <p>开始后计时 {{ paper.durationMinutes ?? 120 }} 分钟，到时自动交卷。客观题可即时判分；编程题请在交卷前确认判题完成。</p>
+              </div>
+            </div>
+            <el-button type="primary" size="large" :loading="starting" @click="startSession">开始作答</el-button>
           </div>
-        </template>
-      </el-card>
+        </el-card>
 
-      <!-- 客观题：提交时即时判分 -->
-      <el-card v-if="paper?.questions?.length && attempt" shadow="never" class="question-card">
-        <template #header>
-          <div class="card-header">
-            <span>客观题（单选 / 多选 / 判断）</span>
-            <div class="header-right">
-              <el-tag v-if="objectiveScore !== null" type="success" effect="plain">
-                客观题得分：{{ objectiveScore }} / {{ objectiveTotal }}
-              </el-tag>
-              <el-button type="primary" :loading="submitting" :disabled="!sessionActive" @click="submitAnswers">
-                提交答案
+        <el-card v-else-if="sessionActive" shadow="never" class="session-toolbar">
+          <div class="session-main">
+            <div class="timer-block" aria-live="polite">
+              <span class="timer-label">剩余时间</span>
+              <strong class="timer" :class="{ 'timer-warn': remaining <= 300 }">{{ formatTime(remaining) }}</strong>
+            </div>
+            <div class="progress-block">
+              <div class="progress-copy">
+                <strong>{{ answeredCount }} / {{ objectiveQuestions.length }}</strong>
+                <span>道客观题已作答</span>
+              </div>
+              <el-progress :percentage="answerProgress" :show-text="false" :stroke-width="7" />
+            </div>
+            <div class="session-actions">
+              <span class="save-hint" :class="{ 'save-hint-error': !draftAvailable }">
+                {{ draftAvailable ? '本设备暂存不计分，请提交客观题；到时按已提交答案计分' : '本地暂存不可用，请及时提交答案并避免刷新' }}
+              </span>
+              <el-button :loading="submitting" :disabled="submitting || finishing" @click="submitAnswers()">提交客观题</el-button>
+              <el-button type="primary" :loading="finishing" :disabled="submitting" @click="finishSession(false)">
+                {{ remaining === 0 ? '重试交卷' : '交卷' }}
               </el-button>
             </div>
           </div>
-        </template>
+          <div v-if="attempt.gradingPending" class="timeout-hint" role="status">编程题仍在判题，正在等待判题完成后自动交卷。作答时间已结束，不能继续修改答案。</div>
+          <div v-else-if="autoFinishFailed" class="timeout-hint" role="status">
+            自动交卷暂未完成，答案仍保留。请重试交卷，系统会继续自动重试。
+          </div>
+        </el-card>
 
-        <div v-for="(q, idx) in paper.questions" :key="q.id" class="question-item">
-          <div class="question-head">
-            <span class="question-no">{{ idx + 1 }}.</span>
-            <el-tag size="small" :type="typeTag(q.questionType)">{{ typeLabel(q.questionType) }}</el-tag>
-            <el-tag size="small" effect="plain">{{ q.score }} 分</el-tag>
-            <el-tag v-if="results[q.id]" size="small" :type="results[q.id].correct ? 'success' : 'danger'">
-              {{ results[q.id].correct ? '✓ 正确' : '✗ 错误' }}
+        <el-card v-else-if="attempt" shadow="never" class="session-card session-result">
+          <div class="result-summary">
+            <el-tag type="success" effect="light" size="large">
+              {{ attempt.status === 'TIMEOUT' ? '时间到，已自动交卷' : '本次作答已交卷' }}
             </el-tag>
+            <div class="score-item"><span>客观题</span><strong>{{ attempt.objectiveScore ?? 0 }}</strong></div>
+            <div class="score-item"><span>编程题</span><strong>{{ attempt.codingScore ?? 0 }}</strong></div>
+            <div class="score-total"><span>总分</span><strong>{{ attempt.totalScore ?? 0 }}</strong></div>
+            <el-button type="primary" plain :loading="starting" @click="startSession">再次作答</el-button>
           </div>
-          <div class="question-statement markdown-body" v-html="renderMarkdown(q.statement)"></div>
+          <el-alert
+            v-if="attempt.status === 'TIMEOUT' && hasUnsubmittedChanges"
+            class="timeout-result-alert"
+            type="warning"
+            show-icon
+            :closable="false"
+            title="时间已到，设备上暂存的未提交修改未计入本次成绩。"
+            description="本次分数按超时前已提交并判分的答案统计；未提交修改仍显示在答题卡中，方便你核对。"
+          />
+        </el-card>
 
-          <!-- 单选 -->
-          <el-radio-group
-            v-if="q.questionType === 'SINGLE'"
-            v-model="answers[q.id]"
-            class="option-group"
-            :disabled="!sessionActive"
-          >
-            <el-radio v-for="opt in q.options" :key="opt.key" :value="opt.key" class="option-row">
-              <span class="markdown-body option-markdown" v-html="renderMarkdown(`${opt.key}. ${opt.text}`)"></span>
-            </el-radio>
-          </el-radio-group>
+        <div v-if="objectiveQuestions.length && attempt" class="answer-layout">
+          <section class="question-column" aria-label="客观题答题区">
+            <el-card shadow="never" class="question-card">
+              <template #header>
+                <div class="card-header">
+                  <div>
+                    <h2>客观题</h2>
+                    <span>单选、多选与判断题</span>
+                  </div>
+                  <el-tag v-if="objectiveScore !== null" type="success" effect="plain">
+                    最近判分 {{ objectiveScore }} / {{ objectiveTotal }} 分
+                  </el-tag>
+                </div>
+              </template>
 
-          <!-- 多选 -->
-          <el-checkbox-group
-            v-else-if="q.questionType === 'MULTIPLE'"
-            v-model="answers[q.id]"
-            class="option-group"
-            :disabled="!sessionActive"
-          >
-            <el-checkbox v-for="opt in q.options" :key="opt.key" :value="opt.key" class="option-row">
-              <span class="markdown-body option-markdown" v-html="renderMarkdown(`${opt.key}. ${opt.text}`)"></span>
-            </el-checkbox>
-          </el-checkbox-group>
+              <article
+                v-for="(q, idx) in objectiveQuestions"
+                :id="questionAnchor(q.id)"
+                :key="q.id"
+                class="question-item"
+                :class="{ 'question-item-answered': isAnswered(q.id) }"
+              >
+                <div class="question-head">
+                  <span class="question-no">{{ idx + 1 }}</span>
+                  <div class="question-head-meta">
+                    <el-tag size="small" :type="typeTag(q.questionType)">{{ typeLabel(q.questionType) }}</el-tag>
+                    <el-tag size="small" effect="plain">{{ q.score }} 分</el-tag>
+                    <el-tag v-if="currentResult(q)" size="small" :type="currentResult(q).correct ? 'success' : 'danger'">
+                      {{ currentResult(q).correct ? '正确' : '错误' }}
+                    </el-tag>
+                  </div>
+                  <span class="question-status">{{ isAnswerUnsubmitted(q) ? '未提交' : isAnswered(q.id) ? '已作答' : '未作答' }}</span>
+                </div>
+                <div class="question-statement markdown-body" v-html="renderMarkdown(q.statement)"></div>
 
-          <!-- 判断 -->
-          <el-radio-group v-else v-model="answers[q.id]" class="option-group boolean-group" :disabled="!sessionActive">
-            <el-radio value="T" class="option-row">对</el-radio>
-            <el-radio value="F" class="option-row">错</el-radio>
-          </el-radio-group>
+                <el-radio-group
+                  v-if="q.questionType === 'SINGLE'"
+                  v-model="answers[q.id]"
+                  class="option-group"
+                  :disabled="!sessionActive || remaining === 0 || submitting || finishing"
+                >
+                  <el-radio
+                    v-for="opt in q.options"
+                    :key="opt.key"
+                    :value="opt.key"
+                    class="option-row"
+                    @change="saveAnswersDraft"
+                  >
+                    <span class="markdown-body option-markdown" v-html="renderMarkdown(`${opt.key}. ${opt.text}`)"></span>
+                  </el-radio>
+                </el-radio-group>
 
-          <div v-if="results[q.id]" class="question-result" :class="results[q.id].correct ? 'result-ok' : 'result-bad'">
-            你的答案：{{ results[q.id].myAnswer || '未作答' }}
-            <span v-if="!results[q.id].correct">，正确答案：{{ results[q.id].correctAnswer }}</span>
-            ，得分 {{ results[q.id].score }}
-            <div v-if="results[q.id].explanation" class="markdown-body explanation"
-              v-html="renderMarkdown(results[q.id].explanation)"></div>
-          </div>
+                <el-checkbox-group
+                  v-else-if="q.questionType === 'MULTIPLE'"
+                  v-model="answers[q.id]"
+                  class="option-group"
+                  :disabled="!sessionActive || remaining === 0 || submitting || finishing"
+                  @change="saveAnswersDraft"
+                >
+                  <el-checkbox v-for="opt in q.options" :key="opt.key" :value="opt.key" class="option-row">
+                    <span class="markdown-body option-markdown" v-html="renderMarkdown(`${opt.key}. ${opt.text}`)"></span>
+                  </el-checkbox>
+                </el-checkbox-group>
+
+                <el-radio-group
+                  v-else
+                  v-model="answers[q.id]"
+                  class="option-group boolean-group"
+                  :disabled="!sessionActive || remaining === 0 || submitting || finishing"
+                  @change="saveAnswersDraft"
+                >
+                  <el-radio value="T" class="option-row">对</el-radio>
+                  <el-radio value="F" class="option-row">错</el-radio>
+                </el-radio-group>
+
+                <div
+                  v-if="currentResult(q)"
+                  class="question-result"
+                  :class="currentResult(q).correct ? 'result-ok' : 'result-bad'"
+                >
+                  你的答案：{{ currentResult(q).myAnswer || '未作答' }}
+                  <span v-if="!currentResult(q).correct">，正确答案：{{ currentResult(q).correctAnswer }}</span>
+                  ，得分 {{ currentResult(q).score }}
+                  <div v-if="currentResult(q).explanation" class="markdown-body explanation" v-html="renderMarkdown(currentResult(q).explanation)"></div>
+                </div>
+              </article>
+
+              <el-empty v-if="objectiveQuestions.length === 0" description="本卷没有客观题" />
+            </el-card>
+
+            <el-card shadow="never" class="problem-card">
+              <template #header>
+                <div class="card-header">
+                  <div>
+                    <h2>编程题</h2>
+                <span>请在交卷前确认判题完成；按会话内同题普通练习的最高百分制得分折算，待判提交不会在交卷后回补</span>
+                  </div>
+                  <el-tag size="small" type="info" effect="plain">{{ paper.problems?.length ?? 0 }} 题</el-tag>
+                </div>
+              </template>
+              <div v-if="paper.problems?.length" class="problem-list">
+                <div v-for="row in paper.problems" :key="row.problemId" class="problem-row">
+                  <span class="problem-order">{{ row.problemOrder }}</span>
+                  <div class="problem-info">
+                    <strong>{{ row.title || `题目 #${row.problemId}` }}</strong>
+                    <span>{{ difficultyLabel(row.difficulty) }} · {{ row.score ?? '-' }} 分</span>
+                  </div>
+                  <RouterLink
+                    :to="{ name: 'ProblemDetail', params: { id: row.problemId } }"
+                    target="_blank"
+                    rel="noopener"
+                    class="problem-link"
+                  >
+                    去作答 <span aria-hidden="true">↗</span>
+                  </RouterLink>
+                </div>
+              </div>
+              <el-empty v-else description="本卷没有编程题" :image-size="72" />
+            </el-card>
+          </section>
+
+          <aside class="answer-sidebar" aria-label="答题卡">
+            <el-card shadow="never" class="navigator-card">
+              <template #header>
+                <div class="navigator-heading">
+                  <strong>答题卡</strong>
+                  <span>{{ answeredCount }} / {{ objectiveQuestions.length }}</span>
+                </div>
+              </template>
+              <div class="navigator-legend">
+                <span><i class="legend-dot legend-answered"></i>已作答</span>
+                <span><i class="legend-dot"></i>未作答</span>
+                <span v-if="hasUnsubmittedChanges"><i class="legend-dot legend-unsubmitted"></i>未提交</span>
+              </div>
+              <div class="question-nav-grid">
+                <button
+                  v-for="(q, idx) in objectiveQuestions"
+                  :key="q.id"
+                  type="button"
+                  class="question-nav-button"
+                  :class="{
+                    'nav-answered': isAnswered(q.id),
+                    'nav-unsubmitted': isAnswerUnsubmitted(q),
+                    'nav-correct': currentResult(q)?.correct,
+                    'nav-incorrect': currentResult(q) && !currentResult(q).correct
+                  }"
+                  :aria-label="`第 ${idx + 1} 题，${isAnswered(q.id) ? '已作答' : '未作答'}`"
+                  @click="scrollToQuestion(q.id)"
+                >{{ idx + 1 }}</button>
+              </div>
+              <el-progress :percentage="answerProgress" :show-text="false" :stroke-width="6" />
+              <div class="navigator-footnote">点击题号可跳转；答案会暂存在本设备。</div>
+            </el-card>
+          </aside>
         </div>
-      </el-card>
 
-      <!-- 编程题 -->
-      <el-card shadow="never" class="problem-card">
-        <template #header>
-          <div class="card-header">
-            <span>编程题</span>
-            <el-tag size="small" type="info" effect="plain">按真实套卷顺序作答</el-tag>
+        <el-card v-else-if="paper.problems?.length && attempt" shadow="never" class="problem-card">
+          <template #header>
+            <div class="card-header"><h2>编程题</h2><span>{{ paper.problems.length }} 题</span></div>
+          </template>
+          <div class="problem-list">
+            <div v-for="row in paper.problems" :key="row.problemId" class="problem-row">
+              <span class="problem-order">{{ row.problemOrder }}</span>
+              <div class="problem-info">
+                <strong>{{ row.title || `题目 #${row.problemId}` }}</strong>
+                <span>{{ difficultyLabel(row.difficulty) }} · {{ row.score ?? '-' }} 分</span>
+              </div>
+              <RouterLink :to="{ name: 'ProblemDetail', params: { id: row.problemId } }" target="_blank" rel="noopener" class="problem-link">
+                查看题目 <span aria-hidden="true">↗</span>
+              </RouterLink>
+            </div>
           </div>
-        </template>
-
-        <el-table :data="paper?.problems ?? []" border stripe>
-          <el-table-column label="#" width="70" align="center">
-            <template #default="{ row }">{{ row.problemOrder }}</template>
-          </el-table-column>
-          <el-table-column label="题目标题" min-width="260">
-            <template #default="{ row }">
-              <span class="hover-link" @click="goProblem(row.problemId)">{{ row.title || `题目 #${row.problemId}` }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="难度" width="120" align="center">
-            <template #default="{ row }">
-              <span :style="{ color: difficultyColor(row.difficulty) }">
-                {{ difficultyLabel(row.difficulty) }}
-              </span>
-            </template>
-          </el-table-column>
-          <el-table-column label="分值" width="100" align="center">
-            <template #default="{ row }">{{ row.score ?? '-' }}</template>
-          </el-table-column>
-          <el-table-column label="操作" width="130" align="center">
-            <template #default="{ row }">
-              <el-button type="primary" link @click="goProblem(row.problemId)">去作答</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-      </el-card>
-    </div>
+        </el-card>
+      </template>
+    </main>
   </div>
 </template>
 
 <script setup>
-// 训练试卷作答页：客观题（单选/多选/判断）在本页限时作答并即时判分，
-// 编程题按套卷顺序跳到题面页作答（成绩走正常的提交判题链路）。
-//
-// 限时会话由服务端裁定：前端倒计时只用于显示，归零时主动调交卷接口兜底，
-// 刷新页面后靠 getExamAttempt 恢复剩余时间，不会因刷新而延长考试。
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, watch, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Timer } from '@element-plus/icons-vue'
 import NavbarContext from '@/components/NavbarContext.vue'
 import { getExamPaperDetail, submitExamPaperAnswers, startExamAttempt, getExamAttempt, finishExamAttempt } from '@/api/examPaper'
 import { unwrapResultData, isResultSuccess, getResultMessage } from '@/utils/response'
 import { useUserStore } from '@/stores/userStore'
-import { getDifficultyColor, getDifficultyLabel } from '@/utils/difficulty'
+import { getDifficultyLabel } from '@/utils/difficulty'
 import { createMarkdown } from '@/utils/markdown'
+import {
+  buildExamAnswerState,
+  buildExamAnswersPayload,
+  createExamDraftStorage,
+  examAttemptDeadline,
+  getAnsweredQuestionIds,
+  isExamAnswerUnsubmitted,
+  remainingExamSeconds,
+  serializeQuestionAnswer
+} from '@/utils/examPaper'
 import 'github-markdown-css/github-markdown.css'
 
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
 const paper = ref(null)
 const loading = ref(false)
 const submitting = ref(false)
@@ -192,64 +300,175 @@ const attempt = ref(null)
 const remaining = ref(0)
 const starting = ref(false)
 const finishing = ref(false)
+const draftAvailable = ref(true)
+const autoFinishFailed = ref(false)
 let timerId = null
+let deadlineAt = 0
+let autoRetryAt = 0
+let loadSequence = 0
+let draftStorage = null
+
 const markdown = createMarkdown({ html: false, math: true, breaks: true })
 const renderMarkdown = (text) => markdown.render(text || '')
-
-// 作答：questionId -> SINGLE/JUDGE 存字符串，MULTIPLE 存数组
 const answers = reactive({})
 const results = reactive({})
 
 const CATEGORY_LABELS = { GESP: 'GESP', CSP_J: 'CSP-J', CSP_S: 'CSP-S', NOIP: 'NOIP', MOCK: '模拟' }
-const categoryLabel = (c) => CATEGORY_LABELS[c] || c || '套卷'
-const typeLabel = (t) => ({ SINGLE: '单选', MULTIPLE: '多选', JUDGE: '判断' }[t] || t)
-const typeTag = (t) => ({ SINGLE: 'primary', MULTIPLE: 'warning', JUDGE: 'info' }[t] || 'info')
-const difficultyColor = (d) => getDifficultyColor(d)
-const difficultyLabel = (d) => getDifficultyLabel(d)
+const categoryLabel = (value) => CATEGORY_LABELS[value] || value || '套卷'
+const typeLabel = (type) => ({ SINGLE: '单选', MULTIPLE: '多选', JUDGE: '判断' })[type] || type
+const typeTag = (type) => ({ SINGLE: 'primary', MULTIPLE: 'warning', JUDGE: 'info' })[type] || 'info'
+const difficultyLabel = (difficulty) => getDifficultyLabel(difficulty)
 
-const objectiveTotal = computed(() =>
-  (paper.value?.questions ?? []).reduce((sum, q) => sum + (q.score ?? 0), 0)
-)
-// 客观题得分在 results 为空时显示 null（而非 0）：
-// 未判分与判得 0 分是两回事，模板据此区分"还没提交"与"得了零分"。
-const objectiveScore = computed(() => {
-  const list = Object.values(results)
-  return list.length ? list.reduce((sum, r) => sum + (r.score ?? 0), 0) : null
-})
-
-// 只有 RUNNING 才允许作答：未开始或已交卷的会话必须锁住输入框。
+const objectiveQuestions = computed(() => paper.value?.questions ?? [])
 const sessionActive = computed(() => attempt.value?.status === 'RUNNING')
+const answeredIds = computed(() => new Set(getAnsweredQuestionIds(objectiveQuestions.value, answers)))
+const answeredCount = computed(() => answeredIds.value.size)
+const answerProgress = computed(() => objectiveQuestions.value.length
+  ? Math.round((answeredCount.value / objectiveQuestions.value.length) * 100)
+  : 0)
+const objectiveTotal = computed(() => objectiveQuestions.value.reduce((sum, question) => sum + (question.score ?? 0), 0))
+const objectiveScore = computed(() => {
+  const questions = objectiveQuestions.value
+  if (!questions.length || questions.some((question) => !currentResult(question))) return null
+  return questions.reduce((sum, question) => sum + (currentResult(question).score ?? 0), 0)
+})
+const hasUnsubmittedChanges = computed(() => objectiveQuestions.value.some(isAnswerUnsubmitted))
 
-const goBack = () => router.push('/training')
-const goProblem = (id) => router.push(`/problem/${id}`)
+const goBack = () => router.push({ name: 'Training', query: { ...route.query } })
+const questionAnchor = (id) => `objective-question-${id}`
+const isAnswered = (id) => answeredIds.value.has(id)
+const currentResult = (question) => {
+  const result = results[question.id]
+  if (!result) return null
+  return serializeQuestionAnswer(question, result.myAnswer) === serializeQuestionAnswer(question, answers[question.id])
+    ? result
+    : null
+}
+const isAnswerUnsubmitted = (question) => {
+  if (attempt.value?.status !== 'TIMEOUT') return false
+  const savedAnswer = attempt.value?.answers?.find((item) => String(item.questionId) === String(question.id))?.answer
+    ?? attempt.value?.results?.find((item) => String(item.questionId) === String(question.id))?.myAnswer
+    ?? ''
+  return isExamAnswerUnsubmitted(question, answers[question.id], savedAnswer)
+}
+const scrollToQuestion = (id) => document.getElementById(questionAnchor(id))?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+const saveAnswersDraft = () => {
+  if (!draftStorage || !sessionActive.value) return
+  draftAvailable.value = draftStorage.save(answers)
+}
 
-const submitAnswers = async () => {
-  const questions = paper.value?.questions ?? []
-  if (!questions.length) return
+const clearReactiveRecord = (record) => Object.keys(record).forEach((key) => delete record[key])
+
+const setupAttemptState = (nextAttempt, paperId, options = {}) => {
+  attempt.value = nextAttempt
+  clearReactiveRecord(answers)
+  clearReactiveRecord(results)
+  draftAvailable.value = true
+
+  if (nextAttempt?.id != null && (nextAttempt.status === 'RUNNING' || nextAttempt.status === 'TIMEOUT')) {
+    const userId = userStore.userId ?? userStore.userInfo?.id
+    draftStorage = userId && nextAttempt.id != null
+      ? createExamDraftStorage({ userId, paperId, attemptId: nextAttempt.id })
+      : null
+    draftAvailable.value = Boolean(draftStorage)
+  } else {
+    draftStorage = null
+  }
+
+  const draft = Object.hasOwn(options, 'draft') ? options.draft : draftStorage?.load() ?? null
+  Object.assign(answers, buildExamAnswerState({ questions: objectiveQuestions.value, attempt: nextAttempt, draft }))
+  for (const result of nextAttempt?.results ?? []) {
+    if (result?.questionId != null) results[result.questionId] = result
+  }
+
+  if (nextAttempt?.status === 'RUNNING') {
+    remaining.value = Number(nextAttempt.remainingSeconds ?? 0)
+    deadlineAt = examAttemptDeadline(remaining.value)
+    autoRetryAt = 0
+    autoFinishFailed.value = false
+    saveAnswersDraft()
+    startTimer()
+  } else {
+    stopTimer()
+    remaining.value = 0
+  }
+}
+
+const loadPaper = async (paperId) => {
+  const sequence = ++loadSequence
+  stopTimer()
+  draftStorage = null
+  paper.value = null
+  attempt.value = null
+  submitting.value = false
+  finishing.value = false
+  starting.value = false
+  draftAvailable.value = true
+  clearReactiveRecord(answers)
+  clearReactiveRecord(results)
+  loading.value = true
+  try {
+    const paperResponse = await getExamPaperDetail(paperId)
+    if (sequence !== loadSequence) return
+    paper.value = unwrapResultData(paperResponse) || null
+    if (!paper.value) return
+
+    const userStore = useUserStore()
+    if (!userStore.getAccessToken()) return
+    const attemptResponse = await getExamAttempt(paperId)
+    if (sequence !== loadSequence) return
+    setupAttemptState(unwrapResultData(attemptResponse) || null, paperId)
+  } catch {
+    if (sequence === loadSequence) ElMessage.error('试卷加载失败，请稍后重试')
+  } finally {
+    if (sequence === loadSequence) loading.value = false
+  }
+}
+
+const submitAnswers = async ({ quiet = false, paperId: requestedPaperId, sequence: requestedSequence } = {}) => {
+  const paperId = String(requestedPaperId ?? route.params.id)
+  const sequence = requestedSequence ?? loadSequence
+  if (sequence !== loadSequence || paperId !== String(route.params.id)) return false
+  const questions = objectiveQuestions.value
+  if (!questions.length) return true
   if (!useUserStore().getAccessToken()) {
-    ElMessage.warning('请先登录')
-    return
+    if (!quiet) ElMessage.warning('请先登录')
+    return false
   }
-  const payload = {
-    answers: questions.map((q) => {
-      const value = answers[q.id]
-      // 多选的答案在界面上是数组，提交时拼成字符串：
-// 后端按字符串比对选项集合，没必要在协议里传结构化数组。
-    const answer = Array.isArray(value) ? value.join('') : (value ?? '')
-      return { questionId: q.id, answer }
-    })
-  }
+  if (!sessionActive.value || submitting.value || (finishing.value && !quiet)) return false
+
   submitting.value = true
   try {
-    const res = await submitExamPaperAnswers(route.params.id, payload)
+    const payload = buildExamAnswersPayload(questions, answers)
+    const res = await submitExamPaperAnswers(paperId, payload)
+    if (sequence !== loadSequence || paperId !== String(route.params.id)) return false
     if (!isResultSuccess(res)) {
-      ElMessage.error(getResultMessage(res, '提交失败'))
-      return
+      if (!quiet) ElMessage.error(getResultMessage(res, '答案提交失败'))
+      return false
     }
     const list = unwrapResultData(res) || []
-    list.forEach((r) => { results[r.questionId] = r })
-    const score = list.reduce((sum, r) => sum + (r.score ?? 0), 0)
-    ElMessage.success(`判分完成，客观题得分 ${score}`)
+    clearReactiveRecord(results)
+    const submittedAnswerById = new Map(payload.answers.map((item) => [String(item.questionId), item.answer]))
+    list.forEach((result) => {
+      const question = questions.find((item) => String(item.id) === String(result.questionId))
+      const capturedAnswer = submittedAnswerById.get(String(result.questionId))
+      if (
+        question && capturedAnswer != null &&
+        serializeQuestionAnswer(question, answers[question.id]) === capturedAnswer &&
+        serializeQuestionAnswer(question, result.myAnswer) === capturedAnswer
+      ) results[result.questionId] = result
+    })
+    draftAvailable.value = draftStorage?.save(answers) ?? true
+    if (!quiet) {
+      const score = list.reduce((sum, result) => sum + (result.score ?? 0), 0)
+      ElMessage.success(`判分完成，客观题得分 ${score}`)
+    }
+    return true
+  } catch {
+    if (sequence === loadSequence && paperId === String(route.params.id) && !quiet) {
+      ElMessage.error('答案提交失败，请检查网络后重试')
+    }
+    return false
   } finally {
     submitting.value = false
   }
@@ -260,124 +479,321 @@ const startSession = async () => {
     ElMessage.warning('请先登录')
     return
   }
+  const paperId = String(route.params.id)
+  const sequence = loadSequence
   starting.value = true
   try {
-    // 再次作答时清空上一次的本地作答与判分结果
-    ;(paper.value?.questions ?? []).forEach((q) => {
-      if (q.questionType === 'MULTIPLE') answers[q.id] = []
-      else answers[q.id] = ''
-    })
-    Object.keys(results).forEach((k) => delete results[k])
-    const res = await startExamAttempt(route.params.id)
-    attempt.value = unwrapResultData(res) || null
-    if (attempt.value?.status === 'RUNNING') {
-      remaining.value = attempt.value.remainingSeconds ?? 0
-      startTimer()
+    const res = await startExamAttempt(paperId)
+    if (sequence !== loadSequence || paperId !== String(route.params.id)) return
+    if (!isResultSuccess(res)) {
+      ElMessage.error(getResultMessage(res, '无法开始作答'))
+      return
+    }
+    const nextAttempt = unwrapResultData(res)
+    if (!nextAttempt) {
+      ElMessage.error('未能创建作答会话，请重试')
+      return
+    }
+    setupAttemptState(nextAttempt, paperId)
+    if (nextAttempt.status === 'RUNNING') ElMessage.success('作答已开始，祝你发挥顺利')
+  } catch {
+    if (sequence === loadSequence && paperId === String(route.params.id)) {
+      ElMessage.error('开始作答失败，请检查网络后重试')
     }
   } finally {
     starting.value = false
   }
 }
 
-// finishing 同时作为互斥标志：时间到自动交卷与手动点击交卷可能同时发生，
-// 不加锁会重复提交交卷请求。
+const syncAttemptAfterDeadline = async (paperId, sequence) => {
+  draftStorage?.save(answers)
+  const localDraft = draftStorage?.load() ?? null
+  const res = await getExamAttempt(paperId)
+  if (sequence !== loadSequence || paperId !== String(route.params.id)) return 'stale'
+  if (!isResultSuccess(res)) throw new Error(getResultMessage(res, '无法读取交卷状态'))
+  const latest = unwrapResultData(res)
+  if (!latest) {
+    autoRetryAt = Date.now() + 5000
+    return 'running'
+  }
+
+  setupAttemptState(latest, paperId, { draft: localDraft })
+  if (latest.status && latest.status !== 'RUNNING') {
+    autoFinishFailed.value = false
+    if (hasUnsubmittedChanges.value) {
+      ElMessage.warning('时间已到，未提交修改未计入成绩；本次分数按已提交答案统计')
+    } else {
+      ElMessage.info('时间到，已自动交卷')
+    }
+    return 'finished'
+  }
+  autoRetryAt = Date.now() + 5000
+  return latest.gradingPending ? 'grading' : 'running'
+}
+
 const finishSession = async (auto) => {
-  if (finishing.value) return
-  if (!auto && !window.confirm('确定交卷吗？交卷后不能继续作答。')) return
+  if (finishing.value || !sessionActive.value) return false
+  if (remaining.value === 0 && !auto) return finishSession(true)
+  if (submitting.value) {
+    if (auto) autoRetryAt = Date.now() + 1000
+    return false
+  }
+  const paperId = String(route.params.id)
+  const sequence = loadSequence
+  if (!auto) {
+    try {
+      await ElMessageBox.confirm('交卷后将无法继续修改答案，确定现在交卷吗？', '确认交卷', {
+        confirmButtonText: '确认交卷',
+        cancelButtonText: '继续作答',
+        type: 'warning'
+      })
+    } catch {
+      return false
+    }
+    if (sequence !== loadSequence || paperId !== String(route.params.id)) return false
+  }
+
   finishing.value = true
+  autoFinishFailed.value = false
   try {
-    const res = await finishExamAttempt(route.params.id)
-    attempt.value = unwrapResultData(res) || null
+    if (auto || remainingExamSeconds(deadlineAt) === 0) {
+      const status = await syncAttemptAfterDeadline(paperId, sequence)
+      if (status === 'finished') return true
+      if (status === 'stale' || status === 'grading') return false
+      autoFinishFailed.value = true
+      ElMessage.warning('正在确认服务端交卷状态，系统会继续重试')
+      return false
+    }
+    // Persist every visible choice before the server closes the attempt. If grading
+    // fails, leave the attempt running and keep both local and server state intact.
+    const answersSaved = await submitAnswers({ quiet: true, paperId, sequence })
+    if (!answersSaved) {
+      if (sequence !== loadSequence || paperId !== String(route.params.id)) return false
+      if (remainingExamSeconds(deadlineAt) === 0) {
+        try {
+          const status = await syncAttemptAfterDeadline(paperId, sequence)
+          if (status === 'finished') return true
+          if (status === 'stale') return false
+        } catch {
+          // Keep the attempt open locally and retry after the backoff below.
+        }
+      }
+      autoFinishFailed.value = true
+      ElMessage.error('答案提交失败，试卷仍未交卷。请检查网络后重试')
+      autoRetryAt = Date.now() + 5000
+      return false
+    }
+
+    const res = await finishExamAttempt(paperId)
+    if (sequence !== loadSequence || paperId !== String(route.params.id)) return false
+    if (!isResultSuccess(res)) {
+      autoFinishFailed.value = true
+      ElMessage.error(getResultMessage(res, '交卷失败，答案已保留，请重试'))
+      autoRetryAt = Date.now() + 5000
+      return false
+    }
+    const finishedAttempt = unwrapResultData(res)
+    if (!finishedAttempt) {
+      autoFinishFailed.value = true
+      ElMessage.error('未收到交卷结果，答案已保留，请重试')
+      autoRetryAt = Date.now() + 5000
+      return false
+    }
+    if (finishedAttempt.status === 'RUNNING') {
+      attempt.value = finishedAttempt
+      ElMessage.info('编程题仍在判题，请等待完成后再交卷')
+      return false
+    }
+    attempt.value = finishedAttempt
     stopTimer()
+    draftStorage?.clear()
+    draftStorage = null
     if (auto) ElMessage.info('时间到，已自动交卷')
+    return true
+  } catch (error) {
+    if (sequence !== loadSequence || paperId !== String(route.params.id)) return false
+    if (error?.errorCode === 'EXAM_ATTEMPT_GRADING_PENDING' || error?.response?.data?.errorCode === 'EXAM_ATTEMPT_GRADING_PENDING') {
+      autoFinishFailed.value = false
+      ElMessage.info('编程题仍在判题，客观题已保存。请等待判题完成后再次交卷')
+      return false
+    }
+    autoFinishFailed.value = true
+    ElMessage.error(auto ? '自动交卷暂未完成，系统会继续重试' : '交卷失败，答案已保留，请检查网络后重试')
+    autoRetryAt = Date.now() + 5000
+    return false
   } finally {
     finishing.value = false
   }
 }
 
-// 启动前先 stopTimer：重复调用会叠加 interval，倒计时会以两倍速度归零。
+const tickTimer = () => {
+  if (!sessionActive.value) return
+  remaining.value = remainingExamSeconds(deadlineAt)
+  if (remaining.value === 0 && Date.now() >= autoRetryAt) void finishSession(true)
+}
+
 const startTimer = () => {
   stopTimer()
-  timerId = setInterval(() => {
-    remaining.value -= 1
-    if (remaining.value <= 0) {
-      finishSession(true)
-    }
-  }, 1000)
+  tickTimer()
+  timerId = window.setInterval(tickTimer, 1000)
 }
 
 const stopTimer = () => {
-  if (timerId) {
-    clearInterval(timerId)
+  if (timerId != null) {
+    window.clearInterval(timerId)
     timerId = null
   }
 }
 
-const formatTime = (seconds) => {
-  const s = Math.max(0, seconds)
-  const h = Math.floor(s / 3600)
-  const m = Math.floor((s % 3600) / 60)
-  const sec = s % 60
-  const pad = (n) => String(n).padStart(2, '0')
-  return h > 0 ? `${pad(h)}:${pad(m)}:${pad(sec)}` : `${pad(m)}:${pad(sec)}`
+const onVisibilityChange = () => {
+  if (document.visibilityState === 'visible') tickTimer()
 }
 
-onMounted(async () => {
-  loading.value = true
-  try {
-    const res = await getExamPaperDetail(route.params.id)
-    paper.value = unwrapResultData(res) || null
-    ;(paper.value?.questions ?? []).forEach((q) => {
-      if (q.questionType === 'MULTIPLE') answers[q.id] = []
-      else answers[q.id] = ''
-    })
-    // 恢复进行中的会话：刷新或切走再回来，倒计时按服务端剩余时间续上，
-// 而不是从试卷总时长重新开始。
-    if (useUserStore().getAccessToken()) {
-      const res = await getExamAttempt(route.params.id)
-      attempt.value = unwrapResultData(res) || null
-      if (attempt.value?.status === 'RUNNING') {
-        remaining.value = attempt.value.remainingSeconds ?? 0
-        startTimer()
-      }
-    }
-  } finally {
-    loading.value = false
-  }
-})
+const formatTime = (seconds) => {
+  const safeSeconds = Math.max(0, seconds)
+  const hours = Math.floor(safeSeconds / 3600)
+  const minutes = Math.floor((safeSeconds % 3600) / 60)
+  const secs = safeSeconds % 60
+  const pad = (value) => String(value).padStart(2, '0')
+  return hours > 0 ? `${pad(hours)}:${pad(minutes)}:${pad(secs)}` : `${pad(minutes)}:${pad(secs)}`
+}
 
-// 必须停表：setInterval 不随组件销毁停止，会持续触发已失效的交卷请求。
-onUnmounted(stopTimer)
+watch(() => answers, saveAnswersDraft, { deep: true })
+watch(() => [route.params.id, userStore.userId], ([paperId]) => {
+  if (paperId != null) loadPaper(paperId)
+}, { immediate: true })
+
+document.addEventListener('visibilitychange', onVisibilityChange)
+onBeforeUnmount(() => {
+  ++loadSequence
+  stopTimer()
+  document.removeEventListener('visibilitychange', onVisibilityChange)
+})
 </script>
 
 <style scoped>
 .exam-paper-detail { min-height: 100vh; background: var(--bg-surface-hover); }
 .nav-header { padding: 8px 0; }
-.main-content { max-width: 1280px; margin: 0 auto; padding: 16px 24px; display: flex; flex-direction: column; gap: 16px; }
+.nav-title { max-width: min(62vw, 680px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.main-content { max-width: 1320px; margin: 0 auto; padding: 18px 24px 48px; display: flex; flex-direction: column; gap: 16px; }
+.paper-info { border-radius: 12px; }
 .info-header { display: flex; gap: 8px; }
-.info-title { font-size: 22px; font-weight: 700; margin-top: 10px; }
-.info-meta { display: flex; gap: 18px; color: var(--text-secondary); font-size: 13px; margin-top: 10px; }
-.info-desc { color: var(--text-regular); font-size: 14px; margin-top: 10px; white-space: pre-wrap; }
-.card-header { display: flex; justify-content: space-between; align-items: center; }
-.header-right { display: flex; align-items: center; gap: 10px; }
-.question-item { border: 1px solid var(--border-light); border-radius: 8px; padding: 14px; margin-bottom: 12px; }
-.question-head { display: flex; align-items: center; gap: 8px; }
-.question-no { font-weight: 700; font-size: 15px; }
-.question-statement { font-size: 15px; margin: 8px 0 12px; white-space: pre-wrap; line-height: 1.6; }
-.option-group { display: flex; flex-direction: column; gap: 6px; }
-.option-row { display: flex; margin-right: 0; height: auto; white-space: normal; }
-.boolean-group { flex-direction: row; align-items: center; gap: 16px; }
-.boolean-group .option-row { align-items: center; }
-.question-result { margin-top: 10px; font-size: 13px; padding: 8px 10px; border-radius: 6px; }
+.info-title { font-size: 24px; line-height: 1.35; font-weight: 700; margin: 12px 0 0; color: var(--text-primary); }
+.info-meta { display: flex; flex-wrap: wrap; gap: 18px; color: var(--text-secondary); font-size: 13px; margin-top: 11px; }
+.info-desc { color: var(--text-regular); font-size: 14px; line-height: 1.6; margin-top: 12px; white-space: pre-wrap; }
+.session-card { border-radius: 12px; }
+.start-panel { display: flex; justify-content: space-between; align-items: center; gap: 24px; }
+.start-copy { display: flex; align-items: flex-start; gap: 14px; }
+.start-icon { width: 42px; height: 42px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 12px; background: var(--bg-surface-hover); color: var(--accent-primary); font-size: 20px; }
+.start-title { font-size: 16px; font-weight: 650; color: var(--text-primary); }
+.start-copy p { margin: 5px 0 0; color: var(--text-secondary); font-size: 13px; line-height: 1.55; }
+.session-toolbar { position: sticky; top: 8px; z-index: 8; border-radius: 12px; box-shadow: 0 8px 28px rgba(0, 0, 0, .06); }
+.session-main { display: flex; align-items: center; gap: 26px; }
+.timer-block { display: flex; flex-direction: column; min-width: 112px; }
+.timer-label { color: var(--text-secondary); font-size: 11px; }
+.timer { font-size: 25px; line-height: 1.25; color: var(--accent-primary); font-variant-numeric: tabular-nums; }
+.timer-warn { color: var(--accent-danger); }
+.progress-block { width: min(210px, 22vw); }
+.progress-copy { display: flex; align-items: baseline; gap: 6px; margin-bottom: 6px; font-size: 12px; color: var(--text-secondary); }
+.progress-copy strong { font-size: 14px; color: var(--text-primary); }
+.session-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.save-hint { margin-right: 4px; font-size: 12px; color: var(--text-secondary); }
+.save-hint-error, .timeout-hint { color: var(--accent-danger); }
+.timeout-hint { margin-top: 10px; font-size: 12px; }
+.result-summary { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
+.score-item, .score-total { display: flex; flex-direction: column; gap: 2px; color: var(--text-secondary); font-size: 12px; }
+.score-item strong { color: var(--text-primary); font-size: 18px; }
+.score-total strong { color: var(--accent-primary); font-size: 22px; }
+.timeout-result-alert { margin-top: 16px; }
+.result-summary .el-button { margin-left: auto; }
+.answer-layout { display: grid; grid-template-columns: minmax(0, 1fr) 270px; align-items: start; gap: 16px; }
+.question-column { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.question-card, .problem-card, .navigator-card { border-radius: 12px; }
+.answer-sidebar { position: sticky; top: 124px; }
+.navigator-heading { display: flex; align-items: center; justify-content: space-between; }
+.navigator-heading strong { font-size: 15px; }
+.navigator-heading span { font-size: 12px; color: var(--text-secondary); }
+.navigator-legend { display: flex; gap: 14px; margin: 0 0 14px; color: var(--text-secondary); font-size: 11px; }
+.navigator-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.legend-dot { width: 9px; height: 9px; border: 1px solid var(--border-light); border-radius: 50%; background: var(--bg-surface); }
+.legend-answered { border-color: var(--accent-primary); background: var(--accent-primary); }
+.legend-unsubmitted { border-color: var(--accent-warning); border-style: dashed; background: var(--accent-warning-light); }
+.question-nav-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 7px; margin-bottom: 16px; }
+.question-nav-button { aspect-ratio: 1; border: 1px solid var(--border-light); border-radius: 8px; background: var(--bg-surface); color: var(--text-regular); cursor: pointer; font: inherit; font-size: 12px; transition: border-color .15s ease, background-color .15s ease; }
+.question-nav-button:hover, .question-nav-button:focus-visible { border-color: var(--accent-primary); outline: none; }
+.question-nav-button.nav-answered { border-color: var(--accent-primary); background: var(--accent-primary); color: var(--text-on-accent, #fff); }
+.question-nav-button.nav-correct { border-color: var(--accent-success); background: var(--accent-success); color: #fff; }
+.question-nav-button.nav-incorrect { border-color: var(--accent-danger); background: var(--accent-danger); color: #fff; }
+.question-nav-button.nav-unsubmitted { border-color: var(--accent-warning); border-style: dashed; background: var(--accent-warning-light); color: var(--text-primary); }
+.navigator-footnote { margin-top: 12px; color: var(--text-secondary); font-size: 11px; line-height: 1.5; }
+.card-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.card-header h2 { margin: 0; font-size: 16px; color: var(--text-primary); }
+.card-header > div > span, .card-header > span { color: var(--text-secondary); font-size: 12px; }
+.card-header > div > span { display: block; margin-top: 3px; }
+.question-item { scroll-margin-top: 120px; border: 1px solid var(--border-light); border-radius: 10px; padding: 16px; margin-bottom: 12px; background: var(--bg-surface); }
+.question-item:last-child { margin-bottom: 0; }
+.question-item-answered { border-color: color-mix(in srgb, var(--accent-primary) 32%, var(--border-light)); }
+.question-head { display: flex; align-items: center; gap: 10px; }
+.question-no { width: 28px; height: 28px; flex: 0 0 auto; border-radius: 8px; display: grid; place-items: center; background: var(--bg-surface-hover); color: var(--text-primary); font-weight: 700; font-size: 13px; }
+.question-head-meta { display: flex; flex-wrap: wrap; gap: 6px; }
+.question-status { margin-left: auto; color: var(--text-secondary); font-size: 11px; }
+.question-statement { font-size: 15px; margin: 12px 0 14px; white-space: pre-wrap; line-height: 1.7; color: var(--text-primary); }
+.option-group { display: flex; flex-direction: column; gap: 5px; }
+.option-row { width: 100%; display: flex; margin-right: 0; height: auto; min-height: 38px; white-space: normal; border: 1px solid transparent; border-radius: 8px; padding: 8px 10px; }
+.option-row:hover { background: var(--bg-surface-hover); }
+.option-markdown { color: var(--text-primary); line-height: 1.55; }
+.boolean-group { flex-direction: row; gap: 10px; }
+.boolean-group .option-row { width: auto; min-width: 96px; }
+.question-result { margin-top: 12px; font-size: 13px; padding: 10px 12px; border-radius: 8px; line-height: 1.5; }
 .option-markdown :deep(p), .question-statement :deep(p), .explanation :deep(p) { margin: 0; }
 .explanation { margin-top: 8px; padding-top: 8px; border-top: 1px solid currentColor; }
 .result-ok { background: var(--accent-success-light); color: var(--accent-success); }
 .result-bad { background: var(--accent-danger-light); color: var(--accent-danger); }
-.hover-link { color: var(--accent-primary); cursor: pointer; }
-.session-row { display: flex; align-items: center; gap: 12px; }
-.session-tip { flex: 1; color: var(--text-regular); font-size: 13px; }
-.timer { font-size: 22px; font-weight: 700; color: var(--accent-primary); font-variant-numeric: tabular-nums; }
-.timer-warn { color: var(--accent-danger); }
-.session-result { gap: 18px; font-size: 14px; }
-.session-result .total { font-size: 18px; font-weight: 700; color: var(--accent-primary); }
+.problem-list { display: flex; flex-direction: column; }
+.problem-row { display: flex; align-items: center; gap: 12px; padding: 13px 2px; }
+.problem-row + .problem-row { border-top: 1px solid var(--border-light); }
+.problem-order { width: 30px; height: 30px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 8px; color: var(--text-secondary); background: var(--bg-surface-hover); font-size: 12px; font-weight: 650; }
+.problem-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.problem-info strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); font-size: 14px; }
+.problem-info span { color: var(--text-secondary); font-size: 12px; }
+.problem-link { flex: 0 0 auto; margin-left: auto; text-decoration: none; color: var(--accent-primary); font-size: 13px; }
+@media (max-width: 900px) {
+  .answer-layout { grid-template-columns: minmax(0, 1fr) 220px; gap: 12px; }
+  .session-main { gap: 16px; }
+  .save-hint { width: 100%; font-size: 10px; line-height: 1.35; }
+}
+@media (max-width: 720px) {
+  .nav-header { min-width: 0; width: 100%; overflow: hidden; }
+  .nav-header :deep(.el-page-header__title), .nav-header :deep(.el-divider--vertical) { display: none; }
+  .nav-header :deep(.el-page-header__left) { margin-right: 8px; flex-shrink: 0; }
+  .nav-header :deep(.el-page-header__content) { min-width: 0; overflow: hidden; display: block; }
+  .nav-title { display: block; max-width: 100%; font-size: 14px; }
+  .main-content { padding: 12px 12px 36px; gap: 12px; }
+  .info-title { font-size: 20px; }
+  .start-panel { align-items: stretch; flex-direction: column; gap: 16px; }
+  .start-panel > .el-button { width: 100%; }
+  .session-toolbar { top: 4px; }
+  .session-main { align-items: center; flex-wrap: wrap; gap: 10px 14px; }
+  .timer-block { min-width: 88px; }
+  .timer { font-size: 21px; }
+  .progress-block { flex: 1; width: auto; min-width: 110px; }
+  .session-actions { width: 100%; margin-left: 0; flex-wrap: wrap; }
+  .save-hint { flex: 0 0 100%; margin: 0; line-height: 1.6; font-size: 11px; }
+  .session-actions .el-button { flex: 1; min-width: 0; margin-left: 0; }
+  .progress-copy { flex-wrap: wrap; }
+  .progress-copy strong { white-space: nowrap; }
+  .answer-layout { display: flex; flex-direction: column; }
+  .answer-sidebar { position: static; width: 100%; order: -1; }
+  .navigator-card :deep(.el-card__body) { padding: 12px; }
+  .question-nav-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); margin-bottom: 12px; }
+  .question-item { padding: 13px; scroll-margin-top: 170px; }
+  .question-status { display: none; }
+  .problem-row { gap: 9px; }
+  .problem-info strong { max-width: 44vw; }
+  .result-summary { gap: 14px; }
+  .result-summary .el-button { width: 100%; margin-left: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .question-nav-button { transition: none; }
+}
 </style>

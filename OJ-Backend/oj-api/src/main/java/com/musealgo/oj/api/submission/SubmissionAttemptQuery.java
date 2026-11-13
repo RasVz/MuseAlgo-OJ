@@ -16,9 +16,14 @@ public interface SubmissionAttemptQuery {
      * @param problemIds  题目 ID 集合
      * @param from        时间窗起点（含）
      * @param to          时间窗终点（含）
-     * @return 每题最好成绩列表（未提交的题目不出现在结果中）
+     * @return 每题最好成绩列表（未提交的题目不出现在结果中），只包含普通练习提交
      */
     List<SubmissionAttemptScore> findBestScores(
+            Long userId, Collection<Long> problemIds,
+            LocalDateTime from, LocalDateTime to);
+
+    /** 尚在判题中的普通练习提交数；交卷前等待这些提交进入终态。 */
+    long countPending(
             Long userId, Collection<Long> problemIds,
             LocalDateTime from, LocalDateTime to);
 

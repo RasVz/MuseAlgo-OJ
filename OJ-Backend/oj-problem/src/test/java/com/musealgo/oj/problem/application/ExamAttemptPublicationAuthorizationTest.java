@@ -76,7 +76,7 @@ class ExamAttemptPublicationAuthorizationTest {
     void administratorMayStartAnUnpublishedPaper() {
         login(2L, "ROLE_ADMIN");
         when(examPaperMapper.selectByIdForUpdate(9L)).thenReturn(draftPaper());
-        when(examAttemptMapper.selectOne(org.mockito.ArgumentMatchers.any())).thenReturn(null);
+        when(examAttemptMapper.selectRunningByPaperUserForUpdate(9L, 2L)).thenReturn(null);
         org.mockito.Mockito.doAnswer(invocation -> {
             ((com.musealgo.oj.problem.entity.ExamAttempt) invocation.getArgument(0)).setId(12L);
             return 1;
@@ -84,6 +84,29 @@ class ExamAttemptPublicationAuthorizationTest {
                 com.musealgo.oj.problem.entity.ExamAttempt.class));
 
         assertDoesNotThrow(() -> service.startAttempt(9L, 2L));
+    }
+
+    @Test
+    void unpublishedPaperAllowsOnlyItsExistingAttemptToContinue() {
+        ExamPaper paper = draftPaper();
+        when(examPaperMapper.selectById(9L)).thenReturn(paper);
+        when(examPaperMapper.selectByIdForUpdate(9L)).thenReturn(paper);
+        var attempt = new com.musealgo.oj.problem.entity.ExamAttempt();
+        attempt.setId(12L);
+        attempt.setPaperId(9L);
+        attempt.setUserId(41L);
+        attempt.setStatus(com.musealgo.oj.problem.entity.ExamAttempt.STATUS_RUNNING);
+        attempt.setStartTime(java.time.LocalDateTime.now().minusMinutes(1));
+        attempt.setEndTime(java.time.LocalDateTime.now().plusMinutes(59));
+        when(examAttemptMapper.selectRunningByPaperUserForUpdate(9L, 41L)).thenReturn(attempt);
+        when(examAnswerMapper.selectList(org.mockito.ArgumentMatchers.any())).thenReturn(List.of());
+        when(examPaperProblemMapper.selectList(org.mockito.ArgumentMatchers.any())).thenReturn(List.of());
+
+        assertDoesNotThrow(() -> service.getAttempt(9L, 41L));
+        assertDoesNotThrow(() -> service.submitAnswers(9L, 41L, new ExamAnswerSubmitDTO()));
+        assertDoesNotThrow(() -> service.finishAttempt(9L, 41L));
+        assertThrows(ForbiddenException.class, () -> service.startAttempt(9L, 41L));
+        assertThrows(ForbiddenException.class, () -> service.getAttempt(9L, 42L));
     }
 
     private static ExamPaper draftPaper() {

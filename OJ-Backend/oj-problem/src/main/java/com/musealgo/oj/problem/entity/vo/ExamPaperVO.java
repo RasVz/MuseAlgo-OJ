@@ -20,6 +20,7 @@ public class ExamPaperVO {
     private Integer totalScore;
     private Integer problemCount;
     private Integer isPublished;
+    private Boolean hasAttempts;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 
@@ -74,5 +75,11 @@ public class ExamPaperVO {
         private Integer codingScore;
         private Integer totalScore;
         private Integer gespLevel;
+    }
+
+    @Data
+    public static class ExamAttemptAnswerVO {
+        private Long questionId;
+        private String answer;
     }
 }
