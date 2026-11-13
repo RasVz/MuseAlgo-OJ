@@ -46,7 +46,7 @@
         <el-table-column label="操作" width="210" align="center" class-name="op-cell">
           <template #default="{ row }">
             <el-button type="primary" link @click="openEdit(row)">编辑</el-button>
-            <el-button type="primary" link @click="onCopy(row)">复制</el-button>
+            <el-button type="primary" link :loading="copyingPaperId === row.id" :disabled="copyingPaperId !== null" @click="onCopy(row)">复制</el-button>
             <el-button type="success" link @click="openStats(row)">成绩</el-button>
             <el-button type="danger" link @click="onDelete(row)">删除</el-button>
           </template>
@@ -185,19 +185,24 @@ const attemptRows = ref([])
 const attemptPage = ref(1)
 const attemptPageSize = 20
 const attemptTotal = ref(0)
+const copyingPaperId = ref(null)
 let statsRequestSequence = 0
+let attemptRequestSequence = 0
+let listRequestSequence = 0
 
 const fetchList = async () => {
+  const sequence = ++listRequestSequence
   loading.value = true
   try {
     const res = await getExamPaperList({ page: currentPage.value, size: pageSize.value, keyword: keyword.value.trim() || undefined, category: category.value || undefined })
+    if (sequence !== listRequestSequence) return
     const data = unwrapResultData(res) || {}
     papers.value = data.records ?? []
     total.value = data.total ?? 0
   } catch (error) {
-    ElMessage.error(error?.message || '获取试卷失败，请重试')
+    if (sequence === listRequestSequence) ElMessage.error(error?.message || '获取试卷失败，请重试')
   } finally {
-    loading.value = false
+    if (sequence === listRequestSequence) loading.value = false
   }
 }
 
@@ -243,13 +248,21 @@ const onDelete = async (row) => {
 }
 
 const onCopy = async (row) => {
-  const res = await copyExamPaper(row.id)
-  if (!isResultSuccess(res)) {
-    ElMessage.error(getResultMessage(res, '复制失败'))
-    return
+  if (copyingPaperId.value !== null) return
+  copyingPaperId.value = row.id
+  try {
+    const res = await copyExamPaper(row.id)
+    if (!isResultSuccess(res)) {
+      ElMessage.error(getResultMessage(res, '复制失败'))
+      return
+    }
+    ElMessage.success('已复制为草稿副本')
+    await fetchList()
+  } catch (error) {
+    ElMessage.error(error?.message || '复制失败')
+  } finally {
+    copyingPaperId.value = null
   }
-  ElMessage.success('已复制为草稿副本')
-  fetchList()
 }
 
 const openStats = async (row) => {
@@ -261,6 +274,7 @@ const openStats = async (row) => {
   attemptRows.value = []
   attemptTotal.value = 0
   attemptPage.value = 1
+  attemptRequestSequence += 1
   fetchStats(row.id, sequence)
 }
 
@@ -273,23 +287,25 @@ const fetchStats = async (paperId, sequence) => {
   } finally {
     if (sequence === statsRequestSequence) statsLoading.value = false
   }
-  fetchAttempts(attemptPage.value, sequence)
+  if (sequence !== statsRequestSequence) return
+  await fetchAttempts(attemptPage.value, sequence, paperId)
 }
 
-const fetchAttempts = async (page = attemptPage.value, sequence = statsRequestSequence) => {
-  if (!statsPaper.value) return
+const fetchAttempts = async (page = attemptPage.value, sequence = statsRequestSequence, paperId = statsPaper.value?.id) => {
+  if (!paperId || sequence !== statsRequestSequence) return
+  const requestSequence = ++attemptRequestSequence
   attemptPage.value = page
   attemptLoading.value = true
   try {
-    const result = await getExamPaperAttempts(statsPaper.value.id, { page, size: attemptPageSize })
-    if (sequence !== statsRequestSequence) return
+    const result = await getExamPaperAttempts(paperId, { page, size: attemptPageSize })
+    if (sequence !== statsRequestSequence || requestSequence !== attemptRequestSequence) return
     const data = unwrapResultData(result) || {}
     attemptRows.value = data.records ?? []
     attemptTotal.value = data.total ?? 0
   } catch (error) {
-    if (sequence === statsRequestSequence) ElMessage.error(error?.message || '获取成绩明细失败')
+    if (sequence === statsRequestSequence && requestSequence === attemptRequestSequence) ElMessage.error(error?.message || '获取成绩明细失败')
   } finally {
-    if (sequence === statsRequestSequence) attemptLoading.value = false
+    if (sequence === statsRequestSequence && requestSequence === attemptRequestSequence) attemptLoading.value = false
   }
 }
 

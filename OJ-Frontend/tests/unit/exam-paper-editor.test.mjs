@@ -18,6 +18,13 @@ test('batch import is atomic and reports malformed rows with their line number',
   assert.match(result.errors[0], /第 2 行/)
 })
 
+test('judge batch rows accept the documented blank-option form and reject empty scores or trailing separators', () => {
+  assert.equal(parseBatchQuestions('JUDGE|题干||错|5').questions[0].answer, 'F')
+  for (const row of ['JUDGE|题干|对|', 'JUDGE|题干|对|5|', 'JUDGE|题干|选项|对|5']) {
+    assert.equal(parseBatchQuestions(row).questions.length, 0, row)
+  }
+})
+
 test('next option key uses the first unused letter after deleting a middle option', () => {
   assert.equal(nextOptionKey([{ key: 'A' }, { key: 'C' }]), 'B')
   assert.equal(nextOptionKey([{ key: 'a' }, { key: 'B' }]), 'C')
@@ -35,4 +42,10 @@ test('question validation rejects empty statements, duplicate option keys and mi
     { questionType: 'SINGLE', statement: 'valid stem', options: [{ key: 'A', text: 'one' }, { key: 'B', text: 'two' }], answer: 'C', score: 5 }
   ])
   assert.equal(errors.length, 3)
+})
+
+test('question validation sees empty option text instead of silently dropping it', () => {
+  const errors = validatePaperQuestions([{ questionType: 'SINGLE', statement: '题干', options: [{ key: 'A', text: '选项' }, { key: 'B', text: '' }], answer: 'A', score: 5 }])
+  assert.equal(errors.length, 1)
+  assert.match(errors[0], /选项至少两项/)
 })

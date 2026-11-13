@@ -362,12 +362,12 @@ const onSave = async () => {
     ElMessage.warning(questionErrors[0])
     return
   }
-  if (form.value.isPublished === 1 && scoreMismatch.value) {
+  if (!structureLocked.value && form.value.isPublished === 1 && scoreMismatch.value) {
     ElMessage.warning(`当前试卷合计 ${currentTotalScore.value} 分，需与满分 ${form.value.totalScore} 分一致后才能发布`)
     return
   }
-  if (form.value.isPublished !== 1 && scoreMismatch.value) {
-    ElMessage.info(`草稿合计 ${currentTotalScore.value} 分，与满分 ${form.value.totalScore} 分不一致`)
+  if (scoreMismatch.value) {
+    ElMessage.info(`当前组卷合计 ${currentTotalScore.value} 分，与满分 ${form.value.totalScore} 分不一致`)
   }
   saving.value = true
   try {
