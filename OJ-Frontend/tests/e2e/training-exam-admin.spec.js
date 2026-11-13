@@ -8,13 +8,13 @@ const paper = (id = 1) => ({ id, title: `模拟训练卷 ${id}`, category: 'MOCK
   questions: [{ id: 21, questionType: 'JUDGE', statement: '一加一等于二。', answer: 'T', options: [], score: 20, explanation: '成立' }] })
 async function fixture(page, state = {}) {
   state.requests = []; state.saves = []
-  await page.addInitScript(() => { localStorage.setItem('accessToken', 'synthetic-admin'); localStorage.setItem('user', JSON.stringify({ id: 3, username: 'admin', role: 3 })) })
+  await page.addInitScript(role => { localStorage.setItem('accessToken', 'synthetic-admin'); localStorage.setItem('user', JSON.stringify({ id: 3, username: 'synthetic', role })) }, state.role ?? 3)
   await page.route('**/api/**', async (route) => {
     const req = route.request(), url = new URL(req.url()), path = url.pathname
     if (!path.startsWith("/api/")) return route.continue()
     state.requests.push({ path, params: Object.fromEntries(url.searchParams) })
     let data = []
-    if (path === '/api/user/info') data = { id: 3, username: 'admin', role: 3 }
+    if (path === '/api/user/info') data = { id: 3, username: 'synthetic', role: state.role ?? 3 }
     else if (path === '/api/exam-paper/list') data = { records: [paper(Number(url.searchParams.get('page') || 1))], total: 42 }
     else if (/\/exam-paper\/\d+\/stats$/.test(path)) data = { attemptCount: 2, totalScore: 100, avgObjective: 10, avgCoding: 40, avgTotal: 50, questionStats: [{ questionOrder: 1, statement: '一加一等于二', correctCount: 1, attemptCount: 2, correctRate: 50 }], distribution: [{ bucket: '60-69', count: 1 }], gespDistribution: [] }
     else if (/\/exam-paper\/\d+\/attempts$/.test(path)) data = { total: 41, records: [{ id: 1, username: `明细第${url.searchParams.get('page')}页`, status: 'SUBMITTED', totalScore: 60 }] }
@@ -26,6 +26,16 @@ async function fixture(page, state = {}) {
   return state
 }
 const title = (page) => page.getByPlaceholder('如：GESP 2级 2024-09 真题')
+for (const role of [1, 2]) {
+  test(`角色 ${role} 不能通过直接输入地址进入试卷管理`, async ({ page }) => {
+    const state = await fixture(page, { role })
+    for (const path of ['/admin/exam-paper', '/admin/exam-paper/create', '/admin/exam-paper/edit/1']) {
+      await page.goto(path)
+      await expect(page).toHaveURL(/\/admin$/)
+    }
+    expect(state.requests.filter(request => request.path.startsWith('/api/exam-paper'))).toEqual([])
+  })
+}
 test('管理列表搜索分类与后续页使用服务端参数', async ({ page }) => {
   const state = await fixture(page); await page.goto('/admin/exam-paper')
   await expect(page.getByText('模拟训练卷 1', { exact: true })).toBeVisible()
