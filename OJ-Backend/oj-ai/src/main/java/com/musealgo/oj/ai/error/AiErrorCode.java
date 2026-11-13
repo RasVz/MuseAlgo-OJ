@@ -15,6 +15,7 @@ public enum AiErrorCode implements ErrorCode {
     AI_REVIEW_SUBMISSION_NOT_FOUND(404, "提交不存在"),
     AI_INPUT_INVALID(400, "请求参数不合法"),
     AI_PROMPT_NOT_FOUND(404, "模板不存在: "),
+    AI_DRAFT_NOT_FOUND(404, "草稿不存在或已删除"),
     AI_STATE_CONFLICT(409, "当前状态不允许该操作");
 
     private final int status;

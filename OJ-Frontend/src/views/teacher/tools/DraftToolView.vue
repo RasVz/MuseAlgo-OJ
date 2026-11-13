@@ -1,302 +1,834 @@
 <template>
-  <div class="tool-page admin-scroll-page">
-    <div class="page-header">
-      <div class="page-title">题面生成</div>
-      <div class="page-desc">输入命题要求，AI 生成完整题面（标题 / 描述 / 输入输出格式 / 样例 / 数据范围）</div>
+  <div class="draft-page">
+    <header class="draft-head">
+      <div class="head-main">
+        <div class="head-title-row">
+          <h1 class="head-title">题面生成</h1>
+          <el-tag v-if="activeDraft" size="small" effect="plain" :type="activeStatus.type">
+            {{ activeStatus.label }}
+          </el-tag>
+          <span v-if="activeDraft && !activeStatus.terminal" class="head-elapsed">
+            {{ activeStatus.phaseLabel }} · 已等待 {{ formatElapsed(activeDraft.elapsedMs) }}
+          </span>
+        </div>
+        <p class="head-desc">
+          填写命题简报，AI 生成完整题面；结果会保存到历史，可逐字段修改、定向重写，确认后再落库为私有题目。
+        </p>
+      </div>
+      <div class="head-actions">
+        <el-button v-if="activeDraft?.cancellable" size="small" @click="cancelActive">取消</el-button>
+        <el-button text :aria-expanded="collapsed ? 'false' : 'true'" aria-controls="draft-brief" @click="toggleBrief">
+          {{ collapsed ? '展开简报' : '收起简报' }}
+        </el-button>
+        <el-button :icon="Clock" @click="openHistory">历史</el-button>
+        <el-button type="primary" plain :disabled="busy" @click="startNew">新建</el-button>
+      </div>
+    </header>
+
+    <div class="draft-body" :class="{ 'is-collapsed': collapsed }">
+      <section id="draft-brief" class="draft-col draft-col-brief">
+        <DraftBriefPanel
+          v-if="!collapsed"
+          :brief="brief"
+          :variants="variants"
+          :disabled="busy"
+          :busy="busy"
+          :collapsed="false"
+          :prompt-preview="promptPreview"
+          :prompt-loading="promptLoading"
+          @update:brief="onBriefChange"
+          @update:variants="variants = $event"
+          @generate="generate"
+          @preview-prompt="previewPrompt"
+          @quick-start="applyQuickStart"
+        />
+        <button v-else type="button" class="brief-rail" @click="toggleBrief">
+          <el-icon><Document /></el-icon>
+          <span>命题简报</span>
+        </button>
+      </section>
+
+      <section class="draft-col draft-col-canvas">
+        <div v-if="!activeDraft" class="empty-state">
+          <el-icon class="empty-icon"><MagicStick /></el-icon>
+          <h2>还没有生成结果</h2>
+          <p>在左侧选好知识点与难度，点「生成题面」。一次可以生成 1~3 个方案做对比。</p>
+          <p class="empty-hint">生成在服务端执行，关掉页面也不会丢；回到本页会自动恢复最近一次结果。</p>
+        </div>
+        <DraftCanvas
+          v-else
+          :draft="detail || activeDraft"
+          :variants="items"
+          :active-id="activeId"
+          :editing-field="editingField"
+          :similar="similar"
+          @update:active-id="switchVariant"
+          @toggle-edit="editingField = $event"
+          @update:content="onContentChange"
+          @refresh-similar="loadSimilar"
+          @retry="retryActive"
+          @delete="removeActive"
+        />
+      </section>
+
+      <section class="draft-col draft-col-review">
+        <DraftReviewPanel
+          :draft="detail || activeDraft"
+          :saving="saving"
+          :can-save="Boolean(detail) && activeDraft?.status === 'READY'"
+          @save="saveActive"
+          @rewrite="rewriteActive"
+          @locate-issue="locateIssue"
+        />
+      </section>
     </div>
 
-    <div class="panel">
-      <el-form label-position="top">
-        <el-row :gutter="16">
-          <el-col :span="8">
-            <el-form-item label="知识点">
-              <el-select v-model="req.knowledgePoint" filterable allow-create default-first-option style="width: 100%">
-                <el-option v-for="k in knowledgePoints" :key="k" :label="k" :value="k" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="难度">
-              <el-select v-model="req.difficulty" style="width: 100%">
-                <el-option v-for="d in difficulties" :key="d" :label="d" :value="d" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="数据规模">
-              <el-input v-model="req.scale" placeholder="如 n ≤ 10^5" />
-            </el-form-item>
-          </el-col>
-        </el-row>
-        <el-form-item label="场景设定（可选，留空由 AI 自由发挥）">
-          <el-input v-model="req.scenario" type="textarea" :rows="2"
-            placeholder="如：教室排队，按身高站队；小慕收集知识星…" />
-        </el-form-item>
-        <el-form-item label="附加要求（可选）">
-          <el-input v-model="req.extra" type="textarea" :rows="2"
-            placeholder="如：不要涉及位运算；输出带提示语；样例要 3 组…" />
-        </el-form-item>
-        <div class="foot">
-          <el-switch v-model="req.ipMode" active-text="启用睿思星球世界观命名" />
-          <span class="hint">开启后自动使用小慕 / 思思 / 睿思学院等原创 IP 元素</span>
-          <el-button type="primary" size="large" class="gen-btn" :loading="generating" @click="generate">
-            ✨ 生成题面
-          </el-button>
-        </div>
-      </el-form>
-    </div>
+    <DraftHistoryDrawer
+      v-model="historyVisible"
+      :items="historyItems"
+      :loading="historyLoading"
+      :total="historyTotal"
+      :page="historyPage"
+      :page-size="historySize"
+      @open="openFromHistory"
+      @remove="removeFromHistory"
+      @reuse-brief="reuseBrief"
+      @page-change="loadHistory"
+      @refresh="loadHistory(historyPage)"
+    />
 
-    <div v-if="statement.title" v-loading="generating" class="panel result">
-      <div class="result-head">
-        <div class="result-title">{{ statement.title }}</div>
-        <div class="result-actions">
-          <el-button size="small" @click="copyText(statementMarkdown, '题面已复制')">复制题面</el-button>
-          <el-button size="small" type="primary" :loading="saving" @click="saveProblem">保存为私有题目</el-button>
-        </div>
-      </div>
-      <div class="result-meta">
-        <el-tag v-for="t in statement.tags" :key="t" size="small" type="primary" effect="light" class="tag">{{ t }}</el-tag>
-        <span class="diff">{{ difficultyLabel }} · {{ statement.difficultyScore }} 分</span>
-        <span class="samples">样例 {{ statement.samples.length }} 组</span>
-      </div>
-      <el-alert v-if="savedId" type="success" :closable="false" class="saved-tip"
-        :title="`已保存为私有草稿 #${savedId}，可去题目编辑器继续完善`" />
-      <el-divider />
-      <div class="split">
-        <div class="preview-col">
-          <div class="sub-title">渲染预览</div>
-          <div class="preview-card">
-            <div class="markdown-body custom-md" v-html="renderMarkdown(statement.content)" />
-            <template v-if="statement.inputDesc">
-              <h4 class="sec">输入格式</h4>
-              <div class="markdown-body custom-md" v-html="renderMarkdown(statement.inputDesc)" />
-            </template>
-            <template v-if="statement.outputDesc">
-              <h4 class="sec">输出格式</h4>
-              <div class="markdown-body custom-md" v-html="renderMarkdown(statement.outputDesc)" />
-            </template>
-            <template v-if="statement.samples.length">
-              <h4 class="sec">样例</h4>
-              <div v-for="(s, i) in statement.samples" :key="i" class="sample-block">
-                <div class="sample-label">样例 {{ i + 1 }}</div>
-                <div class="sample-row">
-                  <div class="sample-col"><div class="sample-col-title">输入</div><pre class="sample-pre">{{ s.input }}</pre></div>
-                  <div class="sample-col"><div class="sample-col-title">输出</div><pre class="sample-pre">{{ s.output }}</pre></div>
-                </div>
-                <div v-if="s.explanation" class="sample-exp">解释：{{ s.explanation }}</div>
-              </div>
-            </template>
-            <template v-if="statement.hint">
-              <h4 class="sec">提示</h4>
-              <div class="markdown-body custom-md" v-html="renderMarkdown(statement.hint)" />
-            </template>
-          </div>
-        </div>
-        <div class="edit-col">
-          <div class="sub-title">可编辑字段（修改实时生效）</div>
-          <el-form label-position="top" size="small">
-            <el-form-item label="标题"><el-input v-model="statement.title" /></el-form-item>
-            <el-row :gutter="12">
-              <el-col :span="12">
-                <el-form-item label="难度分">
-                  <el-input-number v-model="statement.difficultyScore" :min="800" :max="3000" :step="100" style="width: 100%" />
-                </el-form-item>
-              </el-col>
-              <el-col :span="12">
-                <el-form-item label="标签（逗号分隔）">
-                  <el-input v-model="tagsText" placeholder="模拟,贪心" />
-                </el-form-item>
-              </el-col>
-            </el-row>
-            <el-form-item label="题目描述（Markdown，含数据范围）">
-              <el-input v-model="statement.content" type="textarea" :rows="9" />
-            </el-form-item>
-            <el-form-item label="输入格式"><el-input v-model="statement.inputDesc" type="textarea" :rows="2" /></el-form-item>
-            <el-form-item label="输出格式"><el-input v-model="statement.outputDesc" type="textarea" :rows="2" /></el-form-item>
-            <el-form-item label="提示（可选）"><el-input v-model="statement.hint" type="textarea" :rows="2" /></el-form-item>
-            <div class="sub-label">样例（{{ statement.samples.length }} 组）</div>
-            <div v-for="(s, i) in statement.samples" :key="i" class="sample-edit">
-              <div class="sample-edit-head">
-                <span>样例 {{ i + 1 }}</span>
-                <el-button text type="danger" size="small" @click="statement.samples.splice(i, 1)">删除</el-button>
-              </div>
-              <el-input v-model="s.input" type="textarea" :rows="2" placeholder="输入" />
-              <el-input v-model="s.output" type="textarea" :rows="2" placeholder="输出" class="mt8" />
-              <el-input v-model="s.explanation" placeholder="样例解释（可选）" class="mt8" />
-            </div>
-            <el-button size="small" @click="statement.samples.push({ input: '', output: '', explanation: '' })">+ 添加样例</el-button>
-          </el-form>
-        </div>
-      </div>
-    </div>
+    <p class="sr-only" role="status" aria-live="polite">{{ liveMessage }}</p>
   </div>
 </template>
 
 <script setup>
+// 题面生成工作台：左简报、中画布、右审阅。
+//
+// 关键设计：模型调用在服务端异步执行，页面只负责受理与轮询。
+// 因此关掉页面不会丢结果，重新进入时按「最近一条未完成或 24 小时内的结果」自动恢复。
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Clock, Document, MagicStick } from '@element-plus/icons-vue'
 import { showApiError } from '@/utils/errorFeedback'
+import { isResultSuccess, unwrapResultData, getResultMessage } from '@/utils/response'
+import {
+  cancelDraft,
+  createDraft,
+  deleteDraft,
+  getDraft,
+  listDrafts,
+  previewDraftPrompt,
+  retryDraft,
+  rewriteDraft,
+  saveDraft,
+  similarDrafts,
+  updateDraftContent
+} from '@/api/teacherAi'
+import DraftBriefPanel from './draft/DraftBriefPanel.vue'
+import DraftCanvas from './draft/DraftCanvas.vue'
+import DraftReviewPanel from './draft/DraftReviewPanel.vue'
+import DraftHistoryDrawer from './draft/DraftHistoryDrawer.vue'
+import {
+  DEFAULT_BRIEF,
+  formatElapsed,
+  isTerminal,
+  normalizeBrief,
+  statusMeta,
+  validateBrief
+} from './draft/draftModel'
 
-// AI 命题工具（教师）：输入命题要求与知识点，由 AI 生成题面并落库为题目。
-// 生成的难度是"评分"而非"档位名"，展示时再按区间映射回档位。
-import { ref, reactive, computed } from 'vue'
-import { ElMessage } from 'element-plus'
-import { createMarkdown } from '@/utils/markdown'
-import { createProblem } from '@/api/problem'
-import { wbStatement } from '@/api/teacherAi'
-import { unwrapResultData, isResultSuccess, getResultMessage } from '@/utils/response'
+const route = useRoute()
+const router = useRouter()
 
-const md = createMarkdown({ html: false, math: true, breaks: true })
-const renderMarkdown = (text) => (text ? md.render(text) : '')
+const POLL_MS = 1500
+const RESTORE_WINDOW_MS = 24 * 60 * 60 * 1000
 
-const knowledgePoints = ['模拟', '枚举', '贪心', '二分查找', '动态规划', '排序', '数学', '高精度', '前缀和', '栈与队列', '递归', '图论入门', '字符串']
-const difficulties = ['入门', '普及-', '普及', '普及+', '提高', '提高+', '省选']
-// 难度档位 → 分值的映射。AI 可能返回自己的分值，也可能不给，
-// 这张表是兜底基准（与题库的 800 起步评分体系一致）。
-const DIFF_SCORE = { '入门': 800, '普及-': 1100, '普及': 1400, '普及+': 1700, '提高': 2000, '提高+': 2400, '省选': 2800 }
-
-// 反向映射：按分数区间回推档位名展示。
-// 注意区间与 DIFF_SCORE 的档位值并不完全对齐（如 1700 分显示为"普及+"而非"普及+"档），
-// 这是有意的——分值是连续的，展示名分档更粗，便于快速判断。
-const difficultyLabel = computed(() => {
-  const s = statement.difficultyScore
-  if (s >= 2600) return '提高+'
-  if (s >= 2200) return '提高'
-  if (s >= 1800) return '普及+'
-  if (s >= 1500) return '普及'
-  if (s >= 1200) return '普及-'
-  return '入门'
-})
-
-const generating = ref(false)
+const brief = ref(normalizeBrief({ ...DEFAULT_BRIEF }))
+const variants = ref(1)
+const collapsed = ref(false)
+const busy = ref(false)
 const saving = ref(false)
-const savedId = ref(null)
-const tagsText = ref('')
+const promptPreview = ref(null)
+const promptLoading = ref(false)
 
-const req = reactive({ knowledgePoint: '贪心', difficulty: '普及-', scenario: '', scale: 'n ≤ 10^5', extra: '', ipMode: true })
-const statement = reactive({ title: '', content: '', inputDesc: '', outputDesc: '', hint: '', difficultyScore: 1100, tags: [], samples: [] })
+const items = ref([])
+const activeId = ref(null)
+const detail = ref(null)
+const content = ref(null)
+const dirty = ref(false)
+const editingField = ref(null)
+const similar = ref([])
 
-// 完整题面导出：把分散的字段拼成一份可直接粘贴到别处的 Markdown，
-// 样例必须用代码块包裹，否则多行输入会被 Markdown 折行破坏。
-const statementMarkdown = computed(() => {
-  let t = `# ${statement.title}\n\n${statement.content}\n`
-  if (statement.inputDesc) t += `\n### 输入格式\n${statement.inputDesc}\n`
-  if (statement.outputDesc) t += `\n### 输出格式\n${statement.outputDesc}\n`
-  if (statement.hint) t += `\n### 提示\n${statement.hint}\n`
-  statement.samples.forEach((s, i) => {
-    t += `\n### 样例 ${i + 1}\n输入：\n\`\`\`\n${s.input}\n\`\`\`\n输出：\n\`\`\`\n${s.output}\n\`\`\``
-    if (s.explanation) t += `\n解释：${s.explanation}`
-  })
-  return t
-})
+const historyVisible = ref(false)
+const historyItems = ref([])
+const historyLoading = ref(false)
+const historyTotal = ref(0)
+const historyPage = ref(1)
+const historySize = 10
 
-// 每次生成后清掉 savedId：上一次的题目 ID 与新题面无关，
-// 继续显示会让教师误以为这次的内容已经存过。
-const generate = async () => {
-  if (!req.knowledgePoint) { ElMessage.warning('请选择知识点'); return }
-  generating.value = true
-  try {
-    const res = await wbStatement({
-      knowledgePoint: req.knowledgePoint, difficulty: req.difficulty,
-      scenario: req.scenario, scale: req.scale, extra: req.extra,
-      ipMode: req.ipMode ? 'on' : 'off'
-    })
-    if (!isResultSuccess(res)) { ElMessage.error(getResultMessage(res, '生成失败')); return }
-    const json = JSON.parse(unwrapResultData(res) || '{}')
-    statement.title = json.title || ''
-    statement.content = json.content || ''
-    statement.inputDesc = json.inputDesc || ''
-    statement.outputDesc = json.outputDesc || ''
-    statement.hint = json.hint || ''
-    statement.difficultyScore = Number(json.difficultyScore) || DIFF_SCORE[req.difficulty] || 1100
-    statement.tags = Array.isArray(json.tags) ? json.tags.map(String) : []
-    tagsText.value = statement.tags.join(',')
-    statement.samples = Array.isArray(json.samples) ? json.samples.map(s => ({
-      input: s.input ?? '', output: s.output ?? '', explanation: s.explanation ?? ''
-    })) : []
-    savedId.value = null
-    if (!statement.title) { ElMessage.error('生成内容为空，请重试'); return }
-    ElMessage.success('题面生成完成，请人工复核')
-  } catch (e) {
-    console.error(e)
-    showApiError(e, '生成失败，请稍后重试')
-  } finally {
-    generating.value = false
+const liveMessage = ref('')
+let pollTimer = null
+let pollFailures = 0
+
+const activeDraft = computed(() => items.value.find(item => item.id === activeId.value) || items.value[0] || null)
+const activeStatus = computed(() => statusMeta(activeDraft.value?.status, activeDraft.value?.phase))
+const groupId = computed(() => items.value[0]?.groupId || null)
+
+const announce = (text) => {
+  liveMessage.value = text
+}
+
+const toggleBrief = () => {
+  collapsed.value = !collapsed.value
+}
+
+const onBriefChange = (value) => {
+  brief.value = value
+}
+
+const applyQuickStart = (preset) => {
+  brief.value = normalizeBrief({ ...DEFAULT_BRIEF, ...preset })
+  announce('已套用快速开始模板')
+}
+
+const stopPolling = () => {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
   }
 }
 
-// 一律保存为私有草稿（isPublic=0）：AI 生成的题面必须经教师复核、
-// 补齐判题用例后才能公开，绝不能直接对学生可见。
-const saveProblem = async () => {
-  if (!statement.title || !statement.content) { ElMessage.warning('题面不完整'); return }
+const startPolling = () => {
+  stopPolling()
+  pollFailures = 0
+  pollTimer = setInterval(refreshGroup, POLL_MS)
+}
+
+/**
+ * 轮询整组而不是单条：3 个方案只需要一个轮询器，且能同时更新方案切换条上的问题数。
+ */
+const refreshGroup = async () => {
+  const group = groupId.value
+  if (!group) {
+    stopPolling()
+    return
+  }
+  try {
+    const res = await listDrafts({ groupId: group })
+    if (!isResultSuccess(res)) {
+      throw new Error(getResultMessage(res, '查询生成进度失败'))
+    }
+    pollFailures = 0
+    const page = unwrapResultData(res) || {}
+    const next = Array.isArray(page.items) ? page.items : []
+    if (!next.length) return
+    const previous = items.value.find(item => item.id === activeId.value)
+    items.value = next
+    const current = next.find(item => item.id === activeId.value) || next[0]
+    if (current && current.id !== activeId.value) {
+      activeId.value = current.id
+    }
+    // 激活方案刚变成可审阅，或状态推进了，才重新拉详情，避免每 1.5s 拉一次全文
+    const becameReady = Boolean(previous) && previous.status !== 'READY' && current?.status === 'READY'
+    const statusChanged = Boolean(previous) && current && previous.status !== current.status
+    if (current && current.status === 'READY' && (becameReady || statusChanged)) {
+      await loadDetail(current.id)
+    }
+    if (becameReady) {
+      announce('生成完成，可以开始审阅')
+    }
+    if (next.every(item => isTerminal(item.status))) {
+      stopPolling()
+    }
+  } catch {
+    pollFailures += 1
+    if (pollFailures >= 5) {
+      stopPolling()
+      announce('查询生成进度连续失败，请稍后手动重试')
+    }
+  }
+}
+
+const loadDetail = async (id) => {
+  const res = await getDraft(id)
+  if (!isResultSuccess(res)) {
+    throw new Error(getResultMessage(res, '加载草稿失败'))
+  }
+  const data = unwrapResultData(res)
+  if (!data) {
+    throw new Error('草稿内容为空')
+  }
+  detail.value = data
+  content.value = data.content ? JSON.parse(JSON.stringify(data.content)) : null
+  dirty.value = false
+  editingField.value = null
+  if (data.brief) {
+    brief.value = normalizeBrief(data.brief)
+  }
+  announce(`已加载草稿：${data.draft?.title || '未命名'}`)
+  if (data.draft?.status === 'READY') {
+    loadSimilar()
+  }
+  return data
+}
+
+const loadSimilar = async () => {
+  const id = activeDraft.value?.id
+  if (!id) {
+    similar.value = []
+    return
+  }
+  try {
+    const res = await similarDrafts(id)
+    similar.value = isResultSuccess(res) ? unwrapResultData(res) || [] : []
+  } catch {
+    similar.value = []
+  }
+}
+
+const setActiveGroup = async (list, preferredId) => {
+  items.value = Array.isArray(list) ? list : []
+  const target = items.value.find(item => item.id === preferredId) || items.value[0]
+  activeId.value = target ? target.id : null
+  detail.value = null
+  content.value = null
+  dirty.value = false
+  similar.value = []
+  if (!target) return
+  if (target.status === 'READY') {
+    await loadDetail(target.id)
+  }
+  if (!isTerminal(target.status)) {
+    startPolling()
+  }
+  router.replace({ query: { ...route.query, draftId: String(target.id) } })
+}
+
+const generate = async () => {
+  const errors = validateBrief(brief.value)
+  if (errors.length) {
+    ElMessage.warning(errors[0])
+    return
+  }
+  busy.value = true
+  try {
+    const res = await createDraft({ brief: normalizeBrief(brief.value), variants: variants.value })
+    if (!isResultSuccess(res)) {
+      ElMessage.error(getResultMessage(res, '受理生成失败'))
+      return
+    }
+    const created = unwrapResultData(res) || []
+    await setActiveGroup(created, created[0]?.id)
+    collapsed.value = created.length > 0
+    announce('已受理生成，正在服务端执行')
+  } catch (error) {
+    showApiError(error, '受理生成失败，请稍后重试')
+  } finally {
+    busy.value = false
+  }
+}
+
+const switchVariant = async (id) => {
+  if (!id || id === activeId.value) return
+  activeId.value = id
+  detail.value = null
+  content.value = null
+  similar.value = []
+  dirty.value = false
+  router.replace({ query: { ...route.query, draftId: String(id) } })
+  const target = items.value.find(item => item.id === id)
+  if (target?.status === 'READY') {
+    try {
+      await loadDetail(id)
+    } catch (error) {
+      showApiError(error, '加载方案失败')
+    }
+  }
+}
+
+const onContentChange = (next) => {
+  // 详情没加载成功时不能接收编辑：否则会把只有一两个字段的对象当整份题面提交
+  if (!content.value) return
+  content.value = next
+  dirty.value = true
+  // 与服务端一致：内容一改，上一次落库的题目就不再对应这份草稿。
+  // 同步清掉本地 problemId，否则审阅栏会把「保存」按钮锁在「已保存」状态，改完反而存不了。
+  if (detail.value?.draft?.problemId) {
+    detail.value = {
+      ...detail.value,
+      draft: { ...detail.value.draft, problemId: null, savedFields: [] }
+    }
+  }
+}
+
+const ensureContentSaved = async () => {
+  if (!detail.value || !content.value || !dirty.value) return
+  const res = await updateDraftContent(detail.value.draft.id, content.value)
+  if (!isResultSuccess(res)) {
+    throw new Error(getResultMessage(res, '保存修改失败'))
+  }
+  const data = unwrapResultData(res)
+  if (data) {
+    detail.value = data
+    content.value = data.content ? JSON.parse(JSON.stringify(data.content)) : null
+    dirty.value = false
+    items.value = items.value.map(item => (item.id === data.draft.id ? { ...item, ...data.draft } : item))
+  }
+}
+
+const saveActive = async (payload) => {
+  const id = activeDraft.value?.id
+  if (!id) return
   saving.value = true
   try {
-    const payload = {
-      title: statement.title,
-      content: statement.content,
-      inputDesc: statement.inputDesc,
-      outputDesc: statement.outputDesc,
-      hint: statement.hint,
-      difficulty: Number(statement.difficultyScore) || 1100,
-      timeLimit: 1000,
-      memoryLimit: 512,
-      tags: tagsText.value,
-      isPublic: 0,
-      source: '睿思命题工坊',
-      samples: statement.samples.map(s => ({ input: s.input || '', output: s.output || '' }))
+    // 先落人工修改再建题：否则题库里拿到的是模型原始稿，教师改的字全部丢失
+    await ensureContentSaved()
+    const res = await saveDraft(id, payload)
+    if (!isResultSuccess(res)) {
+      ElMessage.error(getResultMessage(res, '保存失败'))
+      return
     }
-    const res = await createProblem(payload)
-    if (!isResultSuccess(res)) { ElMessage.error(getResultMessage(res, '保存失败')); return }
-    const id = Number(unwrapResultData(res))
-    if (!id) { ElMessage.error('创建成功但未取到题目 ID，请刷新题库查看'); return }
-    savedId.value = id
-    ElMessage.success(`题目 #${id} 已保存为私有草稿`)
-  } catch (e) {
-    console.error(e)
-    showApiError(e, '保存失败，请稍后重试')
+    const result = unwrapResultData(res) || {}
+    if (result.created === false) {
+      ElMessage.info(`这份草稿此前已保存为题目 #${result.problemId}`)
+    } else {
+      ElMessage.success(`已保存为私有题目 #${result.problemId}`)
+    }
+    if (detail.value) {
+      detail.value = {
+        ...detail.value,
+        draft: { ...detail.value.draft, problemId: result.problemId, savedFields: result.appliedFields || [] }
+      }
+    }
+    items.value = items.value.map(item =>
+      item.id === id ? { ...item, problemId: result.problemId, savedFields: result.appliedFields || [] } : item
+    )
+  } catch (error) {
+    showApiError(error, '保存失败，请稍后重试')
   } finally {
     saving.value = false
   }
 }
 
-const copyText = async (text, msg) => {
+const rewriteActive = async ({ targetField, instruction }) => {
+  const id = activeDraft.value?.id
+  if (!id) return
+  busy.value = true
   try {
-    await navigator.clipboard.writeText(text)
-    ElMessage.success(msg || '已复制')
-  } catch {
-    ElMessage.error('复制失败，请手动选择复制')
+    await ensureContentSaved()
+    const res = await rewriteDraft(id, { targetField, instruction })
+    if (!isResultSuccess(res)) {
+      ElMessage.error(getResultMessage(res, '发起重写失败'))
+      return
+    }
+    const data = unwrapResultData(res)
+    if (data?.draft) {
+      ElMessage.success('已受理定向重写，结果会作为新方案出现')
+      await openDraft(data.draft.id)
+    }
+  } catch (error) {
+    showApiError(error, '发起重写失败')
+  } finally {
+    busy.value = false
   }
 }
+
+const retryActive = async () => {
+  const id = activeDraft.value?.id
+  if (!id) return
+  try {
+    const res = await retryDraft(id)
+    if (!isResultSuccess(res)) {
+      ElMessage.error(getResultMessage(res, '重试失败'))
+      return
+    }
+    const updated = unwrapResultData(res)
+    items.value = items.value.map(item => (item.id === id ? { ...item, ...updated } : item))
+    startPolling()
+    announce('已重新排队')
+  } catch (error) {
+    showApiError(error, '重试失败')
+  }
+}
+
+const removeActive = async () => {
+  const id = activeDraft.value?.id
+  if (!id) return
+  try {
+    await ElMessageBox.confirm(
+      '删除只丢弃这次生成的结果；如果模型调用已经发出，仍会照常计费。确定删除？',
+      '删除本次生成',
+      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '保留' }
+    )
+  } catch {
+    return
+  }
+  try {
+    const res = await deleteDraft(id)
+    if (!isResultSuccess(res)) {
+      ElMessage.error(getResultMessage(res, '删除失败'))
+      return
+    }
+    const remaining = items.value.filter(item => item.id !== id)
+    stopPolling()
+    if (remaining.length) {
+      await setActiveGroup(remaining, remaining[0].id)
+    } else {
+      clearResult()
+    }
+    ElMessage.success('已删除')
+  } catch (error) {
+    showApiError(error, '删除失败')
+  }
+}
+
+const cancelActive = async () => {
+  const id = activeDraft.value?.id
+  if (!id) return
+  try {
+    const res = await cancelDraft(id)
+    if (!isResultSuccess(res)) {
+      ElMessage.error(getResultMessage(res, '取消失败'))
+      return
+    }
+    const updated = unwrapResultData(res)
+    items.value = items.value.map(item => (item.id === id ? { ...item, ...updated } : item))
+    announce('已取消')
+  } catch (error) {
+    showApiError(error, '取消失败')
+  }
+}
+
+const locateIssue = (field) => {
+  editingField.value = field
+  const target = document.getElementById(`draft-field-${field}`)
+  if (target) {
+    target.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  }
+}
+
+const previewPrompt = async () => {
+  const errors = validateBrief(brief.value)
+  if (errors.length) {
+    ElMessage.warning(errors[0])
+    return
+  }
+  promptLoading.value = true
+  try {
+    const res = await previewDraftPrompt({ brief: normalizeBrief(brief.value) })
+    if (!isResultSuccess(res)) {
+      ElMessage.error(getResultMessage(res, '获取提示词失败'))
+      return
+    }
+    promptPreview.value = unwrapResultData(res) || null
+  } catch (error) {
+    showApiError(error, '获取提示词失败')
+  } finally {
+    promptLoading.value = false
+  }
+}
+
+const clearResult = () => {
+  stopPolling()
+  items.value = []
+  activeId.value = null
+  detail.value = null
+  content.value = null
+  dirty.value = false
+  editingField.value = null
+  similar.value = []
+  const query = { ...route.query }
+  delete query.draftId
+  router.replace({ query })
+}
+
+const startNew = () => {
+  if (dirty.value && !window.confirm('当前修改尚未保存，确定新建？')) return
+  clearResult()
+  collapsed.value = false
+}
+
+const openDraft = async (id) => {
+  try {
+    const res = await getDraft(id)
+    if (!isResultSuccess(res)) {
+      ElMessage.error(getResultMessage(res, '加载草稿失败'))
+      return
+    }
+    const vo = unwrapResultData(res)?.draft
+    if (!vo) return
+    const groupRes = await listDrafts({ groupId: vo.groupId })
+    const list = isResultSuccess(groupRes) ? unwrapResultData(groupRes)?.items || [] : [vo]
+    await setActiveGroup(list, vo.id)
+    collapsed.value = list.length > 0
+  } catch (error) {
+    showApiError(error, '加载草稿失败')
+  }
+}
+
+const openHistory = () => {
+  historyVisible.value = true
+  loadHistory(1)
+}
+
+const loadHistory = async (page = 1) => {
+  historyLoading.value = true
+  historyPage.value = page
+  try {
+    const res = await listDrafts({ page, size: historySize })
+    if (!isResultSuccess(res)) {
+      ElMessage.error(getResultMessage(res, '加载历史失败'))
+      return
+    }
+    const data = unwrapResultData(res) || {}
+    historyItems.value = data.items || []
+    historyTotal.value = data.total || 0
+  } catch (error) {
+    showApiError(error, '加载历史失败')
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+const openFromHistory = async (id) => {
+  historyVisible.value = false
+  await openDraft(id)
+}
+
+const removeFromHistory = async (id) => {
+  try {
+    await ElMessageBox.confirm('删除后不可恢复，确定删除这条生成记录？', '删除记录', {
+      type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消'
+    })
+  } catch {
+    return
+  }
+  try {
+    const res = await deleteDraft(id)
+    if (!isResultSuccess(res)) {
+      ElMessage.error(getResultMessage(res, '删除失败'))
+      return
+    }
+    if (id === activeDraft.value?.id) {
+      clearResult()
+    }
+    await loadHistory(historyPage.value)
+  } catch (error) {
+    showApiError(error, '删除失败')
+  }
+}
+
+const reuseBrief = async (item) => {
+  try {
+    const res = await getDraft(item.id)
+    if (isResultSuccess(res)) {
+      const data = unwrapResultData(res)
+      if (data?.brief) {
+        brief.value = normalizeBrief(data.brief)
+        historyVisible.value = false
+        collapsed.value = false
+        ElMessage.success('已把上次的命题简报填回左侧')
+      }
+    }
+  } catch (error) {
+    showApiError(error, '读取简报失败')
+  }
+}
+
+/**
+ * 自动恢复：优先 URL 里的 draftId；否则取最近一条，只在「未完成或 24 小时内」时打开，
+ * 避免一进页面就弹出上个月的旧题面。
+ */
+const restore = async () => {
+  const draftId = Number(route.query.draftId)
+  if (draftId) {
+    await openDraft(draftId)
+    return
+  }
+  try {
+    const res = await listDrafts({ page: 1, size: 1 })
+    if (!isResultSuccess(res)) return
+    const latest = unwrapResultData(res)?.items?.[0]
+    if (!latest) return
+    const recent = latest.createTime && Date.now() - new Date(latest.createTime).getTime() < RESTORE_WINDOW_MS
+    if (!isTerminal(latest.status) || recent) {
+      await openDraft(latest.id)
+      collapsed.value = true
+    }
+  } catch {
+    // 恢复失败不打扰用户：停在空态即可，点「生成题面」仍可用
+  }
+}
+
+watch(
+  () => route.query.draftId,
+  (value) => {
+    const id = Number(value)
+    if (id && id !== activeId.value) {
+      openDraft(id)
+    }
+  }
+)
+
+onMounted(restore)
+
+onBeforeUnmount(() => {
+  stopPolling()
+})
 </script>
 
 <style scoped>
-.tool-page { padding: 20px; }
-.page-header { margin-bottom: 18px; }
-.page-title { font-size: 20px; font-weight: 700; }
-.page-desc { color: var(--text-secondary); font-size: 13px; margin-top: 4px; }
-.panel { background: var(--bg-surface); border: 1px solid var(--border-light); border-radius: 14px; padding: 20px 22px; margin-bottom: 16px; }
-.foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.hint { font-size: 12px; color: var(--text-secondary); }
-.gen-btn { margin-left: auto; }
-.result-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
-.result-title { font-size: 19px; font-weight: 700; color: var(--text-primary); }
-.result-actions { display: flex; gap: 8px; }
-.result-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
-.tag { margin-right: 2px; }
-.diff { font-size: 12px; color: var(--accent-warning); }
-.samples { font-size: 12px; color: var(--text-secondary); }
-.saved-tip { margin-top: 12px; }
-.split { display: grid; grid-template-columns: 1.1fr 1fr; gap: 18px; }
-.sub-title { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 10px; }
-.preview-card { border: 1px solid var(--border-light); border-radius: 12px; padding: 18px 20px; background: var(--bg-surface); }
-.sec { font-size: 14px; font-weight: 600; color: var(--text-primary); margin: 14px 0 6px; }
-.sample-block { border: 1px dashed var(--border-base); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; background: var(--bg-surface); }
-.sample-label { font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
-.sample-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.sample-col-title { font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; }
-.sample-pre { margin: 0; background: var(--bg-app); border-radius: 6px; padding: 8px 10px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; white-space: pre-wrap; word-break: break-all; color: var(--text-primary); }
-.sample-exp { font-size: 12px; color: var(--text-secondary); margin-top: 6px; }
-.sub-label { font-size: 12.5px; font-weight: 600; color: var(--text-primary); margin: 10px 0 8px; }
-.sample-edit { border: 1px solid var(--border-light); border-radius: 8px; padding: 10px; margin-bottom: 10px; }
-.sample-edit-head { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; font-weight: 600; color: var(--text-secondary); }
-.mt8 { margin-top: 8px; }
-@media (max-width: 1100px) { .split { grid-template-columns: 1fr; } }
+.draft-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-app);
+}
+.draft-head {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-surface);
+}
+.head-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.head-title {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.head-elapsed {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.head-desc {
+  margin: 6px 0 0;
+  max-width: 820px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-regular);
+}
+.head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.draft-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  gap: 16px;
+  padding: 16px 20px;
+  overflow: hidden;
+  grid-template-columns: clamp(300px, 24vw, 360px) minmax(0, 1fr) clamp(280px, 21vw, 320px);
+}
+.draft-body.is-collapsed {
+  grid-template-columns: 44px minmax(0, 1fr) clamp(280px, 21vw, 320px);
+}
+.draft-col {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+}
+.brief-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 40px;
+  height: 100%;
+  padding: 12px 0;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-regular);
+  font-size: 12px;
+  cursor: pointer;
+}
+.brief-rail span {
+  writing-mode: vertical-rl;
+  letter-spacing: 2px;
+}
+.brief-rail:hover {
+  border-color: var(--border-hover);
+  color: var(--accent-primary);
+}
+.empty-state {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 40px 24px;
+  text-align: center;
+  border: 1px dashed var(--border-base);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+}
+.empty-icon {
+  font-size: 34px;
+  color: var(--accent-primary);
+}
+.empty-state h2 {
+  margin: 4px 0 0;
+  font-size: 17px;
+  color: var(--text-primary);
+}
+.empty-state p {
+  margin: 0;
+  max-width: 460px;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.empty-hint {
+  color: var(--text-secondary);
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+@media (max-width: 1200px) {
+  .draft-page {
+    overflow: auto;
+  }
+  .draft-body,
+  .draft-body.is-collapsed {
+    grid-template-columns: 1fr;
+    overflow: visible;
+  }
+  .draft-col {
+    overflow: visible;
+  }
+  .brief-rail {
+    width: 100%;
+    height: 44px;
+    flex-direction: row;
+    justify-content: center;
+  }
+  .brief-rail span {
+    writing-mode: horizontal-tb;
+  }
+}
 </style>

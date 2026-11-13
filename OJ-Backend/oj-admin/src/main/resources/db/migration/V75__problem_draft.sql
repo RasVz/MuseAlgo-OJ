@@ -1,0 +1,33 @@
+-- 题面生成改为服务端异步草稿：HTTP 只受理与查询，模型调用在固定线程池执行。
+-- 每方案一行（同 group_id），便于多方案切换、单方案重试与跨设备恢复。
+CREATE TABLE IF NOT EXISTS `problem_draft` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '草稿ID',
+  `creator_id` bigint NOT NULL COMMENT '发起人（教师/管理员）',
+  `group_id` char(36) NOT NULL COMMENT '同一次生成的方案组',
+  `variant_no` int NOT NULL DEFAULT '1' COMMENT '组内方案序号，从1开始',
+  `status` varchar(16) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING/RUNNING/READY/FAILED/CANCELED',
+  `phase` varchar(24) NOT NULL DEFAULT 'QUEUED' COMMENT 'QUEUED/PROMPTING/GENERATING/PARSING/DONE',
+  `brief_json` text COMMENT '命题简报快照 JSON',
+  `brief_summary` varchar(255) DEFAULT NULL COMMENT '简报摘要（列表展示用）',
+  `instruction` varchar(1000) DEFAULT NULL COMMENT '定向重写的附加指令',
+  `target_field` varchar(32) DEFAULT NULL COMMENT '定向重写的目标字段',
+  `parent_id` bigint DEFAULT NULL COMMENT '重写来源草稿ID',
+  `title` varchar(128) DEFAULT NULL COMMENT '生成/编辑后的题名',
+  `content_json` mediumtext COMMENT '题面内容快照 JSON',
+  `issues_json` text COMMENT '质量问题 JSON',
+  `error_code` varchar(64) DEFAULT NULL COMMENT '稳定错误码',
+  `message` varchar(512) DEFAULT NULL COMMENT '结果说明',
+  `problem_id` bigint DEFAULT NULL COMMENT '落库后的题目ID',
+  `saved_fields` varchar(255) DEFAULT NULL COMMENT '落库字段，逗号分隔',
+  `prompt_tokens` int NOT NULL DEFAULT '0' COMMENT '提示词 token',
+  `completion_tokens` int NOT NULL DEFAULT '0' COMMENT '生成 token',
+  `latency_ms` int NOT NULL DEFAULT '0' COMMENT '本次模型调用耗时',
+  `attempts` int NOT NULL DEFAULT '0' COMMENT '已尝试次数',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `finish_time` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_pd_creator` (`creator_id`,`id`),
+  KEY `idx_pd_group` (`group_id`),
+  KEY `idx_pd_status` (`status`,`update_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='AI 题面生成草稿';
