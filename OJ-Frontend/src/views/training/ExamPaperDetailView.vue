@@ -343,11 +343,16 @@ const clearReactiveRecord = (record) => Object.keys(record).forEach((key) => del
 
 const setupAttemptState = (nextAttempt, paperId, options = {}) => {
   attempt.value = nextAttempt
+  // 进行中的作答统一进入整卷答题页；本页只保留介绍、成绩单和历史成绩。
+  if (nextAttempt?.status === 'RUNNING') {
+    router.replace({ name: 'ExamPaperAnswer', params: { id: paperId }, query: { attemptId: nextAttempt.id } })
+    return
+  }
   clearReactiveRecord(answers)
   clearReactiveRecord(results)
   draftAvailable.value = true
 
-  if (nextAttempt?.id != null && (nextAttempt.status === 'RUNNING' || nextAttempt.status === 'TIMEOUT')) {
+  if (nextAttempt?.id != null && nextAttempt.status === 'TIMEOUT') {
     const userId = userStore.userId ?? userStore.userInfo?.id
     draftStorage = userId && nextAttempt.id != null
       ? createExamDraftStorage({ userId, paperId, attemptId: nextAttempt.id })

@@ -68,6 +68,7 @@ const problemRoutes = [
 const trainingRoutes = [
   { path: 'training', name: 'Training', component: () => import('@/views/training/TrainingView.vue'), meta: { title: '训练' } },
   { path: 'training/:id', name: 'TrainingDetail', component: () => import('@/views/training/ExamPaperDetailView.vue'), meta: { title: '试卷详情', breadcrumb: [{ label: '训练', path: '/training' }] } },
+  { path: 'training/:id/answer', name: 'ExamPaperAnswer', component: () => import('@/views/training/ExamPaperAnswerView.vue'), meta: { title: '整卷答题', requiresAuth: true, immersive: true } },
 ]
 
 // 2.3 社区与文章模块

@@ -22,6 +22,11 @@ public class ExamAttempt implements Serializable {
     public static final String STATUS_SUBMITTED = "SUBMITTED";
     public static final String STATUS_TIMEOUT = "TIMEOUT";
 
+    /** 旧会话：交卷时按时间窗内最佳普通提交折算，保留历史语义。 */
+    public static final String SCORING_LEGACY = "LEGACY";
+    /** 新会话：只按 exam_attempt_id 绑定的提交折算。 */
+    public static final String SCORING_BOUND = "BOUND";
+
     @TableId(value = "id", type = IdType.AUTO)
     private Long id;
 
@@ -32,6 +37,9 @@ public class ExamAttempt implements Serializable {
     private Long userId;
 
     private String status;
+
+    @TableField("scoring_version")
+    private String scoringVersion;
 
     @TableField("start_time")
     private LocalDateTime startTime;

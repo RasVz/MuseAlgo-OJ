@@ -132,9 +132,8 @@ public class ExamAttemptApplicationService {
             result.setQuestionId(question.getId());
             result.setCorrect(correct);
             result.setScore(gained);
-            result.setCorrectAnswer(question.getAnswer());
             result.setMyAnswer(item.getAnswer());
-            result.setExplanation(question.getExplanation());
+            // 作答期只回对错与得分；正确答案和解析在交卷后的完整结果中返回。
             results.add(result);
         }
         refreshAttemptObjectiveScore(running, answerMap.values());
@@ -166,6 +165,7 @@ public class ExamAttemptApplicationService {
         attempt.setPaperId(paperId);
         attempt.setUserId(userId);
         attempt.setStatus(ExamAttempt.STATUS_RUNNING);
+        attempt.setScoringVersion(ExamAttempt.SCORING_BOUND);
         attempt.setStartTime(now);
         attempt.setEndTime(now.plusMinutes(duration));
         attempt.setObjectiveScore(0);
@@ -296,10 +296,12 @@ public class ExamAttemptApplicationService {
         if (!problems.isEmpty()) {
             List<Long> problemIds = problems.stream()
                     .map(ExamPaperProblem::getProblemId).toList();
-            Map<Long, Integer> bestScoreByProblem = submissionAttemptQuery.findBestScores(
+            var scores = ExamAttempt.SCORING_BOUND.equals(attempt.getScoringVersion())
+                    ? submissionAttemptQuery.findBestScoresByAttempt(attempt.getId(), problemIds)
+                    : submissionAttemptQuery.findBestScores(
                             attempt.getUserId(), problemIds,
-                            attempt.getStartTime(), scoreDeadline)
-                    .stream().collect(Collectors.toMap(
+                            attempt.getStartTime(), scoreDeadline);
+            Map<Long, Integer> bestScoreByProblem = scores.stream().collect(Collectors.toMap(
                             SubmissionAttemptQuery.SubmissionAttemptScore::problemId,
                             SubmissionAttemptQuery.SubmissionAttemptScore::bestScore,
                             Math::max));
@@ -337,6 +339,9 @@ public class ExamAttemptApplicationService {
             return false;
         }
         List<Long> problemIds = problems.stream().map(ExamPaperProblem::getProblemId).distinct().toList();
+        if (ExamAttempt.SCORING_BOUND.equals(attempt.getScoringVersion())) {
+            return submissionAttemptQuery.countPendingByAttempt(attempt.getId(), problemIds) > 0;
+        }
         return submissionAttemptQuery.countPending(
                 attempt.getUserId(), problemIds, attempt.getStartTime(), scoreDeadline) > 0;
     }
@@ -392,9 +397,11 @@ public class ExamAttemptApplicationService {
                     resultVO.setQuestionId(question.getId());
                     resultVO.setCorrect(Integer.valueOf(1).equals(answer.getIsCorrect()));
                     resultVO.setScore(answer.getScore() == null ? 0 : answer.getScore());
-                    resultVO.setCorrectAnswer(question.getAnswer());
                     resultVO.setMyAnswer(answer.getAnswer());
-                    resultVO.setExplanation(question.getExplanation());
+                    if (!ExamAttempt.STATUS_RUNNING.equals(attempt.getStatus())) {
+                        resultVO.setCorrectAnswer(question.getAnswer());
+                        resultVO.setExplanation(question.getExplanation());
+                    }
                     vo.getResults().add(resultVO);
                 }
             }

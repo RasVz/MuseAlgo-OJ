@@ -31,6 +31,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -348,7 +349,7 @@ class ExamPaperAttemptTest {
     }
 
     @Test
-    void getAttemptRestoresSavedAnswersAndTheirImmediateResults() {
+    void getAttemptRestoresSavedAnswersAndMasksAnswersWhileRunning() {
         ExamAttempt running = runningAttempt();
         when(examAttemptMapper.selectRunningByPaperUserForUpdate(anyLong(), anyLong())).thenReturn(running);
         ExamAnswer saved = new ExamAnswer();
@@ -369,7 +370,8 @@ class ExamPaperAttemptTest {
         assertEquals("A", result.getAnswers().get(0).getAnswer());
         assertEquals(1, result.getResults().size());
         assertEquals(true, result.getResults().get(0).getCorrect());
-        assertEquals("说明", result.getResults().get(0).getExplanation());
+        assertNull(result.getResults().get(0).getExplanation());
+        assertNull(result.getResults().get(0).getCorrectAnswer());
     }
 
     @Test
