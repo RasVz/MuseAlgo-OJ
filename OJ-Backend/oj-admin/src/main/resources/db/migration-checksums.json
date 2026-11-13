@@ -69,5 +69,9 @@
   "V68__report_retention_index.sql": "8168ae5bca1d9b740a38ea1329f2f40ba91c73e38af2949ab82a9badb68ed65b",
   "V69__user_credential_version.sql": "e25fb16d9da9b0a6df34f6ba03447f85676570e2b63da5b478428b53358d823c",
   "V70__tag_rating_projection_lock.sql": "acfdc061923c22295911eeae3805fac219a09b86e2f70748ad5567bfe5a86f92",
-  "V71__report_pending_uniqueness.sql": "3c4b9577531857b17a4c2befcda15e0551e6c4c76169dcfec2dbbed5a557ae48"
+  "V71__report_pending_uniqueness.sql": "3c4b9577531857b17a4c2befcda15e0551e6c4c76169dcfec2dbbed5a557ae48",
+  "V72__user_profile_presentation.sql": "1dc98991ff2669b84c139682a0784aa7af86c010ebadd7aaf62af31c20bd000e",
+  "V73__problem_format_job.sql": "e7e517dddf1e93bf9f4558adf4944914c59cefdbcd5f9e8cebb448c7e0c4bb70",
+  "V74__problem_statement_version.sql": "404ef0faf4fcf0bb073eca236b177feda2a05969137888196924c4eb9075be09",
+  "V75__problem_draft.sql": "0f2299926a7e73d1ee35fe2448e04970b13b5d925fbfe1ea325492cc88579c7a"
 }
