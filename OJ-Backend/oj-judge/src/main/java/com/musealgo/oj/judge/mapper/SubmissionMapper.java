@@ -95,6 +95,7 @@ public interface SubmissionMapper extends BaseMapper<Submission> {
     @Select("<script>" +
             "SELECT problem_id AS problemId, MAX(score) AS bestScore FROM submission " +
             "WHERE user_id = #{userId} " +
+            "AND contest_id IS NULL AND vp_attempt_id IS NULL AND status BETWEEN 1 AND 5 " +
             "AND problem_id IN <foreach collection='problemIds' item='pid' open='(' separator=',' close=')'>#{pid}</foreach> " +
             "AND create_time &gt;= #{from} AND create_time &lt;= #{to} " +
             "GROUP BY problem_id</script>")
