@@ -253,7 +253,7 @@ async function fetchList() {
     const state = { ...query.value }
     const res = await getAdminClasses(
       { ...state, keyword: state.keyword || undefined },
-      { signal: controller.signal },
+      { signal: controller.signal, silent: true },
     )
     if (id !== requestId) return
     const data = unwrapResultData(res)
