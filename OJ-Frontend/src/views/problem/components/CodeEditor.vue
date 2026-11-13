@@ -59,8 +59,9 @@
 // - 样例试跑由父页面统一管理，可复用相同代码的结果，不产生正式提交；
 // - 「提交」由父组件 ProblemDetailView 发起，会真正调judge并计入榜单。
 //
-// 代码按「题目 × 语言」维度自动存云端草稿（10 秒防抖），
+// 代码默认按「题目 × 语言」维度自动存云端草稿（10 秒防抖），
 // 用户切题或关页面回来能接着写；编辑器偏好则登录用户存服务端、匿名用户存 localStorage。
+// 比赛/试卷场景通过 draftAdapter 改为按场次隔离的本机草稿，避免与普通练习互相污染。
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { VueMonacoEditor } from '@guolao/vue-monaco-editor' 
 import { Tickets, VideoPause, VideoPlay } from '@element-plus/icons-vue'
@@ -74,7 +75,10 @@ const props = defineProps({
   problemId: { type: [Number, String], required: true },
   submitting: { type: Boolean, default: false },
   running: { type: Boolean, default: false },
-  testCollapsed: { type: Boolean, default: false }
+  testCollapsed: { type: Boolean, default: false },
+  // { load({problemId,language}), latest({problemId}), save({problemId,language,code}) }
+  draftAdapter: { type: Object, default: null },
+  draftSaveDelay: { type: Number, default: 10000 }
 })
 
 const emit = defineEmits(['submit', 'run', 'stop', 'snapshot', 'toggle-test'])
@@ -196,6 +200,40 @@ const onSettingsChange = (patch) => {
 
 let draftGeneration = 0
 const draftLoading = ref(!initialSnapshot)
+
+// 草稿读写有两套来源：普通练习走服务端，比赛/试卷走场景壳注入的本地适配器。
+// 适配器只提供 load/latest/save 三个动作，编辑器不关心草稿存在哪里。
+const readDraft = async language => {
+  if (props.draftAdapter?.load) {
+    return (await props.draftAdapter.load({ problemId: props.problemId, language })) || null
+  }
+  const res = await getDraftCode(props.problemId, language)
+  return res.data || null
+}
+const readLatestDraft = async () => {
+  if (props.draftAdapter?.latest) {
+    return (await props.draftAdapter.latest({ problemId: props.problemId })) || null
+  }
+  const res = await getLatestDraftCode(props.problemId)
+  return res.data || null
+}
+const persistDraft = async () => {
+  if (props.draftAdapter?.save) {
+    await props.draftAdapter.save({
+      problemId: props.problemId,
+      language: language.value,
+      code: code.value
+    })
+    return '本机已保存'
+  }
+  await saveDraftCode({
+    problemId: props.problemId,
+    language: language.value,
+    code: code.value
+  })
+  return '云端已保存'
+}
+
 const loadCodeDraft = async () => {
   if (!props.problemId) return
   const generation = ++draftGeneration
@@ -204,10 +242,10 @@ const loadCodeDraft = async () => {
   snapshotReady.value = false
   draftLoading.value = true
   try {
-    const res = await getDraftCode(props.problemId, selectedLanguage)
+    const data = await readDraft(selectedLanguage)
     if (generation !== draftGeneration || selectedLanguage !== language.value || code.value !== originalCode || draftDirty.value) return
-    code.value = res.data?.code ?? templates[selectedLanguage]
-    saveStatusText.value = res.data?.code ? '已恢复上次的代码' : ''
+    code.value = data?.code ?? templates[selectedLanguage]
+    saveStatusText.value = data?.code ? (props.draftAdapter ? '已恢复本机草稿' : '已恢复上次的代码') : ''
   } catch {
     if (generation === draftGeneration && selectedLanguage === language.value && code.value === originalCode && !draftDirty.value) code.value = templates[selectedLanguage]
   } finally {
@@ -223,8 +261,8 @@ const handleLangChange = async () => {
   await loadCodeDraft()
 }
 
-// 10 秒防抖保存草稿：逐字符保存会把接口打满（一次敲键盘就是一次请求），
-// 而 10 秒的窗口既能覆盖用户的自然停顿，丢失的也只是最后几秒的输入。
+// 防抖保存草稿：逐字符保存会把接口打满（一次敲键盘就是一次请求）。
+// 普通练习沿用 10 秒窗口；比赛/试卷可以传更短的 draftSaveDelay，尽量少丢代码。
 let saveTimeout = null
 let statusTimer = null
 const handleCodeChange = () => {
@@ -233,22 +271,19 @@ const handleCodeChange = () => {
   emitSnapshot()
   saveStatusText.value = '编辑中...'
   if (saveTimeout) clearTimeout(saveTimeout)
-  
+
+  const delay = Math.max(500, Number(props.draftSaveDelay) || 10000)
   saveTimeout = setTimeout(async () => {
     saveStatusText.value = '保存中...'
     try {
-      await saveDraftCode({
-        problemId: props.problemId,
-        language: language.value,
-        code: code.value
-      })
-      saveStatusText.value = '云端已保存'
+      const savedText = await persistDraft()
+      saveStatusText.value = savedText
       if (statusTimer) clearTimeout(statusTimer)
-      statusTimer = setTimeout(() => { saveStatusText.value = '' }, 5000) 
+      statusTimer = setTimeout(() => { saveStatusText.value = '' }, 5000)
     } catch {
       saveStatusText.value = '保存失败'
     }
-  }, 10000) 
+  }, delay)
 }
 
 const resetCode = () => {
@@ -275,11 +310,11 @@ onMounted(async () => {
     const initialGeneration = draftGeneration
     draftLoading.value = true
     try {
-      const result = await getLatestDraftCode(props.problemId)
+      const data = await readLatestDraft()
       if (initialGeneration !== draftGeneration || draftDirty.value || language.value !== originalLanguage) return
-      if (result.data) {
-        language.value = result.data.language || 'cpp'
-        code.value = result.data.code || ''
+      if (data) {
+        language.value = data.language || 'cpp'
+        code.value = data.code || ''
       } else code.value = templates[language.value]
     } catch {
       if (initialGeneration === draftGeneration && !draftDirty.value) code.value = templates[language.value]

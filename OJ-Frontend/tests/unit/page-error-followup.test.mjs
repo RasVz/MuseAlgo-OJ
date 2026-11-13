@@ -26,7 +26,7 @@ for (const [file, name, api] of pages) for (const notified of [false, true]) {
  test(`${name} preserves the specific API error with notified=${notified}`, async () => {
   const messages = []; const error = Object.assign(new Error('合成具体原因'), { notified })
   const context = { props: { listId: 1, problemId: 1 }, currentId: 3, post: { value: { id: 1, isLiked: false, isFavorited: false } },
-   problem: { value: { id: 1 } }, submitting: { value: false }, editorRef: { value: { getSubmissionData: () => ({ language: 'cpp', code: 'x' }) } },
+   problem: { value: { id: 1 } }, submitting: { value: false }, workspaceRef: { value: { getSubmissionData: () => ({ language: 'cpp', code: 'x' }) } },
    route: { query: {} }, FormData, console: { error() {} },
    ElMessage: { error: text => messages.push(text), warning() {}, success() {} },
    showApiError: (e, fallback) => { if (!e.notified && !e.authNotified) messages.push(e.message || fallback) },

@@ -60,19 +60,19 @@ export function parseIdeLayout(raw) {
   }
 }
 
-export function loadIdeLayout(storage) {
+export function loadIdeLayout(storage, storageKey = IDE_LAYOUT_STORAGE_KEY) {
   if (!storage || typeof storage.getItem !== 'function') return { ...DEFAULT_IDE_LAYOUT }
   try {
-    return parseIdeLayout(storage.getItem(IDE_LAYOUT_STORAGE_KEY))
+    return parseIdeLayout(storage.getItem(storageKey))
   } catch {
     return { ...DEFAULT_IDE_LAYOUT }
   }
 }
 
-export function saveIdeLayout(storage, layout) {
+export function saveIdeLayout(storage, layout, storageKey = IDE_LAYOUT_STORAGE_KEY) {
   if (!storage || typeof storage.setItem !== 'function') return false
   try {
-    storage.setItem(IDE_LAYOUT_STORAGE_KEY, JSON.stringify({
+    storage.setItem(storageKey, JSON.stringify({
       dock: layout?.dock === 'right' ? 'right' : 'bottom',
       collapsed: layout?.collapsed === true,
       statementRatio: clampNumber(
