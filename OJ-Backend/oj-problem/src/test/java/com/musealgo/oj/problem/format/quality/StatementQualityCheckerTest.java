@@ -116,13 +116,17 @@ class StatementQualityCheckerTest {
     }
 
     @Test
-    void heavilyShrunkContentIsError() {
+    void heavilyShrunkContentIsWarnAndNeedsHumanCheck() {
         String longSource = "原始题面内容".repeat(100);
         ProblemStatementSnapshot source = new ProblemStatementSnapshot("题名", longSource, "", "", "",
                 1000, 512, List.of());
         List<StatementIssue> issues = StatementQualityChecker.check(source, formatted("短正文", List.of()));
 
-        assertIssue(issues, "CONTENT_LOST", IssueSeverity.ERROR, "content");
+        // 原文常把输入输出与样例写在正文里，拆分后变短是正常的，因此不阻断；
+        // 但自动应用必须转人工，所以单独提供 hasContentLoss 闸门。
+        assertIssue(issues, "CONTENT_LOST", IssueSeverity.WARN, "content");
+        assertTrue(StatementQualityChecker.hasContentLoss(issues));
+        assertFalse(StatementQualityChecker.hasBlockingIssue(issues));
     }
 
     @Test

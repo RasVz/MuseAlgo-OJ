@@ -14,26 +14,27 @@
       </div>
     </div>
 
-    <el-tabs v-model="activeTab" class="editor-tabs">
+    <el-tabs v-model="activeTab" class="editor-tabs" @tab-change="handleTabChange">
+      <el-tab-pane v-if="isEditMode" label="题面与版本" name="statement">
+        <StatementVersionPanel
+          ref="statementPanelRef"
+          :problem-id="form.id"
+          :dirty="hasUnsavedEdits"
+          @changed="refreshFromServer"
+        />
+      </el-tab-pane>
+
       <el-tab-pane label="基本信息" name="basic">
-        <div class="basic-toolbar">
-          <el-button :icon="MagicStick" :disabled="!form.id" @click="openFormatWorkbench">
-            AI 优化与版本
-          </el-button>
-          <span class="basic-toolbar-hint">
-            进入题面版本页：基于任一历史版本异步整理，逐字段审阅后生成新版本；未应用的改动不会写库
-          </span>
-        </div>
         <el-card class="panel-card" shadow="never">
           <ProblemBasicForm ref="basicFormRef" :form="form" :rules="rules" @update:form="Object.assign(form, $event)" />
         </el-card>
       </el-tab-pane>
 
-      <el-tab-pane label="测试用例管理" name="cases" :disabled="!form.id">
+      <el-tab-pane label="测试用例管理" name="cases" :disabled="!form.id" lazy>
         <ProblemCaseManager ref="caseManagerRef" :problem-id="form.id" @changed="handleCasesChanged" />
       </el-tab-pane>
 
-      <el-tab-pane label="标准答案管理" name="std" :disabled="!form.id">
+      <el-tab-pane label="标准答案管理" name="std" :disabled="!form.id" lazy>
         <StdManagerPanel ref="stdPanelRef" :problem-id="form.id" @saved="handleStdSaved" />
       </el-tab-pane>
     </el-tabs>
@@ -50,7 +51,7 @@ import { showApiError } from '@/utils/errorFeedback'
 // 测试用例与标准答案分别由 ProblemCaseManager 与 StdManagerPanel 各自管理并独立保存。
 import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import {
   getProblemDetail,
   createProblem,
@@ -59,12 +60,12 @@ import {
 import ProblemBasicForm from './components/ProblemBasicForm.vue'
 import ProblemCaseManager from './components/ProblemCaseManager.vue'
 import StdManagerPanel from './components/StdManagerPanel.vue'
+import StatementVersionPanel from './problemFormat/StatementVersionPanel.vue'
 import {
   changedFormattedFields,
-  describeFieldChanges,
+  mergeFormattedFields,
   pickFormattedFields
 } from './problemFormatMerge'
-import { MagicStick } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -75,34 +76,41 @@ const routeId = computed(() => {
 })
 const isEditMode = computed(() => !!routeId.value)
 
-const activeTab = ref('basic')
+// 编辑已有题目时默认进「题面与版本」，新建时只有基本信息
+const activeTab = ref(isEditMode.value ? 'statement' : 'basic')
 const saving = ref(false)
 const basicFormRef = ref(null)
 const caseManagerRef = ref(null)
 const stdPanelRef = ref(null)
+const statementPanelRef = ref(null)
 
 // 详情基线：记录「服务端当前值」中由格式化负责的字段，
-// 用于在应用格式化前判断用户是否还有未保存修改会被覆盖。
+// 用于判断基本信息里是否有尚未保存的修改会被版本操作覆盖。
 const formatBaseline = ref(null)
+const hasUnsavedEdits = computed(() => changedFormattedFields(form, formatBaseline.value).length > 0)
 
-// ---- AI 题面优化：统一跳到「题面版本」页，先选版本再异步整理 ----
-// 打开前先提醒：优化结果会直接写服务端，本地这些字段的未保存修改会被覆盖。
-const openFormatWorkbench = async () => {
+// 版本操作会直接写服务端：回读详情并只合并「格式化负责的字段」，
+// 难度、标签等其他字段即使有未保存修改也不受影响。
+async function refreshFromServer() {
   if (!form.id) return
-  const dirtyFields = changedFormattedFields(form, formatBaseline.value)
-  if (dirtyFields.length) {
-    try {
-      await ElMessageBox.confirm(
-        `以下字段有尚未保存的修改：${describeFieldChanges(dirtyFields)}。` +
-        '进入题面版本页后，优化结果保存时会以服务端内容为准，这些修改将丢失，是否继续？',
-        '优化将覆盖未保存的修改',
-        { type: 'warning', confirmButtonText: '继续进入', cancelButtonText: '取消' }
-      )
-    } catch {
+  try {
+    const res = await getProblemDetail(form.id)
+    if (res.code !== 200 || !res.data) {
+      ElMessage.warning('版本已更新，但刷新题目内容失败，请手动刷新页面')
       return
     }
+    formatBaseline.value = mergeFormattedFields(form, res.data)
+    stdPanelRef.value?.reloadProblem?.()
+  } catch (error) {
+    console.error(error)
+    ElMessage.warning('版本已更新，但刷新题目内容失败，请手动刷新页面')
   }
-  router.push(`/admin/problem/${form.id}/statement`)
+}
+
+function handleTabChange(name) {
+  if (name === 'statement') {
+    statementPanelRef.value?.reload?.()
+  }
 }
 
 // 用例增删改后，标准答案的「已测试」状态可能已失效：只刷新状态，不动编辑器内容。
@@ -180,7 +188,8 @@ const resetForm = () => {
 }
 
 // 函数声明（提升）：onMounted 与优化完成回调都在下方引用，保持声明式写法避免 TDZ
-const TAB_NAMES = ['basic', 'cases', 'std']
+// statement 是编辑态才有的页签（新建题目时不渲染），所以下面还要按 form.id 再判一次
+const TAB_NAMES = ['statement', 'basic', 'cases', 'std']
 
 // ?tab=std 这类外链参数：只有题目加载成功、对应 tab 可用时才切换。
 // 否则「新建题目」页收到 ?tab=std 会切到一个 disabled 的页签，视觉上像点了没反应。

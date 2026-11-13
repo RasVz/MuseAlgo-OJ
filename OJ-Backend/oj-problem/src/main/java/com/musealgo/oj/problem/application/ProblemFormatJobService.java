@@ -384,8 +384,10 @@ public class ProblemFormatJobService {
             List<StatementIssue> issues = proposal.issues();
             boolean blocking = StatementQualityChecker.hasBlockingIssue(issues);
             boolean sampleRisk = StatementQualityChecker.hasSampleRisk(issues);
+            // 正文大幅缩短、样例数量变化都需要人看一眼，自动应用一律转待审
+            boolean needsHuman = StatementQualityChecker.hasContentLoss(issues);
 
-            if (Boolean.TRUE.equals(job.getAutoApply()) && !blocking && !sampleRisk) {
+            if (Boolean.TRUE.equals(job.getAutoApply()) && !blocking && !sampleRisk && !needsHuman) {
                 // 原文没写时限/内存时，模型给的是平台默认值；自动应用不采纳，避免把 256MB 改成 512MB
                 List<String> autoFields = new ArrayList<>(List.of(
                         "title", "content", "inputDesc", "outputDesc", "hint", "samples"));
@@ -395,13 +397,26 @@ public class ProblemFormatJobService {
                 if (StatementQualityChecker.declaresMemoryLimit(proposal.source())) {
                     autoFields.add("memoryLimit");
                 }
+                // 批量自动应用同样要留版本：应用前保证有基线，应用后记录新内容。
+                // 记录失败只告警，不能因为审计信息丢失就把已经写好的题面判成失败。
+                try {
+                    versionService.ensureLive(problem, job.getCreatorId());
+                } catch (RuntimeException e) {
+                    log.warn("批量整理记录基线版本失败 problemId={}", item.getProblemId(), e);
+                }
                 ProblemFormatApplyResult applied = formatApplicationService.applyFormattedProposal(
                         item.getProblemId(), proposal.baseHash(), proposal.formatted(), autoFields);
+                try {
+                    versionService.recordSnapshot(item.getProblemId(), job.getCreatorId(), "批量整理自动应用");
+                } catch (RuntimeException e) {
+                    log.warn("批量整理记录结果版本失败 problemId={}", item.getProblemId(), e);
+                }
                 markItem(item.getId(), ITEM_APPLIED, "已自动应用：" + String.join("、", applied.appliedFields()),
                         null, proposal, String.join(",", applied.appliedFields()), null);
             } else {
                 String reason = blocking ? "存在阻断问题，等待人工审阅"
                         : sampleRisk ? "样例存在风险，等待人工审阅"
+                        : needsHuman ? "正文明显缩短，等待人工确认"
                         : "已生成，等待人工审阅";
                 markItem(item.getId(), ITEM_REVIEW, reason, null, proposal, null, null);
             }

@@ -125,6 +125,13 @@ public final class StatementQualityChecker {
         });
     }
 
+    /**
+     * 正文大幅缩短：人工可以判断，但无人值守的自动应用不该赌，遇到就转待审。
+     */
+    public static boolean hasContentLoss(List<StatementIssue> issues) {
+        return issues != null && issues.stream().anyMatch(issue -> "CONTENT_LOST".equals(issue.code()));
+    }
+
     /** 原文是否真的写过时限。 */
     public static boolean declaresTimeLimit(ProblemStatementSnapshot source) {
         return matchesMention(source, TIME_LIMIT_MENTION);
@@ -176,9 +183,13 @@ public final class StatementQualityChecker {
         if (source != null && source.content() != null
                 && source.content().length() >= CONTENT_LOSS_BASELINE
                 && content.length() < source.content().length() * CONTENT_LOSS_RATIO) {
-            issues.add(StatementIssue.error("CONTENT_LOST", "content",
+            // 不做阻断：原文常把输入输出和样例都写在正文里，拆分后正文显著变短是正常的；
+            // 而且版本表保留了上一版，误用也能回退。交给人工确认。
+            issues.add(StatementIssue.warn("CONTENT_LOST", "content",
                     "正文由 " + source.content().length() + " 字缩到 " + content.length()
-                            + " 字，疑似被截断；如确属精简请在编辑页手动处理"));
+                            + " 字（原文的 " + Math.round(content.length() * 100.0 / source.content().length())
+                            + "%）。若原文把输入格式、输出格式和样例都写在正文里，拆分后变短是正常的；"
+                            + "否则请核对是否被截断"));
         }
         if (LIMIT_DECLARATION.matcher(content).find()) {
             issues.add(StatementIssue.error("LIMIT_DECLARATION_LEFT", "content",

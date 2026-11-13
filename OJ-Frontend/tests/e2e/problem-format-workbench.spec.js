@@ -106,6 +106,21 @@ const problems = [
   { id: 13, title: 'Binary Search', difficulty: 1400, isPublic: false, testCaseCount: 8, totalCount: 12, passCount: 5 }
 ]
 
+const problemDetail = {
+  id: 12,
+  title: 'Two Sum',
+  content: sourceProblem.content,
+  inputDesc: '',
+  outputDesc: '',
+  hint: '',
+  timeLimit: 1000,
+  memoryLimit: 512,
+  difficulty: 1200,
+  tags: '',
+  isPublic: 1,
+  samples: sourceProblem.samples
+}
+
 const jobItems = [
   { problemId: 12, title: 'Two Sum', status: 'APPLIED', message: '已自动应用：title、content', attempts: 1, issueErrors: 0, issueWarnings: 2, hasProposal: true, appliedFields: ['title', 'content'] },
   { problemId: 13, title: 'Binary Search', status: 'REVIEW', message: '样例存在风险，等待人工审阅', attempts: 1, issueErrors: 0, issueWarnings: 1, hasProposal: true, appliedFields: [] },
@@ -163,6 +178,7 @@ async function setup(page, { issues = baseIssues, proposalOverrides = {} } = {})
       route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, data, message }) })
 
     if (path === '/api/user/info') return json({ id: 3, username: 'admin', nickname: '管理员', role: 3 })
+    if (path === '/api/problem/12' && method === 'GET') return json(problemDetail)
     if (path === '/api/problem/admin/list') return json({ records: problems, total: problems.length })
     if (path === '/api/problem/format/jobs/active') return json(null)
     if (path === '/api/problem/format/jobs' && method === 'POST') return json(job('PENDING', { processed: 0 }))
@@ -202,8 +218,8 @@ async function setup(page, { issues = baseIssues, proposalOverrides = {} } = {})
 }
 
 async function openWorkbench(page) {
-  await page.goto('/admin/problem/12/statement')
-  await page.locator('.sp-item', { hasText: '待审' }).click()
+  await page.goto('/admin/problem/edit/12')
+  await page.locator('.sv-item', { hasText: '待审' }).click()
   await page.getByRole('button', { name: '审阅并应用' }).click()
   const drawer = page.locator('.format-workbench')
   await expect(drawer).toBeVisible()
@@ -276,9 +292,9 @@ test('批量任务面板：创建选项、进度与逐项状态', async ({ page 
 
 test('暗色主题下工作台保持可读', async ({ page }) => {
   await setup(page)
-  await page.goto('/admin/problem/12/statement')
+  await page.goto('/admin/problem/edit/12')
   await page.evaluate(() => document.documentElement.classList.add('dark'))
-  await page.locator('.sp-item', { hasText: '待审' }).click()
+  await page.locator('.sv-item', { hasText: '待审' }).click()
   await page.getByRole('button', { name: '审阅并应用' }).click()
   await expect(page.locator('.format-workbench')).toBeVisible()
   await expect(page.locator('html')).toHaveClass(/dark/)

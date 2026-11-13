@@ -309,7 +309,7 @@
 // 2. 应用必须带 baseHash，服务端据此拒绝基于旧内容的覆盖；
 // 3. 只有勾选的字段会被写入，阻断级问题所在的字段默认不勾选。
 import { computed, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Loading, RefreshRight, WarningFilled } from '@element-plus/icons-vue'
 import {
   applyFormatProblem,
@@ -579,6 +579,22 @@ async function runPreview() {
 
 async function handleApply() {
   if (!canApply.value) return
+  // 正文大幅缩短不再是阻断项（拆分输入输出与样例后变短是正常的，且版本可回退），
+  // 但写入前要让教师明确确认一次。
+  const contentLoss = issues.value.find(
+    (issue) => issue.code === 'CONTENT_LOST' && selection.value[issue.field]
+  )
+  if (contentLoss) {
+    try {
+      await ElMessageBox.confirm(
+        `${contentLoss.message}。确认按当前内容写入？`,
+        '正文明显缩短',
+        { type: 'warning', confirmButtonText: '确认写入', cancelButtonText: '再检查一下' }
+      )
+    } catch {
+      return
+    }
+  }
   applying.value = true
   try {
     const payload = buildApplyPayload({

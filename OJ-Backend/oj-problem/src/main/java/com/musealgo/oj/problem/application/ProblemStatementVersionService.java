@@ -148,6 +148,11 @@ public class ProblemStatementVersionService {
 
     /** 首次访问版本页时把当前题面固化为 v1，让后续所有操作都有明确基线。 */
     public ProblemStatementVersion ensureLive(Problem problem) {
+        return ensureLive(problem, SecurityUtils.getUserId());
+    }
+
+    /** worker 侧版本：没有请求上下文，用任务创建人记录归属。 */
+    public ProblemStatementVersion ensureLive(Problem problem, Long actorId) {
         ProblemStatementVersion live = findLive(problem.getId());
         if (live != null) {
             return live;
@@ -165,11 +170,34 @@ public class ProblemStatementVersionService {
             version.setSource(SOURCE_INITIAL);
             fillFromSnapshot(version, snapshot);
             version.setNote("初始题面");
-            version.setCreatedBy(SecurityUtils.getUserId());
+            version.setCreatedBy(actorId);
             version.setCreateTime(LocalDateTime.now());
             version.setUpdateTime(LocalDateTime.now());
             versionMapper.insert(version);
             return version;
+        });
+    }
+
+    /**
+     * 把题目当前内容记录成新的 LIVE 版本（无鉴权，供后台任务在写库后调用）。
+     * <p>批量自动应用也要留下版本，否则那一次改动在历史里查不到、也回退不了。</p>
+     */
+    public void recordSnapshot(Long problemId, Long actorId, String note) {
+        Problem problem = requireProblem(problemId);
+        ProblemStatementSnapshot current = formatApplicationService.snapshot(problem);
+        transactionTemplate.executeWithoutResult(status -> {
+            archiveLive(problemId);
+            ProblemStatementVersion version = new ProblemStatementVersion();
+            version.setProblemId(problemId);
+            version.setVersionNo(nextVersionNo(problemId));
+            version.setStatus(STATUS_LIVE);
+            version.setSource(SOURCE_AI_APPLIED);
+            fillFromSnapshot(version, current);
+            version.setNote(note);
+            version.setCreatedBy(actorId);
+            version.setCreateTime(LocalDateTime.now());
+            version.setUpdateTime(LocalDateTime.now());
+            versionMapper.insert(version);
         });
     }
 

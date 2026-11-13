@@ -1,120 +1,96 @@
 <template>
-  <div class="page-container statement-page admin-scroll-page">
-    <header class="sp-head">
-      <div class="sp-head-main">
-        <div class="sp-crumb">
-          <el-button link @click="goBack">题库管理</el-button>
-          <span class="sp-crumb-sep">/</span>
-          <span>题面版本</span>
-        </div>
-        <h1 class="sp-title">
-          <span class="sp-id">#{{ problemId }}</span>
-          {{ problemTitle || '题面版本' }}
-        </h1>
-        <p class="sp-sub">
-          {{ versions.length }} 个版本
-          <template v-if="liveVersion"> · 当前使用 v{{ liveVersion.versionNo }}</template>
-          <template v-if="candidateCount"> · {{ candidateCount }} 个待审阅</template>
-        </p>
+  <div class="sv">
+    <div class="sv-toolbar">
+      <div class="sv-toolbar-info">
+        <strong>{{ versions.length }}</strong> 个版本
+        <template v-if="liveVersion"> · 当前使用 v{{ liveVersion.versionNo }}</template>
+        <template v-if="candidateCount"> · {{ candidateCount }} 个待审阅</template>
+        <span v-if="dirtyHint" class="sv-dirty">{{ dirtyHint }}</span>
       </div>
-      <div class="sp-head-actions">
-        <label class="sp-ip">
+      <div class="sv-toolbar-actions">
+        <label class="sv-ip">
           <el-switch v-model="ipMode" size="small" :disabled="starting" />
           <span>IP 改名</span>
         </label>
-        <el-button :icon="EditPen" @click="goEdit">编辑题目</el-button>
-        <el-button :loading="recording" @click="recordCurrent">记录当前题面</el-button>
-        <el-button type="primary" :icon="MagicStick" :loading="starting" @click="optimize(selectedVersion || liveVersion)">
+        <el-button size="small" :loading="recording" @click="recordCurrent">记录当前题面</el-button>
+        <el-button
+          type="primary"
+          size="small"
+          :icon="MagicStick"
+          :loading="starting"
+          @click="optimize(selectedVersion || liveVersion)"
+        >
           基于所选版本优化
         </el-button>
       </div>
-    </header>
+    </div>
 
     <el-alert
       v-if="liveVersion?.drifted"
-      class="sp-alert"
+      class="sv-alert"
       type="warning"
       :closable="false"
       show-icon
-      title="当前题面在编辑器里被改过，还没有记录成版本"
-      description="记录后才会出现在时间线上；不记录也不影响使用，只是历史里查不到这次修改。"
+      title="当前题面有未记录的修改"
+      description="题面在基本信息里被改过，还没有记录成版本。记录后才会出现在时间线上；不记录也不影响使用。"
     >
       <template #default>
         <el-button size="small" :loading="recording" @click="recordCurrent">记录为新版本</el-button>
       </template>
     </el-alert>
 
-    <div v-if="runningJob" class="sp-running">
-      <div class="sp-running-main">
+    <div v-if="runningJob" class="sv-running">
+      <div class="sv-running-main">
         <el-icon class="is-loading"><Loading /></el-icon>
-        <span>
-          AI 正在基于 <strong>v{{ baseVersionNo }}</strong> 整理题面，可离开此页面，任务在服务端继续执行。
-        </span>
+        <span>AI 正在基于 <strong>v{{ baseVersionNo }}</strong> 整理题面，可离开此页面，任务在服务端继续执行。</span>
       </div>
-      <el-progress
-        class="sp-running-progress"
-        :percentage="jobPercent"
-        :stroke-width="6"
-        :show-text="false"
-      />
+      <el-progress class="sv-running-progress" :percentage="jobPercent" :stroke-width="6" :show-text="false" />
     </div>
 
-    <div class="sp-body">
-      <aside class="sp-timeline" v-loading="loading">
+    <div class="sv-body">
+      <aside class="sv-timeline" v-loading="loading">
         <button
           v-for="version in versions"
           :key="version.id"
           type="button"
-          class="sp-item"
-          :class="{ active: version.id === selectedId, live: version.live, candidate: version.status === 'CANDIDATE' }"
+          class="sv-item"
+          :class="{ active: version.id === selectedId, live: version.live }"
           @click="selectVersion(version.id)"
         >
-          <span class="sp-item-no">v{{ version.versionNo }}</span>
-          <span class="sp-item-main">
-            <span class="sp-item-title">{{ version.title || '（无题名）' }}</span>
-            <span class="sp-item-meta">{{ sourceLabel(version.source) }} · {{ formatTime(version.createTime) }}</span>
-            <span class="sp-item-summary">{{ version.summary || '（空正文）' }}</span>
+          <span class="sv-item-no">v{{ version.versionNo }}</span>
+          <span class="sv-item-main">
+            <span class="sv-item-title">{{ version.title || '（无题名）' }}</span>
+            <span class="sv-item-meta">{{ sourceLabel(version.source) }} · {{ formatTime(version.createTime) }}</span>
+            <span class="sv-item-summary">{{ version.summary || '（空正文）' }}</span>
           </span>
-          <span class="sp-item-badges">
+          <span class="sv-item-badges">
             <el-tag v-if="version.live" size="small" type="success" effect="light">当前</el-tag>
             <el-tag v-else-if="version.status === 'CANDIDATE'" size="small" type="warning" effect="light">待审</el-tag>
             <el-tag v-else-if="version.status === 'DISCARDED'" size="small" type="info" effect="plain">已丢弃</el-tag>
-            <span v-if="version.issueErrors" class="sp-dot is-error">{{ version.issueErrors }}</span>
-            <span v-else-if="version.issueWarnings" class="sp-dot is-warn">{{ version.issueWarnings }}</span>
+            <span v-if="version.issueErrors" class="sv-dot is-error">{{ version.issueErrors }}</span>
+            <span v-else-if="version.issueWarnings" class="sv-dot is-warn">{{ version.issueWarnings }}</span>
           </span>
         </button>
         <el-empty v-if="!loading && !versions.length" description="还没有版本" :image-size="64" />
       </aside>
 
-      <section class="sp-detail" v-loading="detailLoading">
+      <section class="sv-detail" v-loading="detailLoading">
         <template v-if="detail">
-          <div class="sp-detail-head">
+          <div class="sv-detail-head">
             <div>
-              <h2 class="sp-detail-title">v{{ detail.versionNo }} · {{ detail.title }}</h2>
-              <div class="sp-detail-meta">
+              <h3 class="sv-detail-title">v{{ detail.versionNo }} · {{ detail.title }}</h3>
+              <div class="sv-detail-meta">
                 <el-tag size="small" :type="statusTagType(detail.status)" effect="light">{{ statusLabel(detail.status) }}</el-tag>
                 <span>{{ sourceLabel(detail.source) }}</span>
                 <span>{{ formatTime(detail.createTime) }}</span>
                 <span v-if="detail.baseVersionId">基线 v{{ versionNoOf(detail.baseVersionId) }}</span>
               </div>
             </div>
-            <div class="sp-detail-actions">
-              <el-button
-                v-if="detail.status === 'CANDIDATE'"
-                type="primary"
-                :icon="MagicStick"
-                @click="openReview(detail)"
-              >
+            <div class="sv-detail-actions">
+              <el-button v-if="detail.status === 'CANDIDATE'" type="primary" :icon="MagicStick" @click="openReview(detail)">
                 审阅并应用
               </el-button>
-              <el-button
-                v-else
-                type="primary"
-                plain
-                :icon="MagicStick"
-                :loading="starting"
-                @click="optimize(detail)"
-              >
+              <el-button v-else type="primary" plain :icon="MagicStick" :loading="starting" @click="optimize(detail)">
                 基于此版本优化
               </el-button>
               <el-button
@@ -124,54 +100,52 @@
               >
                 设为当前版本
               </el-button>
-              <el-button v-if="detail.status === 'CANDIDATE'" type="danger" plain @click="discard(detail)">
-                丢弃
-              </el-button>
+              <el-button v-if="detail.status === 'CANDIDATE'" type="danger" plain @click="discard(detail)">丢弃</el-button>
             </div>
           </div>
 
-          <div v-if="detailIssues.length" class="sp-issues">
-            <div v-for="issue in detailIssues" :key="issue.code + issue.message" class="sp-issue" :class="issue.severity.toLowerCase()">
-              <span class="sp-issue-dot" />
+          <div v-if="detailIssues.length" class="sv-issues">
+            <div v-for="issue in detailIssues" :key="issue.code + issue.message" class="sv-issue" :class="issue.severity.toLowerCase()">
+              <span class="sv-issue-dot" />
               <span>{{ issue.message }}</span>
               <code>{{ issue.code }}</code>
             </div>
           </div>
 
-          <div class="sp-facts">
-            <div class="sp-fact"><span>时限</span><strong>{{ detail.timeLimit }} ms</strong></div>
-            <div class="sp-fact"><span>内存</span><strong>{{ detail.memoryLimit }} MB</strong></div>
-            <div class="sp-fact"><span>样例</span><strong>{{ detail.samples?.length || 0 }} 组</strong></div>
-            <div class="sp-fact"><span>正文</span><strong>{{ (detail.content || '').length }} 字</strong></div>
+          <div class="sv-facts">
+            <div class="sv-fact"><span>时限</span><strong>{{ detail.timeLimit }} ms</strong></div>
+            <div class="sv-fact"><span>内存</span><strong>{{ detail.memoryLimit }} MB</strong></div>
+            <div class="sv-fact"><span>样例</span><strong>{{ detail.samples?.length || 0 }} 组</strong></div>
+            <div class="sv-fact"><span>正文</span><strong>{{ (detail.content || '').length }} 字</strong></div>
           </div>
 
-          <div class="sp-sections">
-            <div class="sp-section">
-              <h3>题目正文</h3>
-              <div class="markdown-body sp-markdown" v-html="render(detail.content)" />
+          <div class="sv-sections">
+            <div class="sv-section">
+              <h4>题目正文</h4>
+              <div class="markdown-body sv-markdown" v-html="render(detail.content)" />
             </div>
-            <div class="sp-section">
-              <h3>输入描述</h3>
-              <div class="markdown-body sp-markdown" v-html="render(detail.inputDesc)" />
+            <div class="sv-section">
+              <h4>输入描述</h4>
+              <div class="markdown-body sv-markdown" v-html="render(detail.inputDesc)" />
             </div>
-            <div class="sp-section">
-              <h3>输出描述</h3>
-              <div class="markdown-body sp-markdown" v-html="render(detail.outputDesc)" />
+            <div class="sv-section">
+              <h4>输出描述</h4>
+              <div class="markdown-body sv-markdown" v-html="render(detail.outputDesc)" />
             </div>
-            <div v-if="detail.hint" class="sp-section">
-              <h3>提示</h3>
-              <div class="markdown-body sp-markdown" v-html="render(detail.hint)" />
+            <div v-if="detail.hint" class="sv-section">
+              <h4>提示</h4>
+              <div class="markdown-body sv-markdown" v-html="render(detail.hint)" />
             </div>
-            <div class="sp-section">
-              <h3>样例</h3>
-              <div v-if="detail.samples?.length" class="sp-samples">
-                <div v-for="(sample, index) in detail.samples" :key="index" class="sp-sample">
-                  <div class="sp-sample-title">样例 #{{ index + 1 }}</div>
-                  <pre class="sp-code">{{ sample.input || '（空）' }}</pre>
-                  <pre class="sp-code">{{ sample.output || '（空）' }}</pre>
+            <div class="sv-section">
+              <h4>样例</h4>
+              <div v-if="detail.samples?.length" class="sv-samples">
+                <div v-for="(sample, index) in detail.samples" :key="index" class="sv-sample">
+                  <div class="sv-sample-title">样例 #{{ index + 1 }}</div>
+                  <pre class="sv-code">{{ sample.input || '（空）' }}</pre>
+                  <pre class="sv-code">{{ sample.output || '（空）' }}</pre>
                 </div>
               </div>
-              <p v-else class="sp-empty">该版本没有样例</p>
+              <p v-else class="sv-empty">该版本没有样例</p>
             </div>
           </div>
         </template>
@@ -190,15 +164,14 @@
 </template>
 
 <script setup>
-// 题面版本页：所有「优化」都从这里发起，先选版本、再异步生成候选、最后审阅应用。
+// 题面版本面板：编辑页「题面与版本」Tab 的内容。
 //
-// 为什么不在列表页直接调 AI：一次整理 20~150 秒，教师需要看到「基于哪一版改的」、
-// 「改成了什么」、「要不要用」。把动作拆到版本页后，等待变成后台任务，
-// 每次结果都留下一条可回退的版本记录。
+// 版本是题面唯一的可回溯记录：AI 整理的结果先成为「待审候选」，人工勾选字段后
+// 才提升为当前版本。把面板放进编辑页而不是单独开一个页面，是为了让「改题面」
+// 只有一个入口——基本信息编辑当前内容，这里管理历史与 AI 整理，两者互不跳转。
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { EditPen, Loading, MagicStick } from '@element-plus/icons-vue'
+import { Loading, MagicStick } from '@element-plus/icons-vue'
 import {
   activateStatementVersion,
   discardStatementVersion,
@@ -212,13 +185,18 @@ import {
 import { createMarkdown } from '@/utils/markdown'
 import { sanitizeStatementMarkup } from '@/utils/statement-markup'
 import { showApiError } from '@/utils/errorFeedback'
-import ProblemFormatWorkbench from './problemFormat/ProblemFormatWorkbench.vue'
+import ProblemFormatWorkbench from './ProblemFormatWorkbench.vue'
 
-const route = useRoute()
-const router = useRouter()
+const props = defineProps({
+  problemId: { type: [Number, String], default: null },
+  /** 基本信息是否有未保存修改：有的话在应用版本前提醒会被覆盖 */
+  dirty: { type: Boolean, default: false }
+})
+
+const emit = defineEmits(['changed'])
+
 const md = createMarkdown({ html: true, math: true })
 
-const problemId = computed(() => Number(route.params.id))
 const versions = ref([])
 const detail = ref(null)
 const selectedId = ref(null)
@@ -239,13 +217,13 @@ let pollGeneration = 0
 const liveVersion = computed(() => versions.value.find((version) => version.live) || null)
 const selectedVersion = computed(() => versions.value.find((version) => version.id === selectedId.value) || null)
 const candidateCount = computed(() => versions.value.filter((version) => version.status === 'CANDIDATE').length)
-const problemTitle = computed(() => liveVersion.value?.title || versions.value[0]?.title || '')
 const detailIssues = computed(() => (Array.isArray(detail.value?.issues) ? detail.value.issues : []))
 const jobPercent = computed(() => {
   const job = runningJob.value
   if (!job || !job.total) return 8
   return Math.min(99, Math.round((job.processed / job.total) * 100))
 })
+const dirtyHint = computed(() => (props.dirty ? '· 基本信息有未保存修改' : ''))
 
 const SOURCE_LABELS = {
   INITIAL: '初始题面',
@@ -282,27 +260,20 @@ function formatTime(value) {
 }
 
 function render(text) {
-  if (!text || !String(text).trim()) return '<p class="sp-empty">（空）</p>'
+  if (!text || !String(text).trim()) return '<p class="sv-empty">（空）</p>'
   return md.render(sanitizeStatementMarkup(String(text)))
 }
 
-function goBack() {
-  router.push('/admin/problem')
-}
-
-function goEdit() {
-  const url = router.resolve({ path: `/admin/problem/edit/${problemId.value}` })
-  window.open(url.href, '_blank')
-}
-
 async function loadVersions({ keepSelection = true } = {}) {
+  if (!props.problemId) return
   loading.value = true
   try {
-    const res = await listStatementVersions(problemId.value)
+    const res = await listStatementVersions(props.problemId)
     versions.value = Array.isArray(res?.data) ? res.data : []
     const stillThere = versions.value.some((version) => version.id === selectedId.value)
     if (!keepSelection || !stillThere) {
-      const preferred = versions.value.find((version) => version.status === 'CANDIDATE') || liveVersion.value || versions.value[0]
+      const preferred = versions.value.find((version) => version.status === 'CANDIDATE')
+        || liveVersion.value || versions.value[0]
       selectedId.value = preferred?.id || null
     }
     if (selectedId.value) await loadDetail(selectedId.value)
@@ -317,7 +288,7 @@ async function loadVersions({ keepSelection = true } = {}) {
 async function loadDetail(versionId) {
   detailLoading.value = true
   try {
-    const res = await getStatementVersion(problemId.value, versionId)
+    const res = await getStatementVersion(props.problemId, versionId)
     detail.value = res?.data ?? null
   } catch (error) {
     showApiError(error, '版本详情加载失败')
@@ -336,8 +307,9 @@ async function selectVersion(versionId) {
 async function recordCurrent() {
   recording.value = true
   try {
-    const res = await recordCurrentStatement(problemId.value)
+    const res = await recordCurrentStatement(props.problemId)
     ElMessage.success('已记录为新版本')
+    emit('changed')
     await loadVersions({ keepSelection: false })
     if (res?.data?.id) {
       selectedId.value = res.data.id
@@ -367,7 +339,7 @@ async function optimize(version) {
   }
   starting.value = true
   try {
-    const res = await optimizeStatementVersion(problemId.value, version.id, ipMode.value)
+    const res = await optimizeStatementVersion(props.problemId, version.id, ipMode.value)
     baseVersionNo.value = version.versionNo
     runningJob.value = res?.data ?? null
     if (runningJob.value?.id) startPolling(runningJob.value.id)
@@ -432,12 +404,11 @@ async function handleJobFinished(job) {
   }
 }
 
-/** 进入页面时接回仍在执行的任务：否则用户离开再回来会以为任务丢了。 */
 async function resumeActiveJob() {
   try {
     const res = await getActiveFormatJob({ silent: true })
     const job = res?.data ?? res
-    if (!job || job.items?.[0]?.problemId !== problemId.value) return
+    if (!job || job.items?.[0]?.problemId !== Number(props.problemId)) return
     baseVersionNo.value = versionNoOf(job.items[0].baseVersionId)
     runningJob.value = job
     startPolling(job.id)
@@ -453,12 +424,14 @@ function openReview(version) {
 
 async function handleApplied() {
   await loadVersions()
+  emit('changed')
 }
 
 async function activate(version) {
   try {
     await ElMessageBox.confirm(
-      `将把 v${version.versionNo} 的内容写回题目，当前版本会转为历史版本。题面、样例、时限与内存都会以该版本为准。`,
+      `将把 v${version.versionNo} 的内容写回题目，当前版本会转为历史版本。`
+      + '题面、样例、时限与内存都会以该版本为准。',
       '设为当前版本',
       { type: 'warning', confirmButtonText: '确认切换', cancelButtonText: '取消' }
     )
@@ -467,9 +440,10 @@ async function activate(version) {
   }
   activating.value = true
   try {
-    await activateStatementVersion(problemId.value, version.id)
+    await activateStatementVersion(props.problemId, version.id)
     ElMessage.success('已切换当前版本')
     await loadVersions()
+    emit('changed')
   } catch (error) {
     showApiError(error, '切换失败')
   } finally {
@@ -488,7 +462,7 @@ async function discard(version) {
     return
   }
   try {
-    await discardStatementVersion(problemId.value, version.id)
+    await discardStatementVersion(props.problemId, version.id)
     ElMessage.success('已丢弃')
     await loadVersions()
   } catch (error) {
@@ -496,58 +470,60 @@ async function discard(version) {
   }
 }
 
-watch(problemId, () => {
-  selectedId.value = null
-  detail.value = null
-  loadVersions({ keepSelection: false }).then(resumeActiveJob)
-}, { immediate: true })
+watch(
+  () => props.problemId,
+  (id) => {
+    selectedId.value = null
+    detail.value = null
+    if (!id) {
+      versions.value = []
+      return
+    }
+    loadVersions({ keepSelection: false }).then(resumeActiveJob)
+  },
+  { immediate: true }
+)
 
-onBeforeUnmount(() => {
-  stopPolling()
-})
+onBeforeUnmount(stopPolling)
+
+defineExpose({ reload: () => loadVersions() })
 </script>
 
 <style scoped>
-.statement-page {
-  max-width: 1500px;
-  margin: 0 auto;
-  padding: 16px 20px 24px;
-}
-.sp-head {
+.sv { display: flex; flex-direction: column; gap: 12px; }
+
+.sv-toolbar {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  gap: 20px;
-  margin-bottom: 14px;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
 }
-.sp-crumb { font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; }
-.sp-crumb-sep { margin: 0 4px; }
-.sp-title { margin: 0; font-size: 22px; color: var(--text-primary); }
-.sp-id { color: var(--text-secondary); font-weight: 500; margin-right: 6px; }
-.sp-sub { margin: 6px 0 0; font-size: 13px; color: var(--text-secondary); }
-.sp-head-actions { display: flex; gap: 8px; flex-shrink: 0; align-items: center; }
-.sp-ip { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-regular); margin-right: 4px; }
-.sp-running-progress { flex: 1; max-width: 320px; }
+.sv-toolbar-info { font-size: 13px; color: var(--text-secondary); }
+.sv-toolbar-info strong { color: var(--text-primary); font-size: 15px; }
+.sv-dirty { color: var(--el-color-warning-dark-2); margin-left: 6px; }
+.sv-toolbar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sv-ip { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-regular); }
 
-.sp-alert { margin-bottom: 12px; }
-.sp-running {
+.sv-alert { margin: 0; }
+.sv-running {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 14px;
   padding: 10px 14px;
-  margin-bottom: 12px;
   border: 1px solid var(--border-light);
   border-radius: 10px;
   background: var(--bg-surface);
   font-size: 13px;
   color: var(--text-regular);
 }
-.sp-running-main { display: flex; align-items: center; gap: 8px; }
+.sv-running-main { display: flex; align-items: center; gap: 8px; }
+.sv-running-progress { flex: 1; max-width: 280px; }
 
-.sp-body { display: grid; grid-template-columns: 340px 1fr; gap: 14px; align-items: start; }
+.sv-body { display: grid; grid-template-columns: 320px 1fr; gap: 14px; align-items: start; }
 
-.sp-timeline {
+.sv-timeline {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -555,10 +531,10 @@ onBeforeUnmount(() => {
   border-radius: 10px;
   background: var(--bg-surface);
   padding: 10px;
-  max-height: calc(100vh - 220px);
+  max-height: 640px;
   overflow-y: auto;
 }
-.sp-item {
+.sv-item {
   display: flex;
   gap: 10px;
   width: 100%;
@@ -570,15 +546,15 @@ onBeforeUnmount(() => {
   cursor: pointer;
   color: var(--text-regular);
 }
-.sp-item:hover { background: var(--bg-surface-hover); }
-.sp-item.active {
+.sv-item:hover { background: var(--bg-surface-hover); }
+.sv-item.active {
   background: var(--bg-surface-hover);
   border-color: var(--border-base);
   box-shadow: inset 2px 0 0 var(--accent-primary);
 }
-.sp-item-no { font-size: 12px; font-weight: 700; color: var(--text-primary); width: 30px; flex-shrink: 0; }
-.sp-item-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.sp-item-title {
+.sv-item-no { font-size: 12px; font-weight: 700; color: var(--text-primary); width: 30px; flex-shrink: 0; }
+.sv-item-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.sv-item-title {
   font-size: 13px;
   color: var(--text-primary);
   font-weight: 600;
@@ -586,16 +562,16 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.sp-item-meta { font-size: 11px; color: var(--text-secondary); }
-.sp-item-summary {
+.sv-item-meta { font-size: 11px; color: var(--text-secondary); }
+.sv-item-summary {
   font-size: 11.5px;
   color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.sp-item-badges { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
-.sp-dot {
+.sv-item-badges { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.sv-dot {
   min-width: 16px;
   height: 16px;
   border-radius: 999px;
@@ -605,17 +581,17 @@ onBeforeUnmount(() => {
   padding: 0 4px;
   color: #fff;
 }
-.sp-dot.is-error { background: var(--el-color-danger); }
-.sp-dot.is-warn { background: var(--el-color-warning); }
+.sv-dot.is-error { background: var(--el-color-danger); }
+.sv-dot.is-warn { background: var(--el-color-warning); }
 
-.sp-detail {
+.sv-detail {
   border: 1px solid var(--border-light);
   border-radius: 10px;
   background: var(--bg-surface);
   padding: 16px 20px 22px;
   min-height: 320px;
 }
-.sp-detail-head {
+.sv-detail-head {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
@@ -623,8 +599,8 @@ onBeforeUnmount(() => {
   padding-bottom: 12px;
   border-bottom: 1px solid var(--border-light);
 }
-.sp-detail-title { margin: 0; font-size: 17px; color: var(--text-primary); }
-.sp-detail-meta {
+.sv-detail-title { margin: 0; font-size: 16px; color: var(--text-primary); }
+.sv-detail-meta {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
@@ -633,10 +609,10 @@ onBeforeUnmount(() => {
   font-size: 12px;
   color: var(--text-secondary);
 }
-.sp-detail-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; }
+.sv-detail-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; }
 
-.sp-issues { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; }
-.sp-issue {
+.sv-issues { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; }
+.sv-issue {
   display: flex;
   align-items: baseline;
   gap: 8px;
@@ -646,16 +622,16 @@ onBeforeUnmount(() => {
   border: 1px solid transparent;
   color: var(--text-regular);
 }
-.sp-issue-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; margin-top: 6px; }
-.sp-issue.error { background: rgba(220, 38, 38, 0.08); border-color: rgba(220, 38, 38, 0.35); }
-.sp-issue.error .sp-issue-dot { background: var(--el-color-danger); }
-.sp-issue.warn { background: rgba(217, 119, 6, 0.08); border-color: rgba(217, 119, 6, 0.35); }
-.sp-issue.warn .sp-issue-dot { background: var(--el-color-warning); }
-.sp-issue.info .sp-issue-dot { background: var(--el-color-info); }
-.sp-issue code { font-size: 11px; color: var(--text-secondary); }
+.sv-issue-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; margin-top: 6px; }
+.sv-issue.error { background: rgba(220, 38, 38, 0.08); border-color: rgba(220, 38, 38, 0.35); }
+.sv-issue.error .sv-issue-dot { background: var(--el-color-danger); }
+.sv-issue.warn { background: rgba(217, 119, 6, 0.08); border-color: rgba(217, 119, 6, 0.35); }
+.sv-issue.warn .sv-issue-dot { background: var(--el-color-warning); }
+.sv-issue.info .sv-issue-dot { background: var(--el-color-info); }
+.sv-issue code { font-size: 11px; color: var(--text-secondary); }
 
-.sp-facts { display: flex; gap: 10px; flex-wrap: wrap; margin: 14px 0 6px; }
-.sp-fact {
+.sv-facts { display: flex; gap: 10px; flex-wrap: wrap; margin: 14px 0 6px; }
+.sv-fact {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -664,22 +640,22 @@ onBeforeUnmount(() => {
   background: var(--bg-app);
   border: 1px solid var(--border-light);
 }
-.sp-fact span { font-size: 11px; color: var(--text-secondary); }
-.sp-fact strong { font-size: 14px; color: var(--text-primary); }
+.sv-fact span { font-size: 11px; color: var(--text-secondary); }
+.sv-fact strong { font-size: 14px; color: var(--text-primary); }
 
-.sp-sections { display: flex; flex-direction: column; gap: 18px; margin-top: 16px; }
-.sp-section h3 {
+.sv-sections { display: flex; flex-direction: column; gap: 18px; margin-top: 16px; }
+.sv-section h4 {
   margin: 0 0 8px;
-  font-size: 14px;
+  font-size: 13px;
   color: var(--text-primary);
   border-left: 3px solid var(--accent-primary);
   padding-left: 8px;
 }
-.sp-markdown { font-size: 14px; line-height: 1.75; color: var(--text-regular); }
-.sp-samples { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
-.sp-sample { border: 1px solid var(--border-light); border-radius: 8px; padding: 10px 12px; }
-.sp-sample-title { font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; }
-.sp-code {
+.sv-markdown { font-size: 14px; line-height: 1.75; color: var(--text-regular); }
+.sv-samples { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.sv-sample { border: 1px solid var(--border-light); border-radius: 8px; padding: 10px 12px; }
+.sv-sample-title { font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; }
+.sv-code {
   margin: 0 0 8px;
   padding: 8px 10px;
   border-radius: 6px;
@@ -690,14 +666,15 @@ onBeforeUnmount(() => {
   word-break: break-word;
   color: var(--text-regular);
 }
-.sp-empty { color: var(--text-secondary); font-size: 13px; }
+.sv-empty { color: var(--text-secondary); font-size: 13px; }
 
-.dark .sp-item.active { background: #1c2129; border-color: #2f4a85; box-shadow: inset 2px 0 0 #58a6ff; }
-.dark .sp-issue.error { background: rgba(248, 81, 73, 0.12); border-color: rgba(248, 81, 73, 0.35); }
-.dark .sp-issue.warn { background: rgba(210, 153, 34, 0.12); border-color: rgba(210, 153, 34, 0.35); }
+.dark .sv-item.active { background: #1c2129; border-color: #2f4a85; box-shadow: inset 2px 0 0 #58a6ff; }
+.dark .sv-issue.error { background: rgba(248, 81, 73, 0.12); border-color: rgba(248, 81, 73, 0.35); }
+.dark .sv-issue.warn { background: rgba(210, 153, 34, 0.12); border-color: rgba(210, 153, 34, 0.35); }
+.dark .sv-dirty { color: #d29922; }
 
 @media (max-width: 1100px) {
-  .sp-body { grid-template-columns: 1fr; }
-  .sp-timeline { max-height: 320px; }
+  .sv-body { grid-template-columns: 1fr; }
+  .sv-timeline { max-height: 320px; }
 }
 </style>

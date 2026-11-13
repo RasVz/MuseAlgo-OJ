@@ -80,6 +80,24 @@ function resetVersions() {
   ]
 }
 
+const problemDetail = {
+  id: 12,
+  title: '两数之和',
+  content: LONG_TEXT,
+  inputDesc: '第一行一个整数 $n$。',
+  outputDesc: '输出两个下标。',
+  hint: '注意同一元素不能重复使用。',
+  timeLimit: 2000,
+  memoryLimit: 256,
+  difficulty: 1200,
+  tags: '',
+  isPublic: 1,
+  samples: [
+    { input: '4\n2 7 11 15\n9', output: '1 2' },
+    { input: '3\n3 2 4\n6', output: '2 3' }
+  ]
+}
+
 const issues = [
   { code: 'SAMPLE_CONTENT_CHANGED', field: 'samples', severity: 'WARN', message: '第 2 组样例与原文不一致，请确认是修复了错乱还是被改写' },
   { code: 'MEMORY_LIMIT_RANGE', field: 'memoryLimit', severity: 'WARN', message: '内存 2048MB 超出常见范围 16~1024MB' }
@@ -159,6 +177,7 @@ async function setup(page) {
       route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, data, message }) })
 
     if (path === '/api/user/info') return json({ id: 3, username: 'admin', nickname: '管理员', role: 3 })
+    if (path === '/api/problem/12' && method === 'GET') return json(problemDetail)
     if (path === '/api/problem/format/jobs/active') return jobDone ? json(null) : json(null)
     if (path === '/api/problem/12/statement/versions' && method === 'GET') return json(versions)
     if (path === '/api/problem/12/statement/versions/optimize' && method === 'POST') {
@@ -223,21 +242,21 @@ async function setup(page) {
 
 test('版本页：时间线、版本详情与候选审阅', async ({ page }) => {
   await setup(page)
-  await page.goto('/admin/problem/12/statement')
-  await expect(page.locator('.sp-item')).toHaveCount(3)
-  await expect(page.locator('.sp-title')).toContainText('两数之和')
-  await expect(page.locator('.sp-item', { hasText: '当前' }).first()).toBeVisible()
-  await expect(page.locator('.sp-item', { hasText: '待审' }).first()).toBeVisible()
+  await page.goto('/admin/problem/edit/12')
+  await expect(page.locator('.sv-item')).toHaveCount(3)
+  await expect(page.locator('.hero-title')).toContainText('编辑题目 #12')
+  await expect(page.locator('.sv-item', { hasText: '当前' }).first()).toBeVisible()
+  await expect(page.locator('.sv-item', { hasText: '待审' }).first()).toBeVisible()
   await page.waitForTimeout(800)
   await page.screenshot({ path: join(EVIDENCE, '11-versions-live.png') })
 
-  await page.locator('.sp-item', { hasText: 'v2' }).first().click()
-  await expect(page.locator('.sp-detail-title')).toContainText('v2')
-  await expect(page.locator('.sp-detail')).toContainText('原英文题面内容')
+  await page.locator('.sv-item', { hasText: 'v2' }).first().click()
+  await expect(page.locator('.sv-detail-title')).toContainText('v2')
+  await expect(page.locator('.sv-detail')).toContainText('原英文题面内容')
   await page.screenshot({ path: join(EVIDENCE, '12-versions-archived.png') })
 
-  await page.locator('.sp-item', { hasText: 'v1' }).first().click()
-  await expect(page.locator('.sp-detail-title')).toContainText('候选')
+  await page.locator('.sv-item', { hasText: 'v1' }).first().click()
+  await expect(page.locator('.sv-detail-title')).toContainText('候选')
   await page.getByRole('button', { name: '审阅并应用' }).click()
   const drawer = page.locator('.format-workbench')
   await expect(drawer).toBeVisible()
@@ -251,14 +270,14 @@ test('版本页：时间线、版本详情与候选审阅', async ({ page }) => 
 
 test('版本页：异步优化后自动生成候选并打开审阅', async ({ page }) => {
   await setup(page)
-  await page.goto('/admin/problem/12/statement')
-  await expect(page.locator('.sp-item')).toHaveCount(3)
+  await page.goto('/admin/problem/edit/12')
+  await expect(page.locator('.sv-item')).toHaveCount(3)
 
   await page.getByRole('button', { name: /基于所选版本优化/ }).click()
   await page.getByRole('button', { name: '开始整理' }).click()
 
-  await expect(page.locator('.sp-running')).toBeVisible()
-  await expect(page.locator('.sp-item')).toHaveCount(4, { timeout: 15000 })
+  await expect(page.locator('.sv-running')).toBeVisible()
+  await expect(page.locator('.sv-item')).toHaveCount(4, { timeout: 15000 })
   // 完成后自动打开工作台，且原文来自基线版本
   const drawer = page.locator('.format-workbench')
   await expect(drawer).toBeVisible({ timeout: 15000 })

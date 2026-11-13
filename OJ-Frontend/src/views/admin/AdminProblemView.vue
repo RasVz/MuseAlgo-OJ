@@ -119,9 +119,8 @@
             </template>
           </el-table-column>
 
-          <el-table-column label="操作" width="300" align="right" fixed="right">
+          <el-table-column label="操作" width="250" align="right" fixed="right">
             <template #default="{ row }">
-              <el-button link type="warning" icon="MagicStick" @click="openStatementPage(row)">优化</el-button>
               <el-button link type="success" icon="View" @click="handlePreview(row)">预览</el-button>
               <el-button link type="primary" icon="Edit" @click="handleEdit(row)">编辑</el-button>
               <el-button link type="danger" icon="Delete" @click="handleDelete(row)">删除</el-button>
@@ -225,13 +224,6 @@ const openFormatJob = () => {
     return
   }
   jobPanelVisible.value = true
-}
-
-// 单题优化统一进「题面版本」页：先选版本、再异步整理、最后审阅应用。
-// 不在列表页直接调 AI，避免教师等在一个没有上下文的弹窗里。
-const openStatementPage = (row) => {
-  const routeData = router.resolve({ path: `/admin/problem/${row.id}/statement` })
-  window.open(routeData.href, '_blank')
 }
 
 // 任务里的待审项：直接读任务保存的提案，不重新调用模型
