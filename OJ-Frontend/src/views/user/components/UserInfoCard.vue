@@ -1,97 +1,41 @@
 <template>
-  <el-card shadow="never" class="info-card-sticky allow-overflow">
-    <div class="avatar-wrapper">
-      <el-avatar 
-        :size="100" 
-        :src="user.avatar || defaultAvatar" 
-        class="user-avatar"
-      />
-    </div>
-    
-    <div class="user-identity">
-      <h2 class="nickname">{{ user.nickname || user.username || '未命名用户' }}</h2>
-      <div class="username-row">
-        <span class="username">@{{ user.username || 'user' }}</span>
-        <!-- <el-tag size="small" type="primary" effect="light" round>Lv.{{ level || 6 }}</el-tag> -->
-      </div>
-      <p class="bio">{{ user.motto || '这个人很懒，什么都没写。' }}</p>
-    </div>
-
+  <section class="user-info-card">
+    <el-avatar :size="88" :src="user.avatar || defaultAvatar" class="user-avatar" />
+    <h1 class="nickname">{{ user.nickname || user.username || '未命名用户' }}</h1>
+    <p class="username">@{{ user.username }}</p>
+    <p v-if="user.motto" class="bio">{{ user.motto }}</p>
+    <p v-else-if="isSelf" class="bio empty-bio">写一句话，介绍现在的你。</p>
     <div class="social-stats">
-      <div class="s-item clickable" @click="goToRelation('following')">
-        <div class="num">{{ formatNumber(user.followingCount || 0) }}</div>
-        <div class="label">关注</div>
-      </div>
-      <el-divider direction="vertical" />
-      
-      <div class="s-item clickable" @click="goToRelation('followers')">
-        <div class="num">{{ formatNumber(localFollowerCount || 0) }}</div>
-        <div class="label">粉丝</div>
-      </div>
-      <el-divider direction="vertical" />
-      
-      <div class="s-item">
-        <div class="num">{{ formatNumber(user.likeCount || 0) }}</div>
-        <div class="label">获赞</div>
+      <button type="button" @click="goToRelation('following')">
+        <strong>{{ formatNumber(user.followingCount || 0) }}</strong
+        ><span>关注</span>
+      </button>
+      <button type="button" @click="goToRelation('followers')">
+        <strong>{{ formatNumber(localFollowerCount || 0) }}</strong
+        ><span>粉丝</span>
+      </button>
+      <div>
+        <strong>{{ formatNumber(user.likeCount || 0) }}</strong
+        ><span>获赞</span>
       </div>
     </div>
-
-    <el-divider border-style="dashed" />
-
-    <!-- <div class="section-box">
-      <div class="section-title">成就徽章</div>
-      <div class="badges-grid">
-        <div class="badge-item" title="AC 100 题">🏆</div>
-        <div class="badge-item" title="打卡达人">🔥</div>
-        <div class="badge-item" title="C++ 专家">⚡️</div>
-        <div class="badge-item" title="比赛前十">🌟</div>
-      </div>
-    </div> -->
-    <!-- <el-divider border-style="dashed" /> -->
-
-    <!-- <div class="section-box">
-      <div class="section-title">能力分析</div>
-      <div class="ability-list">
-        <div class="ability-item" v-for="item in abilityData" :key="item.name">
-          <div class="ab-head">
-            <span class="ab-name">{{ item.name }}</span>
-            <span class="ab-score">{{ item.score }}</span>
-          </div>
-          <el-progress 
-            :percentage="item.value" 
-            :color="item.color" 
-            :stroke-width="8" 
-            :show-text="false"
-          />
-        </div>
-      </div>
-    </div> -->
-
-    <div class="edit-action">
-      <el-button 
-        v-if="isSelf" 
-        style="width: 100%" 
-        round 
-        @click="$router.push({ name: 'UserSetting' })"
-      >
-        编辑资料
-      </el-button>
-      
-      <el-button 
-        v-else 
-        style="width: 100%" 
-        round
-        :type="localIsFollowed ? 'info' : 'primary'"
-        :plain="localIsFollowed"
-        :loading="followLoading"
-        @click="handleFollow"
-      >
-        {{ localIsFollowed ? '已关注' : '+ 关注' }}
-      </el-button>
+    <div v-if="user.school || user.major" class="user-details">
+      <span v-if="user.school">{{ user.school }}</span
+      ><span v-if="user.major">{{ user.major }}</span>
     </div>
-  </el-card>
+    <el-button v-if="isSelf" class="profile-action" @click="$router.push({ name: 'UserSetting' })"
+      >编辑资料</el-button
+    >
+    <el-button
+      v-else
+      class="profile-action"
+      :type="localIsFollowed ? 'default' : 'primary'"
+      :loading="followLoading"
+      @click="handleFollow"
+      >{{ localIsFollowed ? '已关注' : '+ 关注' }}</el-button
+    >
+  </section>
 </template>
-
 <script setup>
 // 用户信息卡：头像、昵称、等级与关注按钮。
 // 关注状态与粉丝数在本地维护一份：props 是父组件的只读数据源，
@@ -108,12 +52,12 @@ const userStore = useUserStore()
 const props = defineProps({
   user: {
     type: Object,
-    default: () => ({})
+    default: () => ({}),
   },
   level: {
     type: Number,
-    default: 0
-  }
+    default: 0,
+  },
 })
 
 const router = useRouter()
@@ -133,24 +77,32 @@ const defaultAvatar = getDefaultAvatar()
 
 // props 变化时同步回本地：切换到另一位用户的资料页时，
 // 不加这个 watch 会把上一个用户的关注状态带过来。
-watch(() => props.user.isFollowed, (newVal) => {
-  localIsFollowed.value = !!newVal
-}, { immediate: true })
+watch(
+  () => props.user.isFollowed,
+  (newVal) => {
+    localIsFollowed.value = !!newVal
+  },
+  { immediate: true },
+)
 
-watch(() => props.user.followerCount, (newVal) => {
-  localFollowerCount.value = newVal || 0
-}, { immediate: true })
+watch(
+  () => props.user.followerCount,
+  (newVal) => {
+    localFollowerCount.value = newVal || 0
+  },
+  { immediate: true },
+)
 
 // 跳转到关注粉丝列表
 const goToRelation = (type) => {
   router.push({
     name: 'UserRelation',
-    params: { 
-      id: route.params.id // 或者 props.user.id
+    params: {
+      id: route.params.id, // 或者 props.user.id
     },
-    query: { 
-      type: type // 'following' 或 'followers'
-    }
+    query: {
+      type: type, // 'following' 或 'followers'
+    },
   })
 }
 
@@ -160,13 +112,13 @@ const handleFollow = async () => {
     ElMessage.warning('请先登录')
     return
   }
-  
+
   followLoading.value = true
   try {
     const res = await toggleFollow({ followedId: props.user.id })
     if (res.code === 200) {
       // 乐观更新：请求成功后本地翻转状态并把粉丝数 ±1，不重新拉整个用户资料。
-// 若这里改成重查，请求失败时数字会跳回去，体验反而更差。
+      // 若这里改成重查，请求失败时数字会跳回去，体验反而更差。
       localIsFollowed.value = !localIsFollowed.value
       if (localIsFollowed.value) {
         localFollowerCount.value = (localFollowerCount.value || 0) + 1
@@ -193,63 +145,112 @@ const formatNumber = (num) => {
   }
   return num
 }
-
 </script>
 
 <style scoped>
-/* 允许溢出：让头像突破卡片边界显示 */
-.info-card-sticky {
-  border-radius: 12px;
-  border: none;
-  overflow: visible !important; 
-}
-.info-card-sticky :deep(.el-card__body) {
-  overflow: visible !important;
-}
-
-.avatar-wrapper {
-  position: relative;
-  margin-top: -70px; /* 上移头像 */
-  margin-bottom: 15px;
+.user-info-card {
+  padding: 24px 20px 22px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-light);
+  border-radius: 16px;
   text-align: center;
-  z-index: 50; 
+  position: relative;
 }
-
 .user-avatar {
   border: 4px solid var(--bg-surface);
-  box-shadow: var(--shadow-md);
-  background: var(--bg-surface);
-  position: relative; 
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  background: var(--bg-app);
 }
-
-/* 文字部分 */
-.user-identity { text-align: center; margin-bottom: 20px; }
-.nickname { margin: 0 0 5px 0; font-size: 22px; font-weight: bold; color: var(--text-primary); }
-.username-row { display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 10px; }
-.username { color: var(--text-secondary); font-size: 14px; }
-.bio { font-size: 13px; color: var(--text-regular); padding: 0 20px; word-break: break-all; }
-
-/* 社交数据 */
-.social-stats { display: flex; justify-content: center; margin-bottom: 20px; }
-.s-item { text-align: center; padding: 0 10px; transition: opacity 0.2s; }
-
-/* 鼠标悬停变成小手 */
-.clickable { cursor: pointer; }
-.clickable:hover { opacity: 0.7; }
-.clickable:hover .num { color: var(--el-color-primary); }
-
-.s-item .num { font-weight: bold; font-size: 16px; color: var(--text-primary); transition: color 0.2s; }
-.s-item .label { font-size: 12px; color: var(--text-secondary); }
-
-/* 分隔线与区块 */
-.section-box { margin: 20px 0; }
-.section-title { font-size: 14px; font-weight: bold; color: var(--text-primary); margin-bottom: 12px; }
-.badges-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
-.badge-item { aspect-ratio: 1; background: var(--bg-surface-hover); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 20px; cursor: help; }
-
-/* 能力条 */
-.ability-list { display: flex; flex-direction: column; gap: 12px; }
-.ab-head { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; }
-.ab-name { color: var(--text-regular); }
-.ab-score { font-weight: bold; color: var(--text-primary); }
+.nickname {
+  margin: 14px 0 4px;
+  font-size: 22px;
+  font-weight: 650;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+.username {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.bio {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-regular);
+  margin: 16px 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.empty-bio {
+  color: var(--text-secondary);
+}
+.social-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  margin: 22px 0;
+}
+.social-stats > * {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 46px;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+}
+.social-stats button {
+  cursor: pointer;
+}
+.social-stats button:hover strong {
+  color: var(--el-color-primary);
+}
+.social-stats strong {
+  color: var(--text-primary);
+  font-size: 18px;
+  font-weight: 600;
+}
+.social-stats span {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.user-details {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  border-top: 1px solid var(--border-light);
+  padding-top: 16px;
+  margin-bottom: 18px;
+  overflow-wrap: anywhere;
+}
+.profile-action {
+  width: 100%;
+  border-radius: 8px;
+  min-height: 36px;
+}
+@media (max-width: 680px) {
+  .user-info-card {
+    padding: 18px 20px;
+  }
+  .user-avatar {
+    width: 76px !important;
+    height: 76px !important;
+  }
+  .social-stats {
+    max-width: 260px;
+    margin: 16px auto;
+  }
+  .bio {
+    margin: 12px 0;
+  }
+  .profile-action {
+    max-width: 300px;
+  }
+}
 </style>

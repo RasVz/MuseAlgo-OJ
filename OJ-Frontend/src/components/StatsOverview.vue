@@ -8,6 +8,7 @@
         <div class="stat-text">
           <div class="value">{{ item.value }}</div>
           <div class="label">{{ item.label }}</div>
+          <div class="stat-hint">{{ item.hint }}</div>
         </div>
       </div>
     </el-card>
@@ -26,7 +27,7 @@ import { computed } from 'vue'
 import { Trophy, CircleCheck, DataLine, Timer } from '@element-plus/icons-vue'
 
 const props = defineProps({
-  stats: { type: Object, default: () => ({}) }
+  stats: { type: Object, default: () => ({}) },
 })
 
 const toNumber = (value) => {
@@ -41,18 +42,106 @@ const formatAcRate = (value) => {
 }
 
 const items = computed(() => [
-  { label: '提交总数', value: toNumber(props.stats?.totalSubmissions), icon: DataLine, color: 'var(--el-color-primary)', bg: 'var(--el-color-primary-light-9)' },
-  { label: '通过题目', value: toNumber(props.stats?.solvedProblemCount), icon: CircleCheck, color: 'var(--accent-success)', bg: 'var(--accent-success-light)' },
-  { label: 'AC 率', value: formatAcRate(props.stats?.acRate), icon: Trophy, color: 'var(--accent-warning)', bg: 'var(--accent-warning-light)' },
-  { label: '活跃天数', value: toNumber(props.stats?.activeDays), icon: Timer, color: 'var(--accent-danger)', bg: 'var(--accent-danger-light)' }
+  {
+    label: '提交总数',
+    hint: '所选时间内的提交次数',
+    value: toNumber(props.stats?.totalSubmissions),
+    icon: DataLine,
+    color: 'var(--el-color-primary)',
+    bg: 'var(--el-color-primary-light-9)',
+  },
+  {
+    label: '通过题目',
+    hint: '按题目去重',
+    value: toNumber(props.stats?.solvedProblemCount),
+    icon: CircleCheck,
+    color: 'var(--accent-success)',
+    bg: 'var(--accent-success-light)',
+  },
+  {
+    label: 'AC 率',
+    hint: 'AC 提交数 ÷ 总提交数',
+    value: formatAcRate(props.stats?.acRate),
+    icon: Trophy,
+    color: 'var(--accent-warning)',
+    bg: 'var(--accent-warning-light)',
+  },
+  {
+    label: '活跃天数',
+    hint: '有提交记录的天数',
+    value: toNumber(props.stats?.activeDays),
+    icon: Timer,
+    color: 'var(--accent-danger)',
+    bg: 'var(--accent-danger-light)',
+  },
 ])
 </script>
 
 <style scoped>
-.overview-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 20px; }
-.stat-card { border: none; border-radius: 12px; }
-.stat-content { display: flex; align-items: center; gap: 15px; }
-.stat-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 24px; }
-.value { font-size: 24px; font-weight: bold; color: var(--text-primary); line-height: 1.2; }
-.label { font-size: 13px; color: var(--text-secondary); margin-top: 4px; }
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.stat-card {
+  border: 1px solid var(--border-light);
+  border-radius: 14px;
+  min-width: 0;
+}
+.stat-content {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+.stat-text {
+  min-width: 0;
+}
+.stat-hint {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.stat-icon {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+}
+.value {
+  font-size: 24px;
+  font-weight: bold;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+.label {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+@media (max-width: 1100px) {
+  .overview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 500px) {
+  .overview-grid {
+    gap: 10px;
+  }
+  .stat-icon {
+    display: none;
+  }
+  .stat-card :deep(.el-card__body) {
+    padding: 16px;
+  }
+  .value {
+    font-size: 25px;
+  }
+}
 </style>

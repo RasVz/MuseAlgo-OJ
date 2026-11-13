@@ -1,264 +1,476 @@
 <template>
-  <div class="practice-stats-container" v-loading="loading">
-    <div class="page-header">
-      <div class="page-header-main">
-        <h2 class="page-title">练习分析</h2>
-        <p class="page-subtitle">基于本人真实提交记录统计</p>
+  <div class="practice-page" v-loading="loading">
+    <header class="practice-page-header">
+      <div>
+        <span class="page-eyebrow">MY PRACTICE</span>
+        <h1>练习分析</h1>
+        <p>{{ periodLabel }}</p>
       </div>
-      <el-radio-group v-model="range" size="small" @change="loadData">
-        <el-radio-button value="all">全部</el-radio-button>
-        <el-radio-button value="30d">近 30 天</el-radio-button>
-      </el-radio-group>
-    </div>
-
-    <el-alert
-      v-if="errorMessage"
-      class="mb-20"
-      type="error"
-      show-icon
-      :closable="false"
-      title="练习分析加载失败"
+      <el-radio-group v-model="range" aria-label="练习统计时间范围" @change="loadData"
+        ><el-radio-button value="all">全部</el-radio-button
+        ><el-radio-button value="30d">近 30 天</el-radio-button></el-radio-group
+      >
+    </header>
+    <el-alert v-if="errorMessage" type="error" show-icon :closable="false" title="练习分析加载失败"
+      ><div class="error-content">
+        <span>{{ errorMessage }}</span
+        ><el-button size="small" @click="loadData">重试</el-button>
+      </div></el-alert
     >
-      <div class="alert-body">
-        <span class="alert-message">{{ errorMessage }}</span>
-        <el-button size="small" type="primary" plain :loading="loading" @click="loadData">重试</el-button>
-      </div>
-    </el-alert>
-
     <template v-if="data">
-      <StatsOverview :stats="overview" />
-
-      <el-row :gutter="20">
-        <el-col :span="10">
-          <el-card shadow="never" class="chart-card mb-20">
-            <template #header><span class="card-title">能力分布</span></template>
-            <SkillRadar v-if="hasRadarData" :data="radarData" />
-            <el-empty v-else :image-size="80" :description="emptyHint" />
-          </el-card>
-
-          <el-card shadow="never" class="chart-card">
-            <template #header><span class="card-title">标签分布（已通过题目）</span></template>
-            <TagsDonut v-if="tagChartData.length" :data="tagChartData" />
-            <el-empty v-else :image-size="80" :description="emptyHint" />
-          </el-card>
-        </el-col>
-
-        <el-col :span="14">
-          <el-card shadow="never" class="chart-card mb-20">
-            <template #header><span class="card-title">已通过题目难度分布</span></template>
-            <RatingHistogram v-if="hasDifficultyData" :data="difficultyChartData" />
-            <el-empty v-else :image-size="80" :description="emptyHint" />
-          </el-card>
-
-          <el-card shadow="never" class="list-card">
-            <template #header>
-              <div class="card-header-row">
-                <div class="card-header-left">
-                  <span class="card-title">题目记录</span>
-                  <el-radio-group v-model="listType" size="small">
-                    <el-radio-button value="passed">已通过</el-radio-button>
-                    <el-radio-button value="tried">尝试过</el-radio-button>
-                  </el-radio-group>
+      <StatsOverview :stats="data.overview" />
+      <div class="analysis-grid">
+        <section class="analysis-card ability-card">
+          <div class="section-heading">
+            <div>
+              <h2>能力分布</h2>
+              <p>结合尝试、通过与首次通过情况的掌握度</p>
+            </div>
+            <span class="section-unit">0–100</span>
+          </div>
+          <div v-if="hasAttempts" class="ability-layout">
+            <SkillRadar :data="radarData" />
+            <div class="dimension-list">
+              <div v-for="item in dimensions" :key="item.key" class="dimension-row">
+                <div>
+                  <span>{{ item.label || item.key }}</span
+                  ><strong v-if="item.attempted > 0">{{ item.mastery }}<small> / 100</small></strong
+                  ><span v-else class="unpracticed">尚未练习</span>
                 </div>
-                <el-link type="primary" :underline="false" @click="goAllProblems">查看全部</el-link>
+                <div class="dimension-track">
+                  <i
+                    :style="{ width: `${Math.min(100, Math.max(0, Number(item.mastery) || 0))}%` }"
+                  ></i>
+                </div>
+                <small>{{
+                  item.attempted > 0
+                    ? `尝试 ${item.attempted} 题 · 通过 ${item.passed} 题`
+                    : '练习后逐步形成记录'
+                }}</small>
               </div>
-            </template>
-
-            <el-scrollbar v-if="groupedProblems.length" max-height="400px">
-              <ProblemListGroup :groupedProblems="groupedProblems" />
-            </el-scrollbar>
-            <el-empty v-else :image-size="80" :description="emptyHint" />
-          </el-card>
-        </el-col>
-      </el-row>
+            </div>
+          </div>
+          <el-empty v-else :image-size="72" :description="emptyHint" />
+        </section>
+        <section class="analysis-card difficulty-card">
+          <div class="section-heading">
+            <div>
+              <h2>题目难度分布</h2>
+              <p>所选时间内已通过的题目 · 单位：题</p>
+            </div>
+            <el-button
+              v-if="hasDifficulty"
+              text
+              type="primary"
+              size="small"
+              :aria-pressed="fullDifficulty"
+              @click="fullDifficulty = !fullDifficulty"
+              >{{ fullDifficulty ? '聚焦练习区间' : '完整区间' }}</el-button
+            >
+          </div>
+          <RatingHistogram v-if="hasDifficulty" :data="difficultyChartData" /><el-empty
+            v-else
+            :image-size="72"
+            :description="emptyHint"
+          />
+          <p v-if="hasDifficulty" class="chart-footnote">
+            {{ fullDifficulty ? '显示全部难度区间' : '聚焦已有记录的难度区间' }} ·
+            横轴为题目难度分数
+          </p>
+        </section>
+      </div>
+      <section class="analysis-card tag-card">
+        <div class="section-heading">
+          <div>
+            <h2>标签覆盖</h2>
+            <p>已通过题目的标签数量，一题可包含多个标签，数量不可相加。</p>
+          </div>
+          <span class="section-unit">{{ tagChartData.length }} 项标签</span>
+        </div>
+        <div v-if="tagChartData.length" class="tag-bars">
+          <div v-for="item in tagChartData" :key="item.tagId" class="tag-bar-row">
+            <span class="tag-name">{{ item.tagName || `#${item.tagId}` }}</span>
+            <div class="tag-track">
+              <i :style="{ width: `${(item.passed / maxTagCount) * 100}%` }"></i>
+            </div>
+            <strong>{{ item.passed }}<small> 题</small></strong>
+          </div>
+        </div>
+        <el-empty v-else :image-size="64" :description="emptyHint" />
+      </section>
+      <section class="analysis-card records-card">
+        <div class="records-header">
+          <div>
+            <h2>题目记录</h2>
+            <p>最近记录，最多 {{ data.listLimit || 50 }} 条 · 按时间倒序</p>
+          </div>
+          <el-radio-group v-model="listType" size="small" aria-label="题目记录类型"
+            ><el-radio-button value="passed">已通过</el-radio-button
+            ><el-radio-button value="tried">尝试未通过</el-radio-button></el-radio-group
+          >
+        </div>
+        <PracticeProblemTable
+          v-if="currentRows.length"
+          :rows="currentRows"
+          :type="listType"
+        /><el-empty
+          v-else
+          :image-size="64"
+          :description="
+            listType === 'tried' && hasAttempts ? '所选时间内没有尝试未通过的题目' : emptyHint
+          "
+        />
+        <div class="records-footer">
+          <span>题库入口将查看全部时间的对应状态题目</span
+          ><RouterLink
+            :to="{ path: '/problem', query: { userStatus: listType === 'passed' ? '1' : '2' } }"
+            >前往题库 <span aria-hidden="true">↗</span></RouterLink
+          >
+        </div>
+      </section>
     </template>
-
-    <el-empty v-else-if="!loading && !errorMessage" :image-size="100" :description="emptyHint" />
   </div>
 </template>
-
 <script setup>
-// 练习分析（本人）：时间范围切换 + 四格指标 + 能力雷达 + 标签分布 + 难度分布 + 最近通过/尝试题目。
-// 数据全部来自 GET /profile/practice/me，契约字段由后端任务冻结；前端只做展示、分组与格式化，
-// 不做二次统计（通过题去重、AC 率、时间窗都由后端算好），避免两端口径漂移。
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import dayjs from 'dayjs'
 import { getMyPractice } from '@/api/profile'
 import { isResultSuccess, unwrapResultData, getResultMessage } from '@/utils/response'
-import { DIFFICULTY_RANGES, getDifficultyLabel, getDifficultyRange } from '@/utils/difficulty'
+import { visibleDifficultyBuckets, recentPracticeRows } from '@/utils/practicePresentation'
 import StatsOverview from '@/components/StatsOverview.vue'
 import SkillRadar from '@/components/SkillRadar.vue'
 import RatingHistogram from '@/components/RatingHistogram.vue'
-import TagsDonut from '@/components/TagsDonut.vue'
-import ProblemListGroup from '@/components/ProblemListGroup.vue'
-
-const router = useRouter()
-
-// 知识域 → 标签分布配色；未匹配维度统一灰色，避免后端新增维度时配色表漏项。
-const DIMENSION_COLORS = {
-  ALGORITHM: '#5B8FF9',
-  DATA_STRUCTURE: '#5AD8A6',
-  MATH: '#F6BD16',
-  GRAPH: '#7262FD',
-  STRING: '#FF9845'
-}
-const UNKNOWN_DIMENSION_COLOR = '#909399'
-const TAG_LIMIT = 12
-// el-tag / el-link 的类型枚举有限，分组配色按难度档位顺序循环分配。
-const GROUP_TYPE_CYCLE = ['success', 'warning', 'info', 'primary', 'danger']
-
-const range = ref('all')
-const listType = ref('passed')
-const loading = ref(true)
-const errorMessage = ref('')
-const data = ref(null)
-
-// 竞态保护：快速切换时间范围时只采纳最后一次请求的结果，旧请求不覆盖新数据。
-let requestSeq = 0
-
-const overview = computed(() => data.value?.overview ?? {})
-const dimensions = computed(() => (Array.isArray(data.value?.dimensions) ? data.value.dimensions : []))
+import PracticeProblemTable from './components/PracticeProblemTable.vue'
+const range = ref('all'),
+  listType = ref('passed'),
+  loading = ref(true),
+  errorMessage = ref(''),
+  data = ref(null),
+  fullDifficulty = ref(false)
+const dimensions = computed(() =>
+  Array.isArray(data.value?.dimensions) ? data.value.dimensions : [],
+)
 const tags = computed(() => (Array.isArray(data.value?.tags) ? data.value.tags : []))
-const difficulty = computed(() => (Array.isArray(data.value?.difficulty) ? data.value.difficulty : []))
-const solvedProblems = computed(() => (Array.isArray(data.value?.solvedProblems) ? data.value.solvedProblems : []))
-const triedProblems = computed(() => (Array.isArray(data.value?.triedProblems) ? data.value.triedProblems : []))
-
-const emptyHint = computed(() => (range.value === '30d' ? '近 30 天暂无数据' : '暂无练习记录'))
-
-// 雷达图：维度与数量都以后端为准，mastery 已是 0-100；全 0 时不渲染空雷达而交给空态。
-const radarData = computed(() => dimensions.value.map((item) => ({
-  name: item.label || item.key || '未命名维度',
-  value: Math.max(0, Math.min(100, Number(item.mastery) || 0))
-})))
-const hasRadarData = computed(() => radarData.value.some((item) => item.value > 0))
-
-// 标签分布只统计「已通过」数；passed=0 的标签不进入图例，避免甜甜圈出现 0 值图例。
-const tagChartData = computed(() => tags.value
-  .map((item) => ({
-    name: item.tagName || '#' + item.tagId,
-    count: Number(item.passed) || 0,
-    color: DIMENSION_COLORS[String(item.dimension || '').toUpperCase()] || UNKNOWN_DIMENSION_COLOR
-  }))
-  .filter((item) => item.count > 0)
-  .sort((a, b) => b.count - a.count)
-  .slice(0, TAG_LIMIT))
-
-// 难度分布：后端按 100 分步长给桶，前端只按 rating 升序保证 X 轴顺序稳定。
-const difficultyChartData = computed(() => difficulty.value
-  .map((item) => ({ rating: Number(item.rating), count: Number(item.solved) || 0 }))
-  .filter((item) => Number.isFinite(item.rating))
-  .sort((a, b) => a.rating - b.rating))
-const hasDifficultyData = computed(() => difficultyChartData.value.some((item) => item.count > 0))
-
-// 分组顺序以 utils/difficulty 的 DIFFICULTY_RANGES 为准，未匹配到档位的题放在最后。
-const difficultyOrder = (rating) => {
-  const rangeInfo = getDifficultyRange(rating)
-  const index = rangeInfo ? DIFFICULTY_RANGES.findIndex((item) => item.key === rangeInfo.key) : -1
-  return index === -1 ? DIFFICULTY_RANGES.length : index
-}
-
-// 时间倒序用 Date.parse：后端返回 ISO 字符串；解析失败按 0 处理（不因脏数据抛错）。
-const timeValue = (value) => {
-  const timestamp = Date.parse(value)
-  return Number.isFinite(timestamp) ? timestamp : 0
-}
-
-const groupRowsByDifficulty = (rows, timeField) => {
-  const groups = new Map()
-  rows.forEach((row) => {
-    const rating = Number(row.difficulty)
-    const label = getDifficultyLabel(Number.isFinite(rating) ? rating : null)
-    if (!groups.has(label)) {
-      groups.set(label, {
-        level: label,
-        order: difficultyOrder(Number.isFinite(rating) ? rating : null),
-        items: []
-      })
-    }
-    groups.get(label).items.push(row)
-  })
-
-  return [...groups.values()]
-    .sort((a, b) => a.order - b.order)
-    .map((group, index) => ({
-      level: group.level,
-      type: GROUP_TYPE_CYCLE[index % GROUP_TYPE_CYCLE.length],
-      linkType: GROUP_TYPE_CYCLE[(index + 2) % GROUP_TYPE_CYCLE.length],
-      items: group.items
-        .slice()
-        .sort((a, b) => timeValue(b[timeField]) - timeValue(a[timeField]))
-        .map((row) => ({ id: row.problemId, title: row.title }))
-    }))
-}
-
-const currentRows = computed(() => (listType.value === 'passed' ? solvedProblems.value : triedProblems.value))
-const currentTimeField = computed(() => (listType.value === 'passed' ? 'solvedAt' : 'lastAttemptAt'))
-const groupedProblems = computed(() => (currentRows.value.length
-  ? groupRowsByDifficulty(currentRows.value, currentTimeField.value)
-  : []))
-
-// 「查看全部」复用题库的解题状态筛选；ProblemSetView 会从 URL 恢复 userStatus。
-const goAllProblems = () => {
-  router.push({ path: '/problem', query: { userStatus: listType.value === 'passed' ? '1' : '2' } })
-}
-
-const loadData = async () => {
+const difficulty = computed(() =>
+  Array.isArray(data.value?.difficulty) ? data.value.difficulty : [],
+)
+const radarData = computed(() =>
+  dimensions.value.map((item) => ({
+    name: item.label || item.key,
+    value: Math.min(100, Math.max(0, Number(item.mastery) || 0)),
+  })),
+)
+const hasAttempts = computed(
+  () =>
+    dimensions.value.some((item) => item.attempted > 0) ||
+    data.value?.overview?.totalSubmissions > 0,
+)
+const tagChartData = computed(() =>
+  tags.value
+    .filter((item) => item.passed > 0)
+    .slice()
+    .sort((a, b) => b.passed - a.passed)
+    .slice(0, 12),
+)
+const maxTagCount = computed(() => Math.max(1, ...tagChartData.value.map((item) => item.passed)))
+const difficultyChartData = computed(() =>
+  visibleDifficultyBuckets(difficulty.value, fullDifficulty.value),
+)
+const hasDifficulty = computed(() => difficulty.value.some((item) => item.solved > 0))
+const currentRows = computed(() =>
+  recentPracticeRows(
+    (listType.value === 'passed' ? data.value?.solvedProblems : data.value?.triedProblems) || [],
+    listType.value,
+  ),
+)
+const emptyHint = computed(() =>
+  range.value === '30d' ? '近 30 天暂无相关练习记录' : '暂无相关练习记录',
+)
+const periodLabel = computed(() => {
+  if (range.value === 'all') return '全部时间 · 回顾你的练习积累'
+  if (data.value?.range === '30d' && data.value.periodStart && data.value.periodEnd)
+    return `${dayjs(data.value.periodStart).format('YYYY.MM.DD')} — ${dayjs(data.value.periodEnd).format('YYYY.MM.DD')}`
+  return '近 30 天 · 查看近期练习情况'
+})
+let requestSeq = 0
+async function loadData() {
   const seq = ++requestSeq
   loading.value = true
   errorMessage.value = ''
+  data.value = null
   try {
-    const res = await getMyPractice(range.value)
+    const result = await getMyPractice(range.value)
     if (seq !== requestSeq) return
-    if (!isResultSuccess(res)) {
+    if (!isResultSuccess(result)) throw new Error(getResultMessage(result, '练习分析加载失败'))
+    data.value = unwrapResultData(result) || null
+    if (!data.value) throw new Error('练习分析返回空数据')
+  } catch (cause) {
+    if (seq === requestSeq) {
       data.value = null
-      errorMessage.value = getResultMessage(res, '练习分析加载失败')
-      return
+      errorMessage.value = cause.message || '练习分析加载失败，请重试'
     }
-    data.value = unwrapResultData(res) || null
-    if (!data.value) {
-      errorMessage.value = '练习分析返回空数据'
-    }
-  } catch (error) {
-    if (seq !== requestSeq) return
-    // 失败时清空旧数据，避免时间范围切换失败后仍显示上一个范围的结果。
-    data.value = null
-    errorMessage.value = error?.response?.data?.message || error?.message || '练习分析加载失败'
   } finally {
-    // 无论成功、失败还是 403，都在 finally 里结束 loading，不能像旧个人主页那样提前 return 卡住。
     if (seq === requestSeq) loading.value = false
   }
 }
-
-onMounted(() => {
-  loadData()
-})
+onMounted(loadData)
 </script>
-
 <style scoped>
-.practice-stats-container {
-  height: calc(100vh - 85px - 40px); /* 适应 BasicLayout */
-  overflow-y: auto;
-  padding-bottom: 20px;
+.practice-page {
+  font-family: var(--font-family);
+  max-width: 1400px;
+  min-width: 0;
+  margin: 0 auto;
+  padding: 4px 4px 28px;
 }
-
-.page-header {
+.practice-page-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 20px;
+  margin-bottom: 26px;
+}
+.page-eyebrow {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1.8px;
+  color: var(--el-color-primary);
+}
+.practice-page-header h1 {
+  margin: 6px 0 8px;
+  color: var(--text-primary);
+  font-size: 26px;
+  line-height: 1.3;
+  font-weight: 650;
+}
+.practice-page-header p {
+  font-size: 13px;
+  margin: 0;
+  color: var(--text-secondary);
+}
+.analysis-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: 20px;
   margin-bottom: 20px;
 }
-.page-title { margin: 0; font-size: 22px; font-weight: 700; color: var(--text-primary); }
-.page-subtitle { margin: 4px 0 0; font-size: 13px; color: var(--text-secondary); }
-
-.mb-20 { margin-bottom: 20px; }
-.card-title { font-weight: bold; font-size: 16px; color: var(--text-primary); }
-.card-header-row { display: flex; justify-content: space-between; align-items: center; }
-.card-header-left { display: flex; align-items: center; gap: 12px; }
-
-.alert-body { display: flex; align-items: center; gap: 12px; }
-.alert-message { flex: 1; }
-
-/* 题目列表卡片 */
-.list-card { min-height: 400px; }
+.analysis-card {
+  padding: 22px 24px;
+  border: 1px solid var(--border-light);
+  border-radius: 14px;
+  background: var(--bg-surface);
+  min-width: 0;
+}
+.section-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+h2 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+.section-heading p,
+.records-header p {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 7px 0 0;
+  line-height: 1.6;
+}
+.section-unit {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  padding-top: 4px;
+}
+.ability-layout {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+.dimension-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.dimension-row > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text-regular);
+  font-size: 12px;
+}
+.dimension-row strong {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.dimension-row small {
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+.dimension-track {
+  height: 4px;
+  border-radius: 3px;
+  background: var(--bg-app);
+  margin: 6px 0 4px;
+}
+.dimension-track i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--el-color-primary);
+}
+.unpracticed {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.chart-footnote {
+  color: var(--text-secondary);
+  font-size: 11px;
+  margin: 8px 0 0;
+}
+.tag-card {
+  margin-bottom: 20px;
+}
+.tag-bars {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px 56px;
+  padding: 12px 0 6px;
+}
+.tag-bar-row {
+  display: grid;
+  grid-template-columns: minmax(70px, 110px) minmax(0, 1fr) 45px;
+  gap: 14px;
+  align-items: center;
+  min-width: 0;
+}
+.tag-name {
+  font-size: 13px;
+  color: var(--text-regular);
+  overflow-wrap: anywhere;
+}
+.tag-track {
+  height: 7px;
+  background: var(--bg-app);
+  border-radius: 4px;
+}
+.tag-track i {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--el-color-primary);
+  opacity: 0.75;
+}
+.tag-bar-row strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-align: right;
+}
+.tag-bar-row small {
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.records-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.records-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--border-light);
+  margin-top: 14px;
+  padding-top: 16px;
+}
+.records-footer span {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.records-footer a {
+  text-decoration: none;
+  color: var(--el-color-primary);
+  font-size: 13px;
+}
+.records-footer a span {
+  color: inherit;
+}
+.error-content {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+@media (max-width: 1200px) {
+  .ability-layout {
+    grid-template-columns: 1fr;
+  }
+  .ability-layout :deep(.radar-svg) {
+    max-height: 200px;
+  }
+  .dimension-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 1000px) {
+  .analysis-grid {
+    grid-template-columns: 1fr;
+  }
+  .ability-layout {
+    grid-template-columns: minmax(160px, 1fr) minmax(0, 1fr);
+  }
+  .dimension-list {
+    display: flex;
+  }
+}
+@media (max-width: 680px) {
+  .practice-page {
+    font-family: var(--font-family);
+    padding: 0 0 20px;
+  }
+  .practice-page-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .practice-page-header h1 {
+    font-size: 24px;
+  }
+  .analysis-card {
+    padding: 18px 16px;
+  }
+  .analysis-grid {
+    gap: 16px;
+  }
+  .ability-layout {
+    grid-template-columns: 1fr;
+  }
+  .dimension-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .tag-bars {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .records-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .section-heading {
+    flex-wrap: wrap;
+  }
+}
 </style>
