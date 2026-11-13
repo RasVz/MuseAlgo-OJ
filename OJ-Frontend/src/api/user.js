@@ -1,8 +1,9 @@
 import request from '@/utils/request'
 
 // 获取用户个人资料
-export function getUserInfo(userId) {
+export function getUserInfo(userId, options = {}) {
   return request({
+    ...options,
     url: `/user/info/${userId}`,
     method: 'get'
   })

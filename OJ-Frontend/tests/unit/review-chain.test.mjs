@@ -70,7 +70,7 @@ test('late submission detail response cannot overwrite a newer route', async () 
 function profileLoader(getUserInfo) {
   const source = readFileSync(new URL('../../src/layout/ProfileLayout.vue', import.meta.url), 'utf8')
   const start = source.indexOf('async function loadUser()')
-  const end = source.indexOf("provide('profileContext'", start)
+  const end = source.indexOf('\n}\n', start) + 3
   const context = { route: { params: { id: '1' } }, loading: { value: true }, hidden: { value: false }, generation: 0,
     error: { value: '' }, displayUser: { value: {} }, coverFailed: { value: false }, getUserInfo }
   vm.runInNewContext(source.slice(start, end) + '\nglobalThis.run = loadUser', context)
