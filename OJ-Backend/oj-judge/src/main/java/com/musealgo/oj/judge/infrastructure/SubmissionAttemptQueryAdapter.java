@@ -28,4 +28,10 @@ public class SubmissionAttemptQueryAdapter implements SubmissionAttemptQuery {
                         row.get("bestScore") == null ? 0 : ((Number) row.get("bestScore")).intValue()))
                 .toList();
     }
+
+    @Override
+    public long countPending(Long userId, Collection<Long> problemIds,
+                             LocalDateTime from, LocalDateTime to) {
+        return submissionMapper.countPendingExamScores(userId, problemIds, from, to);
+    }
 }
