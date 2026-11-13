@@ -13,6 +13,12 @@
       </div>
     </div>
 
+    <el-alert v-if="lastError" :title="lastError" type="error" show-icon class="form-alert" @close="lastError = ''" />
+    <el-alert v-if="runtime.masterKey && !runtime.masterKey.ready" type="warning" :closable="false" show-icon class="form-alert"
+      title="需要部署初始化：AI 主密钥尚未就绪">
+      <p>{{ runtime.masterKey.message }}。这不是表单填写错误。</p>
+      <el-button @click="initializationVisible = true">查看初始化方法</el-button>
+    </el-alert>
     <el-card shadow="never" class="runtime-card">
       <div class="runtime-head">
         <div>
@@ -157,6 +163,7 @@
       :before-close="beforeDrawerClose"
       destroy-on-close
     >
+      <el-alert v-if="lastError" :title="lastError" type="error" :closable="false" show-icon class="form-alert" />
       <el-form ref="formRef" :model="form" :rules="formRules" label-position="top">
         <el-alert
           v-if="editingCurrent"
@@ -176,7 +183,15 @@
             placeholder="https://api.example.com/v1/chat/completions"
             autocomplete="off"
           />
-          <div class="field-help">填写完整请求地址，不自动拼接路径；公网默认只允许 HTTPS 443。</div>
+          <el-select v-model="form.addressType" aria-label="地址填写方式" class="address-type">
+            <el-option label="自动识别" value="AUTO" />
+            <el-option label="基础地址（Base URL）" value="BASE_URL" />
+            <el-option label="完整请求地址" value="FULL_URL" />
+          </el-select>
+          <div class="field-help">可填写官网 Base URL 或完整接口地址。自动识别根地址与 /v1 等版本前缀；其他基础路径请选择“基础地址”。公网仅允许 HTTPS 443。</div>
+          <div v-if="effectiveEndpoint" class="field-help endpoint-preview">实际请求地址：<code data-testid="ai-request-url">{{ effectiveEndpoint }}</code></div>
+          <el-button :loading="diagnosing" :disabled="!effectiveEndpoint" @click="diagnoseAddress">检查地址（不调用模型）</el-button>
+          <p v-if="diagnosis" class="field-help">{{ diagnosis }}</p>
         </el-form-item>
         <el-form-item label="模型名称" prop="model">
           <el-input v-model="form.model" maxlength="128" placeholder="服务商要求的精确模型 ID" />
@@ -254,14 +269,21 @@
         <el-button type="primary" @click="reportVisible = false">知道了</el-button>
       </template>
     </el-dialog>
+    <el-dialog v-model="initializationVisible" title="初始化 AI 主密钥" width="min(560px, 90vw)">
+      <p>由部署者在项目根目录执行以下开发环境命令：</p>
+      <pre class="init-command">python3 scripts/ai-services-init.py --start</pre>
+      <p>命令会复用已有密钥；首次生成前检查数据库。已有加密数据但密钥丢失时，必须恢复原密钥备份。</p>
+      <p>生产环境请按 docs/AI-SERVICES.md 的只读挂载步骤操作；数据库与主密钥需分别备份。</p>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   activateAiService,
+  diagnoseAiAddress,
   createAiService,
   deleteAiService,
   disableAiService,
@@ -272,8 +294,38 @@ import {
   updateAiRuntime,
   updateAiService
 } from '@/api/adminAiServices'
+import { resolveAiEndpoint } from '@/utils/aiEndpoint'
+import { aiServiceErrorMessage } from '@/utils/aiServiceErrors'
 import { getResultMessage, isResultSuccess, unwrapResultData } from '@/utils/response'
 
+const initializationVisible = ref(false)
+const diagnosing = ref(false)
+const lastError = ref('')
+const diagnosis = ref('')
+const diagnosedEndpoint = ref('')
+function handleError(error) {
+  lastError.value = aiServiceErrorMessage(error)
+  ElMessage.error(lastError.value)
+}
+async function diagnoseAddress() {
+  diagnosing.value = true
+  diagnosis.value = ''
+  lastError.value = ''
+  const checkedUrl = form.value.apiUrl.trim()
+  const checkedType = form.value.addressType
+  try {
+    const response = await diagnoseAiAddress(checkedUrl, checkedType)
+    if (form.value.apiUrl.trim() === checkedUrl && form.value.addressType === checkedType) {
+      const data = unwrapResultData(response)
+      diagnosis.value = data?.message || '检查完成'
+      diagnosedEndpoint.value = data?.apiUrl || ''
+    }
+  } catch (error) {
+    if (form.value.apiUrl.trim() === checkedUrl && form.value.addressType === checkedType) handleError(error)
+  } finally {
+    diagnosing.value = false
+  }
+}
 const loading = ref(false)
 const services = ref([])
 const runtime = ref({ mode: 'LEGACY', runtimeVersion: 1, currentServiceReady: false })
@@ -291,6 +343,7 @@ const emptyForm = () => ({
   name: '',
   protocol: 'CHAT_COMPLETIONS',
   apiUrl: '',
+  addressType: 'AUTO',
   model: '',
   apiKey: '',
   remark: '',
@@ -299,6 +352,11 @@ const emptyForm = () => ({
   maxTokens: 8192
 })
 const form = ref(emptyForm())
+watch(() => [form.value.apiUrl, form.value.addressType], () => {
+  diagnosis.value = ''
+  diagnosedEndpoint.value = ''
+})
+const effectiveEndpoint = computed(() => diagnosedEndpoint.value || resolveAiEndpoint(form.value.apiUrl, form.value.addressType))
 
 const modeLabel = computed(() => ({
   LEGACY: '旧环境',
@@ -390,12 +448,16 @@ async function load() {
     } else {
       ElMessage.error(getResultMessage(runtimeRes, '运行状态读取失败'))
     }
+  } catch (error) {
+    handleError(error)
   } finally {
     loading.value = false
   }
 }
 
 function openCreate() {
+  lastError.value = ''
+  diagnosis.value = ''
   editingId.value = null
   editingCurrent.value = false
   form.value = emptyForm()
@@ -407,12 +469,15 @@ function openCreate() {
 }
 
 function openEdit(row) {
+  lastError.value = ''
+  diagnosis.value = ''
   editingId.value = row.id
   editingCurrent.value = row.usageStatus === 'CURRENT'
   form.value = {
     name: row.name,
     protocol: row.protocol || 'CHAT_COMPLETIONS',
     apiUrl: row.apiUrl,
+    addressType: 'AUTO',
     model: row.model,
     apiKey: '',
     remark: row.remark || '',
@@ -464,12 +529,14 @@ function requestDrawerClose() {
 async function save() {
   const valid = await formRef.value?.validate().catch(() => false)
   if (!valid) return
+  lastError.value = ''
   saving.value = true
   try {
     const payload = {
       name: form.value.name.trim(),
       protocol: 'CHAT_COMPLETIONS',
       apiUrl: form.value.apiUrl.trim(),
+      addressType: form.value.addressType,
       model: form.value.model.trim(),
       remark: form.value.remark.trim(),
       jsonMode: form.value.jsonMode,
@@ -505,6 +572,8 @@ async function save() {
     clearTemporarySecret()
     drawerVisible.value = false
     await load()
+  } catch (error) {
+    handleError(error)
   } finally {
     saving.value = false
   }
@@ -520,6 +589,8 @@ async function runTest(row) {
     }
     showReport(unwrapResultData(res))
     await load()
+  } catch (error) {
+    handleError(error)
   } finally {
     actionLoading.value = ''
   }
@@ -549,6 +620,8 @@ async function activate(row) {
     }
     ElMessage.success('已切换当前 AI 服务')
     await load()
+  } catch (error) {
+    handleError(error)
   } finally {
     actionLoading.value = ''
   }
@@ -573,6 +646,8 @@ async function toggle(row, enabled) {
     }
     ElMessage.success(enabled ? '服务已启用' : '服务已停用')
     await load()
+  } catch (error) {
+    handleError(error)
   } finally {
     actionLoading.value = ''
   }
@@ -597,6 +672,8 @@ async function remove(row) {
     }
     ElMessage.success('服务已删除')
     await load()
+  } catch (error) {
+    handleError(error)
   } finally {
     actionLoading.value = ''
   }
@@ -621,6 +698,8 @@ async function stopAllAi() {
     }
     ElMessage.success('全站 AI 已停用')
     await load()
+  } catch (error) {
+    handleError(error)
   } finally {
     actionLoading.value = ''
   }
@@ -645,6 +724,8 @@ async function restoreLegacy() {
     }
     ElMessage.success('已恢复旧环境配置')
     await load()
+  } catch (error) {
+    handleError(error)
   } finally {
     actionLoading.value = ''
   }
@@ -654,6 +735,9 @@ onMounted(load)
 </script>
 
 <style scoped>
+.address-type { width: 220px; margin-top: 8px; }
+.endpoint-preview code { overflow-wrap: anywhere; }
+.init-command { white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; background: var(--bg-page); }
 .admin-ai-services { padding: 16px; }
 .page-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 16px; }
 .page-title { font-size: 18px; font-weight: 600; }

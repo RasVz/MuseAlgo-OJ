@@ -9,7 +9,9 @@ import java.util.List;
 @Data
 public class ExamPaperStatsVO {
 
+    /** 每人最近一次已交卷统计的样本数。 */
     private long attemptCount;
+    private int totalScore;
     private double avgObjective;
     private double avgCoding;
     private double avgTotal;
@@ -23,6 +25,7 @@ public class ExamPaperStatsVO {
         private Long questionId;
         private Integer questionOrder;
         private String statement;
+        /** 包括未作答该题的已交卷样本数。 */
         private long attemptCount;
         private long correctCount;
         private double correctRate;

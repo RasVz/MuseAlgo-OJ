@@ -183,32 +183,142 @@ export function importFpsProblemSet(data) {
   })
 }
 
-// 批量格式化题目（AI 整理并直接保存，不预览；ipMode=true 时同一次调用完成 IP 改名）
-export function formatProblems(problemIds, ipMode = false) {
+// ---- 题面版本：记录、审阅、启用 ----
+
+export function listStatementVersions(problemId) {
   return request({
-    url: '/problem/format',
-    method: 'post',
-    data: { problemIds, ipMode },
-    timeout: 1800000
+    url: `/problem/${problemId}/statement/versions`,
+    method: 'get'
   })
 }
 
-// 单题格式化预览（AI 整理但未保存；ipMode=true 时同一次调用完成 IP 改名）
+export function getStatementVersion(problemId, versionId) {
+  return request({
+    url: `/problem/${problemId}/statement/versions/${versionId}`,
+    method: 'get'
+  })
+}
+
+// 候选版本的审阅数据：原文取基线版本，不触发 AI 调用
+export function getStatementVersionProposal(problemId, versionId) {
+  return request({
+    url: `/problem/${problemId}/statement/versions/${versionId}/proposal`,
+    method: 'get'
+  })
+}
+
+// 基于指定版本发起优化（异步单题任务）
+export function optimizeStatementVersion(problemId, baseVersionId, ipMode = false) {
+  return request({
+    url: `/problem/${problemId}/statement/versions/optimize`,
+    method: 'post',
+    data: { baseVersionId, ipMode }
+  })
+}
+
+// 编辑器保存：SAVE 覆盖当前打开的版本；SAVE_AS_NEW 新建一条版本
+export function composeStatement(problemId, { mode, baseVersionId, source, note, formatted }) {
+  return request({
+    url: `/problem/${problemId}/statement/versions/compose`,
+    method: 'post',
+    data: { mode, baseVersionId, source, note, formatted }
+  })
+}
+
+export function recordCurrentStatement(problemId) {
+  return request({
+    url: `/problem/${problemId}/statement/versions/current`,
+    method: 'post'
+  })
+}
+
+export function activateStatementVersion(problemId, versionId) {
+  return request({
+    url: `/problem/${problemId}/statement/versions/${versionId}/activate`,
+    method: 'post'
+  })
+}
+
+export function applyStatementVersion(problemId, versionId, { fields, formatted }) {
+  return request({
+    url: `/problem/${problemId}/statement/versions/${versionId}/apply`,
+    method: 'post',
+    data: { fields, formatted }
+  })
+}
+
+export function discardStatementVersion(problemId, versionId) {
+  return request({
+    url: `/problem/${problemId}/statement/versions/${versionId}`,
+    method: 'delete'
+  })
+}
+
+// 创建批量题面优化任务（异步）：HTTP 只受理，进度与逐项结果靠轮询
+export function createFormatJob(problemIds, { ipMode = false, autoApply = true } = {}) {
+  return request({
+    url: '/problem/format/jobs',
+    method: 'post',
+    data: { problemIds, ipMode, autoApply }
+  })
+}
+
+export function getFormatJob(jobId, config = {}) {
+  return request({
+    url: `/problem/format/jobs/${jobId}`,
+    method: 'get',
+    ...config
+  })
+}
+
+// 当前登录人正在跑的任务：面板关闭后重新进入靠它接回进度
+export function getActiveFormatJob(config = {}) {
+  return request({
+    url: '/problem/format/jobs/active',
+    method: 'get',
+    ...config
+  })
+}
+
+// 读取任务内单题提案：不重新调用 AI，直接返回任务生成时保存的快照
+export function getFormatJobItem(jobId, problemId) {
+  return request({
+    url: `/problem/format/jobs/${jobId}/items/${problemId}`,
+    method: 'get'
+  })
+}
+
+export function cancelFormatJob(jobId) {
+  return request({
+    url: `/problem/format/jobs/${jobId}/cancel`,
+    method: 'post'
+  })
+}
+
+export function retryFormatJob(jobId) {
+  return request({
+    url: `/problem/format/jobs/${jobId}/retry`,
+    method: 'post'
+  })
+}
+
+// 单题优化预览（AI 整理但未保存；ipMode=true 时同一次调用完成 IP 改名）
+// 服务端单次调用最长 150s，这里留出余量但不设 30 分钟那种无意义的等待
 export function previewFormatProblem(problemId, ipMode = false) {
   return request({
     url: '/problem/format/preview',
     method: 'post',
     data: { problemIds: [problemId], ipMode },
-    timeout: 1800000
+    timeout: 300000
   })
 }
 
-// 应用单题格式化预览结果
-export function applyFormatProblem(problemId, formatted) {
+// 应用整理结果：支持字段白名单与原文哈希校验
+export function applyFormatProblem(problemId, { baseHash, fields, formatted }) {
   return request({
     url: '/problem/format/apply',
     method: 'post',
-    data: { problemId, formatted }
+    data: { problemId, baseHash, fields, formatted }
   })
 }
 
@@ -231,8 +341,9 @@ export function saveDraftCode(data) {
 }
 
 // 在线运行代码 (不保存，只测试)
-export function runCodeApi(data) {
+export function runCodeApi(data, signal) {
   return request({
+    signal,
     url: '/problem/run', // 这里对应你后端的 @PostMapping("/run") 接口
     method: 'post',
     data: data,
@@ -248,4 +359,9 @@ export function getMyCreatedProblemList(params) {
     method: 'get',
     params
   })
+}
+
+/** 当前用户本题最近保存的草稿，连同实际语言返回。 */
+export function getLatestDraftCode(problemId) {
+  return request({ url: '/problem/draft/latest', method: 'get', params: { problemId } })
 }

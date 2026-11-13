@@ -13,13 +13,24 @@ public record AiStreamResult(
         boolean success,
         boolean emitted,
         String errorType,
-        String errorMessage) {
+        String errorMessage,
+        boolean requestSent, java.util.List<ToolCall> toolCalls, boolean usageEstimated) {
+    public record ToolCall(String id, String name, String arguments) { }
+    public AiStreamResult { toolCalls = toolCalls == null ? java.util.List.of() : java.util.List.copyOf(toolCalls); }
+    public AiStreamResult(String content, AiTokenUsage usage, AiCallSource source, boolean success,
+                          boolean emitted, String errorType, String errorMessage, boolean requestSent) {
+        this(content, usage, source, success, emitted, errorType, errorMessage, requestSent, java.util.List.of(), false);
+    }
+    public AiStreamResult(String content, AiTokenUsage usage, AiCallSource source, boolean success,
+                          boolean emitted, String errorType, String errorMessage) {
+        this(content, usage, source, success, emitted, errorType, errorMessage, success || emitted || usage != null);
+    }
 
     public static AiStreamResult success(String content, AiTokenUsage usage, AiCallSource source, boolean emitted) {
         return new AiStreamResult(content, usage, source, true, emitted, null, null);
     }
 
     public static AiStreamResult failure(AiCallSource source, boolean emitted, String errorType, String errorMessage) {
-        return new AiStreamResult(null, null, source, false, emitted, errorType, errorMessage);
+        return new AiStreamResult(null, null, source, false, emitted, errorType, errorMessage, false);
     }
 }

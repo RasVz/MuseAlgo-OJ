@@ -1,74 +1,100 @@
 <template>
-  <div class="tab-content">
-    <h3 class="tab-title">个人信息</h3>
+  <div class="settings-tab">
+    <h2 class="settings-tab-title">基本资料</h2>
+    <p class="settings-tab-note">头像与个人资料会展示在个人主页、榜单和评论中。</p>
 
-    <div class="avatar-section">
-      <el-avatar :size="80" :src="localForm.avatar" class="setting-avatar" />
-      <div class="avatar-actions">
-        <div class="avatar-btn-row">
-          <el-button type="primary" plain size="small" icon="Upload" :loading="avatarUploading" @click="triggerUpload">
+    <SettingsSection
+      title="头像"
+      description="支持 JPG / PNG ≤2MB；上传后立即生效，随机头像需点击「保存修改」后生效。"
+    >
+      <div class="avatar-editor">
+        <el-avatar :size="80" :src="localForm.avatar || defaultAvatar" class="avatar-preview" />
+        <div class="avatar-buttons">
+          <el-button type="primary" plain :loading="avatarUploading" @click="triggerUpload">
             更换头像
           </el-button>
-          <el-button size="small" icon="MagicStick" @click="$emit('random-avatar')">随机头像</el-button>
+          <el-button @click="$emit('random-avatar')">随机头像</el-button>
           <input
             ref="avatarInputRef"
             type="file"
             accept="image/png,image/jpeg"
             class="hidden-input"
+            aria-label="选择头像图片"
             @change="$emit('avatar-change', $event)"
           >
         </div>
-        <div class="avatar-tip">支持 JPG/PNG ≤2MB；随机头像由 DiceBear 本地生成，点击"保存修改"后生效</div>
       </div>
-    </div>
+    </SettingsSection>
 
-    <el-form :model="localForm" label-position="top" class="setting-form">
-      <el-row :gutter="20">
-        <el-col :span="12">
-          <el-form-item label="昵称">
-            <el-input v-model="localForm.nickname" maxlength="20" show-word-limit />
-          </el-form-item>
-        </el-col>
-        <el-col :span="12">
-          <el-form-item label="真实姓名">
-            <el-input v-model="localForm.realName" placeholder="仅用于比赛认证，对外不显示" />
-          </el-form-item>
-        </el-col>
-      </el-row>
-
-      <el-form-item label="个人简介">
-        <el-input
-          v-model="localForm.motto"
-          type="textarea"
-          :rows="3"
-          maxlength="100"
-          show-word-limit
-          placeholder="一句话介绍你自己..."
-        />
-      </el-form-item>
-
-      <el-row :gutter="20">
-        <el-col :span="12">
-          <el-form-item label="学校/机构">
-            <el-input v-model="localForm.school" prefix-icon="School" />
-          </el-form-item>
-        </el-col>
-        <el-col :span="12">
-          <el-form-item label="专业/年级">
-            <el-input v-model="localForm.major" prefix-icon="Reading" />
-          </el-form-item>
-        </el-col>
-      </el-row>
-
-      <el-form-item>
+    <SettingsSection
+      title="个人信息"
+      description="修改后点击本分区的「保存修改」，其他分区不受影响。"
+      :dirty="isDirty"
+    >
+      <template #actions>
+        <el-button v-if="isDirty" text @click="resetSection">取消</el-button>
         <el-button type="primary" :loading="loading" @click="handleSave">保存修改</el-button>
-      </el-form-item>
-    </el-form>
+      </template>
+
+      <el-form
+        :model="localForm"
+        :label-position="labelPosition"
+        :label-width="labelWidth"
+        class="settings-form"
+      >
+        <SettingsRow title="昵称" description="展示在个人主页、榜单与评论中">
+          <template #default="{ describedBy }">
+            <el-input
+              v-model="localForm.nickname"
+              maxlength="20"
+              show-word-limit
+              :aria-describedby="describedBy"
+              class="settings-input"
+            />
+          </template>
+        </SettingsRow>
+
+        <SettingsRow title="真实姓名" description="仅用于比赛认证，对外不显示">
+          <template #default="{ describedBy }">
+            <el-input
+              v-model="localForm.realName"
+              :aria-describedby="describedBy"
+              class="settings-input"
+            />
+          </template>
+        </SettingsRow>
+
+        <SettingsRow title="个人简介" description="一句话介绍你自己，最多 100 字">
+          <template #default="{ describedBy }">
+            <el-input
+              v-model="localForm.motto"
+              type="textarea"
+              :rows="3"
+              maxlength="100"
+              show-word-limit
+              :aria-describedby="describedBy"
+              class="settings-input"
+            />
+          </template>
+        </SettingsRow>
+
+        <SettingsRow title="学校 / 机构">
+          <el-input v-model="localForm.school" class="settings-input" />
+        </SettingsRow>
+
+        <SettingsRow title="专业 / 年级">
+          <el-input v-model="localForm.major" class="settings-input" />
+        </SettingsRow>
+      </el-form>
+    </SettingsSection>
   </div>
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { computed, inject, ref, watch } from 'vue'
+import SettingsRow from './SettingsRow.vue'
+import SettingsSection from './SettingsSection.vue'
+import { getDefaultAvatar } from '@/utils/dicebear'
 
 /**
  * 基本资料 Tab（展示组件）。
@@ -83,59 +109,80 @@ const props = defineProps({
 
 const emit = defineEmits(['save', 'random-avatar', 'avatar-change'])
 
-// 浅拷贝在这里够用：profile 表单字段都是标量（昵称、学校、专业……），
-// 唯一需要留意的是别把嵌套结构原样带出去。
+const narrow = inject('settingsNarrow', ref(false))
+const labelPosition = computed(() => (narrow.value ? 'top' : 'left'))
+const labelWidth = computed(() => (narrow.value ? 'auto' : '220px'))
+
+// 浅拷贝在这里够用：profile 表单字段都是标量（昵称、学校、专业……）。
+const editableKeys = ['nickname', 'realName', 'motto', 'school', 'major']
 const localForm = ref({ ...props.form })
-// 父组件重置/回填（fillForm）时同步到本地
+const baseline = ref({ ...props.form })
+// 父组件回填（fillForm）/保存成功后同步草稿与基线
 watch(() => props.form, (v) => {
   localForm.value = { ...v }
+  baseline.value = { ...v }
 }, { deep: true })
 
+// 头像走独立的即时上传流程，不纳入个人信息分区的脏状态比较：
+// 上传成功时父组件会更新 form.avatar，若把它算进来会误报「未保存」。
+const isDirty = computed(() =>
+  editableKeys.some((key) => (localForm.value[key] ?? '') !== (baseline.value[key] ?? ''))
+)
+
+function resetSection() {
+  const next = { ...localForm.value }
+  editableKeys.forEach((key) => {
+    next[key] = baseline.value[key] ?? ''
+  })
+  localForm.value = next
+}
+
+const defaultAvatar = getDefaultAvatar()
 const avatarInputRef = ref(null)
 // 命令式触发隐藏的 file input：Element 的 upload 组件封装过重，
-// 这里只需要"选一个文件"的最小能力。
+// 这里只需要「选一个文件」的最小能力。
 const triggerUpload = () => {
   avatarInputRef.value?.click()
 }
 
 function handleSave() {
   emit('save', { ...localForm.value })
+  // 提交即视为新基线；失败时由共享反馈层提示，用户可再次保存。
+  baseline.value = { ...localForm.value }
 }
 </script>
 
 <style scoped>
-.tab-content {
-  padding: 0 40px 20px;
-}
-.tab-title {
-  margin-top: 0;
-  margin-bottom: 25px;
+.settings-tab-title {
+  margin: 0 0 4px;
   font-size: 20px;
+  font-weight: 600;
   color: var(--text-primary);
 }
-.avatar-section {
+.settings-tab-note {
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-regular);
+}
+.avatar-editor {
   display: flex;
   align-items: center;
   gap: 20px;
-  margin-bottom: 30px;
+  flex-wrap: wrap;
 }
-.setting-avatar {
+.avatar-preview {
   border: 4px solid var(--bg-surface-hover);
 }
-.avatar-tip {
-  margin-top: 8px;
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-.avatar-btn-row {
+.avatar-buttons {
   display: flex;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-.setting-form {
-  max-width: 600px;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 .hidden-input {
   display: none;
+}
+.settings-input {
+  width: min(100%, 420px);
 }
 </style>

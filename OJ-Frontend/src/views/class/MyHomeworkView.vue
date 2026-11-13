@@ -86,7 +86,7 @@ onMounted(() => fetchData())
 .homework-page-container {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 85px - 40px);
+  height: calc(100vh - var(--app-header-height) - 40px);
   overflow: hidden;
 }
 

@@ -72,7 +72,7 @@ public class AiServiceCatalogService {
         try {
             encrypted = keyCipher.encrypt(key);
         } catch (AiKeyException e) {
-            throw new AiAdminException(503, e.getMessage());
+            throw new AiAdminException(503, e.errorCode(), e.getMessage());
         }
         AiServiceConfig service = new AiServiceConfig();
         applyFields(service, fields);
@@ -107,7 +107,7 @@ public class AiServiceCatalogService {
             try {
                 newCipher = keyCipher.encrypt(key);
             } catch (AiKeyException e) {
-                throw new AiAdminException(503, e.getMessage());
+                throw new AiAdminException(503, e.errorCode(), e.getMessage());
             }
         }
         String finalCipher = newCipher;
@@ -187,6 +187,20 @@ public class AiServiceCatalogService {
         return runtimeView();
     }
 
+    public record AddressDiagnosis(String host, boolean masterKeyReady, String message, String apiUrl) { }
+
+    public AddressDiagnosis diagnose(String apiUrl, String addressType) {
+        try {
+            URI endpoint = endpointGuard.validate(com.musealgo.oj.ai.network.ChatCompletionEndpoint.resolve(apiUrl, addressType));
+            return new AddressDiagnosis(endpoint.getHost(), keyCipher.readiness().ready(),
+                    "地址解析与安全检查通过；尚未验证服务凭证及模型，请保存后测试连接", endpoint.toString());
+        } catch (com.musealgo.oj.ai.network.AiEndpointException e) {
+            throw new AiAdminException(e.status(), e.errorCode(), e.getMessage());
+        } catch (IllegalArgumentException e) {
+            throw new AiAdminException(400, e.getMessage());
+        }
+    }
+
     public RuntimeVo runtimeView() {
         AiRuntimeConfig runtime = runtimeResolver.readRuntime();
         AiServiceConfig current = runtime.getCurrentServiceId() == null
@@ -201,7 +215,7 @@ public class AiServiceCatalogService {
                 current == null ? null : current.getVersion(),
                 current != null && current.hasPassingTestForCurrentVersion(),
                 runtime.getVersion(),
-                dynamicAiConfig.model());
+                dynamicAiConfig.model(), keyCipher.readiness());
     }
 
     ServiceVo toVo(AiServiceConfig service, AiRuntimeConfig runtime) {
@@ -288,7 +302,9 @@ public class AiServiceCatalogService {
         }
         URI endpoint;
         try {
-            endpoint = endpointGuard.validate(request.getApiUrl());
+            endpoint = endpointGuard.validate(com.musealgo.oj.ai.network.ChatCompletionEndpoint.resolve(request.getApiUrl(), request.getAddressType()));
+        } catch (com.musealgo.oj.ai.network.AiEndpointException e) {
+            throw new AiAdminException(e.status(), e.errorCode(), e.getMessage());
         } catch (IllegalArgumentException e) {
             throw new AiAdminException(400, e.getMessage());
         }

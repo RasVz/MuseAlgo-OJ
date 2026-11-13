@@ -4,8 +4,8 @@
       <template #header>
         <div class="card-header">
           <div class="header-left">
-            <span class="title">我的班级库</span>
-            <el-tag type="info" effect="plain" round class="count-tag">共 {{ total }} 个</el-tag>
+            <h1 class="title">我的班级库</h1>
+            <span class="count-tag">共 {{ total }} 个</span>
           </div>
           
           <el-button type="primary" icon="Plus" round @click="joinDialogVisible = true">加入新班级</el-button>
@@ -35,23 +35,15 @@
 
         <div v-else class="class-grid">
           
-          <div v-for="item in classList" :key="item.id" class="class-card" @click="enterClass(item)">
-            <div class="card-cover">
-              <div class="cover-icon">
-                <el-icon><School /></el-icon>
-              </div>
-              <div class="class-initial">{{ item.name.charAt(0) }}</div>
-            </div>
-
-            <div class="card-body">
-              <div class="class-name" :title="item.name">{{ item.name }}</div>
-              <div class="card-footer">
-                <div class="progress-label">学习进度</div>
-                <el-progress :percentage="item.progress || 0" :stroke-width="6" :show-text="false" color="var(--el-color-primary)"/>
-              </div>
-            </div>
-
-          </div>
+          <button v-for="item in classList" :key="item.id" type="button" class="class-card" :aria-label="`进入班级：${item.name}`" @click="enterClass(item)">
+            <span class="book-emblem"><el-icon aria-hidden="true"><Reading /></el-icon>班级课程</span>
+            <span class="class-name" :title="item.name">{{ item.name }}</span>
+            <span v-if="item.school" class="class-school" :title="item.school">{{ item.school }}</span>
+            <span class="class-entry">
+              <span>进入班级</span>
+              <el-icon aria-hidden="true"><TopRight /></el-icon>
+            </span>
+          </button>
         </div>
       </div>
 
@@ -60,7 +52,8 @@
           background
           layout="prev, pager, next"
           :total="total"
-          :page-size="pageSize"
+          :page-size="queryParams.size"
+          :current-page="currentPage"
           @current-change="handlePageChange"
         />
       </div>
@@ -72,7 +65,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { School } from '@element-plus/icons-vue' // 引入图标
+import { Reading, TopRight } from '@element-plus/icons-vue'
 import { useClassContextStore } from '@/stores/classContext'
 import { getMyClasses, joinClassByCode } from '@/api/class'
 import { useUserStore } from '@/stores/userStore'
@@ -86,12 +79,11 @@ const loading = ref(false)
 const classList = ref([])
 
 const total = ref(0)
-// 当前页码（独立 ref，供翻页回调与 join 后刷新共用；queryParams 内引用同一 ref 保持同步）
+// 页码与接口的 page/size 参数保持同步，每页展示 12 个班级。
 const currentPage = ref(1)
 const queryParams = ref({
-  currentPage,
-  pageSize: 10,
-  userId: userStore.userId 
+  page: currentPage,
+  size: 12
 })
 
 const joinDialogVisible = ref(false)
@@ -138,7 +130,7 @@ const handleJoinClass = async () => {
     } else if (res.code === 200) {
       ElMessage.success('加入班级成功！')
       joinDialogVisible.value = false
-      fetchMyClasses(currentPage.value)
+      fetchMyClasses()
     }
   } catch {
     // 错误拦截器处理
@@ -149,7 +141,7 @@ const handleJoinClass = async () => {
 
 const handlePageChange = (val) => {
   currentPage.value = val
-  fetchMyClasses(val)
+  fetchMyClasses()
 }
 
 const enterClass = (classItem) => {
@@ -159,165 +151,149 @@ const enterClass = (classItem) => {
 </script>
 
 <style scoped>
-/* 容器样式 */
 .class-view-container {
   height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }
-
 .main-card {
   height: 100%;
   display: flex;
   flex-direction: column;
   border-radius: 16px;
-  border: none;
+  border: 1px solid var(--border-light);
 }
-
+.main-card :deep(.el-card__header) { padding: 18px 20px; }
 .main-card :deep(.el-card__body) {
   flex: 1;
   display: flex;
   flex-direction: column;
-  height: 100%;
-  padding: 0; /* 清除默认 padding，由内部元素控制 */
+  padding: 0;
   min-height: 0;
 }
-
-.card-header {
-  display: flex; 
-  justify-content: space-between; 
-  align-items: center; 
-  padding: 0 10px;
-}
-.header-left { display: flex; align-items: center; gap: 10px; }
-.title { font-size: 18px; font-weight: bold; color: var(--text-primary); }
-.count-tag { font-weight: normal; }
-
-/* 滚动区域 */
-.scroll-container {
-  flex: 1;
-  overflow-y: auto;
-  padding: 20px; /* 给 Grid 留出边距 */
-}
-
-/* --- GRID 布局核心 --- */
+.card-header { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.header-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.title { margin: 0; font-size: 20px; line-height: 1.4; font-weight: 700; color: var(--text-primary); }
+.count-tag { color: var(--text-secondary); font-size: 13px; white-space: nowrap; }
+.scroll-container { flex: 1; overflow-y: auto; padding: 20px; container-type: inline-size; }
 .class-grid {
   display: grid;
-  /* 核心：一行 5 个，每个最小宽度 0 (防止溢出)，均分空间 */
-  grid-template-columns: repeat(4, 1fr); 
-  gap: 20px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  align-content: start;
 }
-
-/* --- 卡片样式 --- */
 .class-card {
-  background: var(--bg-surface);
-  border-radius: 12px;
-  border: 1px solid var(--border-light);
-  overflow: hidden;
-  cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --book-ink: #284b70;
+  --book-cover: #edf3f9;
+  box-sizing: border-box;
+  position: relative;
   display: flex;
   flex-direction: column;
-  position: relative;
-}
-
-.class-card:hover {
-  transform: translateY(-5px);
-  box-shadow: var(--shadow-lg);
-  border-color: var(--border-hover);
-}
-
-/* 卡片顶部封面 */
-.card-cover {
-  height: 90px;
-  background: linear-gradient(135deg, #a1c4fd 0%, #c2e9fb 100%); /* 默认淡蓝渐变 */
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  position: relative;
-  color: var(--text-inverse);
-}
-
-/* 为了让卡片更丰富，可以用 nth-child 给不同卡片不同的渐变色 (可选) */
-.class-card:nth-child(5n+1) .card-cover { background: linear-gradient(135deg, #89f7fe 0%, #66a6ff 100%); }
-.class-card:nth-child(5n+2) .card-cover { background: linear-gradient(135deg, #fbc2eb 0%, #a6c1ee 100%); }
-.class-card:nth-child(5n+3) .card-cover { background: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%); }
-.class-card:nth-child(5n+4) .card-cover { background: linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%); }
-
-.cover-icon {
-  font-size: 40px;
-  opacity: 0.3;
-  position: absolute;
-  right: 10px;
-  bottom: -10px;
-  transform: rotate(-15deg);
-}
-
-.class-initial {
-  font-size: 32px;
-  font-weight: bold;
-  text-shadow: 0 2px 4px rgba(0,0,0,0.1);
-  z-index: 1;
-}
-
-/* 卡片内容主体 */
-.card-body {
-  padding: 15px;
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-}
-
-.class-name {
-  font-size: 16px;
-  font-weight: 600;
+  min-width: 0;
+  height: 144px;
+  padding: 12px 14px 10px 22px;
+  text-align: left;
+  font: inherit;
   color: var(--text-primary);
-  margin-bottom: 12px;
+  background: var(--book-cover);
+  border: 1px solid color-mix(in srgb, var(--book-ink) 15%, var(--border-light));
+  border-radius: 5px 13px 13px 5px;
+  box-shadow: 0 3px 0 var(--bg-surface), 0 4px 0 var(--border-light), 0 7px 10px rgba(36, 60, 100, 0.06);
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.class-card:nth-child(3n+2) { --book-ink: #32685f; --book-cover: #edf5f1; }
+.class-card:nth-child(3n) { --book-ink: #79633f; --book-cover: #f7f3e9; }
+:global(.dark .class-view-container .class-card) { --book-ink: #a8c6e5; --book-cover: #253448; }
+:global(.dark .class-view-container .class-card:nth-child(3n+2)) { --book-ink: #a5d4c7; --book-cover: #243b36; }
+:global(.dark .class-view-container .class-card:nth-child(3n)) { --book-ink: #dcc9a3; --book-cover: #3c3528; }
+.class-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 7px;
+  background: var(--book-ink);
+  border-radius: 4px 0 0 4px;
+  opacity: 0.72;
+  pointer-events: none;
+}
+.class-card::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 10px;
+  width: 1px;
+  background: var(--book-ink);
+  opacity: 0.13;
+  pointer-events: none;
+}
+.class-card:hover { transform: translateY(-3px); box-shadow: 0 3px 0 var(--bg-surface), 0 4px 0 var(--border-light), var(--shadow-md); }
+.class-card:focus-visible { outline: 3px solid var(--el-color-primary); outline-offset: 3px; }
+.book-emblem { display: flex; align-items: center; gap: 5px; margin-bottom: 8px; color: var(--book-ink); font-size: 11px; line-height: 1.4; letter-spacing: 0.06em; }
+.book-emblem .el-icon { font-size: 14px; }
+.class-name {
+  font-family: 'Songti SC', 'STSong', 'Noto Serif CJK SC', serif;
+  font-size: 16px;
+  font-weight: 700;
   line-height: 1.4;
-  height: 44px; /* 限制两行高度 */
-  overflow: hidden;
-  text-overflow: ellipsis;
+  letter-spacing: 0.02em;
+  overflow-wrap: anywhere;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
+  overflow: hidden;
+  flex-shrink: 0;
 }
-
-.class-meta {
+.class-school { margin-top: 6px; color: var(--text-regular); font-size: 12px; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.class-entry {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 15px;
-}
-
-.todo-text {
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 8px;
+  color: var(--book-ink);
   font-size: 12px;
-  color: var(--accent-danger);
-  background: var(--accent-danger-light, #fef0f0);
-  padding: 2px 6px;
-  border-radius: 4px;
+  line-height: 1.4;
 }
-
-/* 底部进度条区域 */
-.card-footer {
-  margin-top: auto; /* 推到底部 */
-}
-
-.progress-label {
-  font-size: 12px;
-  color: var(--text-secondary);
-  margin-bottom: 4px;
-}
-
-/* 分页 */
 .pagination-box {
   flex-shrink: 0;
-  padding: 15px 0 20px;
+  padding: 16px 24px;
   border-top: 1px solid var(--border-light);
   display: flex;
   justify-content: center;
-  background: var(--bg-surface);
-  border-bottom-left-radius: 16px;
-  border-bottom-right-radius: 16px;
 }
-
+@container (max-width: 759px) {
+  .class-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@container (max-width: 559px) {
+  .class-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container (max-width: 339px) {
+  .class-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (min-width: 1051px) and (max-height: 760px) {
+  .main-card :deep(.el-card__header) { padding: 14px 20px; }
+  .scroll-container { padding: 16px 20px; }
+  .class-grid { gap: 12px; }
+  .class-card { height: 136px; padding-top: 10px; padding-bottom: 8px; }
+  .book-emblem { margin-bottom: 6px; }
+  .class-name { font-size: 15px; }
+  .class-school { margin-top: 4px; }
+  .class-entry { padding-top: 6px; }
+  .pagination-box { padding: 12px 24px; }
+}
+@media (max-width: 1050px) {
+  .class-view-container, .main-card { height: auto; }
+  .scroll-container { min-height: 280px; overflow: visible; }
+}
+@media (max-width: 600px) {
+  .main-card :deep(.el-card__header) { padding: 20px 16px; }
+  .card-header { flex-wrap: wrap; }
+  .scroll-container { padding: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .class-card { transition: none; }
+  .class-card:hover { transform: none; }
+}
 </style>

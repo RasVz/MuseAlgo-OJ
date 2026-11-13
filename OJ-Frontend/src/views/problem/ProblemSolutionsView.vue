@@ -85,7 +85,10 @@ const userStore = useUserStore()
 const formatTime = (time) => time ? dayjs(time).format('YYYY-MM-DD') : '时间未知'
 const goProblem = () => router.push({ name: 'ProblemDetail', params: { id: problemId } })
 const goPost = (id) => router.push({ name: 'PostDetail', params: { id } })
-const writeSolution = () => router.push({ name: 'PostCreate', query: { problemId, type: '2' } })
+const writeSolution = () => {
+  const target = router.resolve({ path: '/editor', query: { channel: 'solution', problemId } })
+  window.open(target.href, '_blank')
+}
 // 官方题解与精选标记都是 0/1 或布尔两种返回，统一按 Number>0 判断。
 const isOfficial = (solution) => Number(solution.isOfficial) === 1 || solution.isOfficial === true
 const isEssence = (solution) => Number(solution.isEssence) === 1 || solution.isEssence === true

@@ -17,9 +17,8 @@ import com.musealgo.oj.problem.entity.dto.ProblemDTO;
 import com.musealgo.oj.problem.entity.vo.ProblemCaseVO;
 import com.musealgo.oj.problem.entity.vo.ProblemDetailVO;
 import com.musealgo.oj.problem.format.ProblemFormatApplyRequest;
+import com.musealgo.oj.problem.format.ProblemFormatApplyResult;
 import com.musealgo.oj.problem.format.ProblemFormatPreviewItem;
-import com.musealgo.oj.problem.format.ProblemFormatRequest;
-import com.musealgo.oj.problem.format.ProblemFormatResult;
 import com.musealgo.oj.problem.importer.FpsProblem;
 import com.musealgo.oj.problem.importer.FpsTestCase;
 import com.musealgo.oj.problem.infrastructure.ProblemSearchIndexer;
@@ -244,18 +243,16 @@ public class ProblemManagementApplicationService {
     }
 
     // ======================== 格式化域委托 ========================
-
-    public ProblemFormatResult formatProblems(ProblemFormatRequest request) {
-        return formatApplicationService.formatProblems(request);
-    }
+    // 批量整理已改为异步任务（ProblemFormatJobService），不再有同步批量入口。
 
     public ProblemFormatPreviewItem previewFormatProblem(Long problemId, boolean ipMode) {
         return formatApplicationService.previewFormatProblem(problemId, ipMode);
     }
 
-    @Transactional(rollbackFor = Exception.class)
-    public void applyFormattedProblem(ProblemFormatApplyRequest request) {
-        formatApplicationService.applyFormattedProblem(request);
+    // 事务边界由 ProblemFormatApplicationService 内部的 TransactionTemplate 控制：
+    // 这里不能再套 @Transactional，否则索引更新会落进同一个事务里。
+    public ProblemFormatApplyResult applyFormattedProblem(ProblemFormatApplyRequest request) {
+        return formatApplicationService.applyFormattedProblem(request);
     }
 
     // ======================== 查询方法 ========================

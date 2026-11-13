@@ -15,11 +15,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import com.musealgo.oj.ai.AiService;
 import com.musealgo.oj.ai.TeacherWorkbenchService;
-import com.musealgo.oj.ai.HintLadderQueryService;
 import com.musealgo.oj.ai.dto.AiCallSource;
 import com.musealgo.oj.ai.dto.AiCompletionResult;
 import com.musealgo.oj.ai.dto.AiTokenUsage;
-import com.musealgo.oj.ai.dto.HintLevelVo;
 import com.musealgo.oj.ai.entity.AiUsage;
 import com.musealgo.oj.ai.usage.AiUsageRecorder;
 import com.musealgo.oj.common.api.Result;
@@ -43,22 +41,6 @@ public class TeacherAiController {
 
     private final TeacherWorkbenchService teacherWorkbenchService;
     private final AiUsageRecorder usageRecorder;
-    private final HintLadderQueryService hintLadderQueryService;
-
-    /**
-     * 班级 × 题目的 Hint Ladder 解锁情况：每位学生的最高解锁级别。
-     * <p>
-     * 权限：@PreAuthorize 已限定教师/管理员，班级归属（班主任本人）由
-     * {@link HintLadderQueryService} 校验。级别 = Redis 当前值 ∪ 轨迹表历史，取高。
-     * </p>
-     */
-    @Operation(summary = "查询班级内每位学生对某题的 Hint Ladder 解锁级别")
-    @GetMapping("/hint/levels")
-    public Result<List<HintLevelVo>> hintLevels(@RequestParam Long classId,
-                                                @RequestParam Long problemId) {
-        return Result.success(hintLadderQueryService.classHintLevels(classId, problemId));
-    }
-
     @Operation(summary = "题面草稿生成")
     @PostMapping("/draft-problem")
     public Result<String> draftProblem(@RequestBody Map<String, String> body) {
@@ -167,7 +149,7 @@ public class TeacherAiController {
             }
         }
         boolean success = json != null;
-        recordUsage(scene, startMs, success, userPrompt, raw, call.source(), call.usage());
+        recordUsage(scene, startMs, success, userPrompt, raw, call.source(), call.cached() ? AiTokenUsage.empty() : call.usage());
         if (!success) {
             log.warn("【命题工作台】{} 返回不可解析内容: {}", toolKey,
                     raw == null ? "null" : raw.substring(0, Math.min(raw.length(), 200)));
@@ -317,7 +299,7 @@ public class TeacherAiController {
                 ? input + "\n【难度/要求】" + extra : input;
         AiCompletionResult call = teacherWorkbenchService.teacherChatDetailed(toolKey, userPrompt);
         String answer = call.success() ? call.content() : null;
-        recordUsage(scene, startMs, call.success(), userPrompt, answer, call.source(), call.usage());
+        recordUsage(scene, startMs, call.success(), userPrompt, answer, call.source(), call.cached() ? AiTokenUsage.empty() : call.usage());
         if (answer == null || answer.isBlank()) {
             // 失败必须回错误码：把「生成失败」当成功文本返回，前端会把它填进题面编辑器，
             // 使用者无法区分模型没答和题目内容本身。

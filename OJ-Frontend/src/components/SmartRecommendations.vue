@@ -21,10 +21,12 @@
           <span class="recommend-index">{{ String(index + 1).padStart(2, '0') }}</span>
           <span class="recommend-main">
             <span class="rec-title">{{ item.title }}</span>
-            <span class="rec-meta">{{ getDifficultyLabel(item.level) }}难度</span>
-          </span>
-          <span class="difficulty-badge" :style="getDifficultyStyle(item.level)">
-            {{ item.level }}
+            <span class="rec-meta">
+              <span>{{ getDifficultyLabel(item.level) }}难度</span>
+              <span class="difficulty-badge" :style="getDifficultyStyle(item.level)">
+                {{ item.level }}
+              </span>
+            </span>
           </span>
           <el-icon class="item-arrow"><ArrowRight /></el-icon>
         </button>
@@ -121,9 +123,9 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.recommend-card { overflow: hidden; border: 1px solid var(--border-light); border-radius: 8px; }
+.recommend-card { display: flex; flex-direction: column; min-height: 440px; overflow: hidden; border: 1px solid var(--border-light); border-radius: 16px; }
 .recommend-card :deep(.el-card__header) { padding: 14px 16px 12px; border-bottom: 1px solid var(--border-light); }
-.recommend-card :deep(.el-card__body) { padding: 4px 8px 8px; }
+.recommend-card :deep(.el-card__body) { display: flex; flex: 1; padding: 8px; }
 
 .side-header {
   display: flex;
@@ -160,14 +162,17 @@ onMounted(() => {
 }
 .is-loading { animation: spin 0.8s linear infinite; }
 
-.recommend-list { flex: 1; overflow-y: auto; }
+.recommend-list { display: flex; flex-direction: column; flex: 1; min-width: 0; }
 
 .recommend-item {
   display: flex;
   width: 100%;
   gap: 10px;
   align-items: center;
-  padding: 10px 8px;
+  min-height: 88px;
+  padding: 16px 8px;
+  flex: 1;
+  font-family: inherit;
   color: inherit;
   text-align: left;
   cursor: pointer;
@@ -180,9 +185,10 @@ onMounted(() => {
 .recommend-item:focus-visible { outline: 2px solid var(--el-color-primary-light-5); outline-offset: -2px; }
 
 .recommend-index { flex: 0 0 24px; color: var(--text-secondary); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; font-weight: 700; }
-.recommend-main { display: grid; min-width: 0; flex: 1; gap: 3px; }
-.rec-title { overflow: hidden; color: var(--text-primary); font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.rec-meta { color: var(--text-secondary); font-size: 11px; }
+.recommend-main { display: grid; min-width: 0; flex: 1; gap: 8px; }
+.rec-title { color: var(--text-primary); font-size: 14px; font-weight: 600; line-height: 1.6; overflow-wrap: anywhere; }
+.rec-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; color: var(--text-secondary); font-size: 12px; }
+.rec-meta > span { white-space: nowrap; }
 .difficulty-badge {
   flex: 0 0 auto;
   min-width: 38px;
@@ -195,4 +201,8 @@ onMounted(() => {
 }
 .item-arrow { flex: 0 0 auto; color: var(--text-placeholder); font-size: 14px; }
 @keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .is-loading { animation: none; }
+  .recommend-item { transition: none; }
+}
 </style>

@@ -11,6 +11,9 @@ public interface AiAssistant {
      */
     String chat(String systemPrompt, String userPrompt);
 
+    /** 后台报告等无请求上下文的调用显式标注资源归属，不用于授权。 */
+    default String chatForUser(Long userId, String systemPrompt, String userPrompt) { return chat(systemPrompt,userPrompt); }
+
     /**
      * 结构化对话入口：自定义 system + user prompt，要求模型只输出一个合法 JSON 对象。
      * <p>
@@ -19,6 +22,14 @@ public interface AiAssistant {
      * 由调用方决定如何提示用户，不返回降级文案（避免把失败伪装成 JSON 内容）。
      */
     String chatJson(String systemPrompt, String userPrompt);
+
+    /**
+     * 结构化对话的显式归属版本：后台任务（如批量题面整理）没有请求上下文，
+     * 用创建人 ID 记录用量，避免用量统计出现 null 用户。
+     */
+    default String chatJsonForUser(Long userId, String systemPrompt, String userPrompt) {
+        return chatJson(systemPrompt, userPrompt);
+    }
 
     /**
      * 教师工具对话：按 toolKey 渲染系统提示词（提示词模板由实现方维护），返回纯文本。

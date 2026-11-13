@@ -41,7 +41,7 @@ import RecentColumnCard from '@/components/RecentColumnCard.vue'
 
 <style scoped>
 .home-dashboard {
-  height: calc(100vh - 85px - 40px);
+  height: calc(100vh - var(--app-header-height) - 40px);
   overflow-y: auto;
   overflow-x: hidden;
 }

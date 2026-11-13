@@ -1,419 +1,224 @@
 <template>
   <div class="admin-ai admin-scroll-page">
-    <div class="page-header">
-      <div>
-        <div class="page-title">AI 管理</div>
-        <div class="page-desc">用量、配额、比赛拦截与提示词；接口、模型和密钥请到「AI 服务」维护</div>
+    <div class="global-bar">
+      <div class="bar-title">
+        <h1 class="page-title">AI 管理</h1>
+        <p class="page-desc">用量、配额与教学诊断；接口、模型和密钥在「AI 服务」维护</p>
       </div>
-      <el-radio-group v-model="days" @change="loadOverview">
-        <el-radio-button :value="7">近 7 天</el-radio-button>
-        <el-radio-button :value="30">近 30 天</el-radio-button>
-      </el-radio-group>
-      <el-button type="primary" @click="openAiServices">AI 服务配置</el-button>
-      <el-button type="warning" @click="openPrompts">提示词模板</el-button>
+      <div class="bar-tools">
+        <span class="mode-badge" :class="modeClass"><i class="mode-dot"></i>{{ runtimeModeLabel }}</span>
+        <el-radio-group :model-value="days" @change="setDays">
+          <el-radio-button :value="7">近 7 天</el-radio-button>
+          <el-radio-button :value="30">近 30 天</el-radio-button>
+        </el-radio-group>
+        <el-button @click="openAiServices">AI 服务配置</el-button>
+        <el-button @click="setTab('config')">提示词模板</el-button>
+      </div>
     </div>
 
-    <!-- 总览卡片 -->
-    <el-row :gutter="16" class="cards">
-      <el-col v-for="card in cards" :key="card.label" :span="6">
-        <el-card shadow="never">
-          <div class="card-label">{{ card.label }}</div>
-          <div class="card-value">{{ card.value }}</div>
-        </el-card>
-      </el-col>
-    </el-row>
-    <div v-if="overview.costNote" class="cost-note">{{ overview.costNote }}</div>
+    <el-alert v-if="globalError" :title="globalError" type="error" :closable="false" class="block">
+      <el-button size="small" @click="loadGlobal">重新加载</el-button>
+    </el-alert>
 
-    <el-card shadow="never" class="block">
-      <template #header>调用量与 token 趋势</template>
-      <div ref="trendChartRef" class="trend-chart"></div>
-    </el-card>
-
-    <el-row :gutter="16">
-      <el-col :span="14">
-        <el-card shadow="never" class="block">
-          <template #header>
-            <div class="sub-header">
-              <span>用量明细</span>
-              <div class="filters">
-                <el-input v-model="filters.userId" placeholder="用户 ID" clearable style="width: 110px" />
-                <el-select v-model="filters.scene" placeholder="场景" clearable style="width: 110px">
-                  <el-option label="答疑" value="ASK" />
-                  <el-option label="复盘" value="REVIEW" />
-                </el-select>
-                <el-select v-model="filters.status" placeholder="状态" clearable style="width: 130px">
-                  <el-option label="成功" value="SUCCESS" />
-                  <el-option label="失败" value="FAIL" />
-                  <el-option label="配额拒绝" value="QUOTA_REJECTED" />
-                  <el-option label="比赛拦截" value="CONTEST_BLOCKED" />
-                </el-select>
-                <el-date-picker v-model="filters.dates" type="daterange" value-format="YYYY-MM-DD"
-                  start-placeholder="开始日期" end-placeholder="结束日期" style="width: 230px" />
-                <el-button type="primary" @click="loadLogs">查询</el-button>
-              </div>
-            </div>
-          </template>
-          <el-table :data="logs" size="small" max-height="420">
-            <el-table-column prop="userId" label="用户" width="70" />
-            <el-table-column label="场景" width="80">
-              <template #default="{ row }">{{ row.scene }}</template>
-            </el-table-column>
-            <el-table-column label="状态" width="100">
-              <template #default="{ row }">
-                <el-tag size="small" :type="statusTag(row.status)">{{ row.status }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column prop="totalTokens" label="token" width="90" />
-            <el-table-column label="服务" min-width="110" show-overflow-tooltip>
-              <template #default="{ row }">{{ row.serviceName || '旧环境' }}</template>
-            </el-table-column>
-            <el-table-column prop="model" label="模型" min-width="120" />
-            <el-table-column label="配置版本" width="90">
-              <template #default="{ row }">{{ row.configVersion ?? '—' }}</template>
-            </el-table-column>
-            <el-table-column prop="latencyMs" label="耗时ms" width="80" />
-            <el-table-column prop="detail" label="详情" min-width="150" show-overflow-tooltip />
-            <el-table-column prop="createdAt" label="时间" min-width="150" />
-          </el-table>
-        </el-card>
-      </el-col>
-      <el-col :span="10">
-        <el-card shadow="never" class="block">
-          <template #header>用户 token 消耗排行（近 {{ days }} 天）</template>
-          <el-table :data="ranking" size="small" max-height="420">
-            <el-table-column prop="rank" label="#" width="50" />
-            <el-table-column prop="username" label="用户" min-width="120" />
-            <el-table-column prop="calls" label="次数" width="70" />
-            <el-table-column prop="tokens" label="token" width="90" />
-            <el-table-column label="今日配额" width="110">
-              <template #default="{ row }">{{ row.usageRate ?? 0 }}%</template>
-            </el-table-column>
-          </el-table>
-        </el-card>
-      </el-col>
-    </el-row>
-
-    <el-card shadow="never" class="block">
-      <template #header>
-        <div class="sub-header">
-          <span>AI 配置（DB 覆盖，保存后秒级生效）</span>
-          <el-button type="primary" size="small" :loading="savingConfig" @click="saveConfig">保存配置</el-button>
+    <div v-loading="loading" class="kpi-grid">
+      <div v-for="card in cards" :key="card.key" class="kpi-card">
+        <div class="kpi-label">{{ card.label }}</div>
+        <div class="kpi-value" :class="{ 'is-mode': card.mode }">{{ card.value }}</div>
+        <div class="kpi-foot">
+          <svg v-if="card.spark" viewBox="0 0 64 18" width="64" height="18" aria-hidden="true">
+            <polyline :points="card.spark" fill="none" stroke="var(--accent-primary)" stroke-width="1.5" />
+          </svg>
+          <span class="kpi-note">{{ card.note }}</span>
         </div>
-      </template>
-      <el-alert
-        v-if="serviceManaged"
-        type="info"
-        show-icon
-        :closable="false"
-        title="当前由后台服务提供 AI"
-        description="模型、输出上限和 JSON 模式来自当前服务，本页只读；请到「AI 服务」编辑并测试。"
-        style="margin-bottom: 12px"
+      </div>
+    </div>
+
+    <div class="tab-bar" role="tablist" aria-label="AI 管理分区">
+      <button
+        v-for="tab in tabs"
+        :key="tab.key"
+        type="button"
+        role="tab"
+        class="tab-btn"
+        :class="{ active: activeTab === tab.key }"
+        :aria-selected="activeTab === tab.key"
+        @click="setTab(tab.key)"
+      >{{ tab.label }}</button>
+    </div>
+
+    <div class="tab-content" role="tabpanel">
+      <AiOverviewPanel
+        v-if="activeTab === 'overview'"
+        :overview="overview"
+        :trend="trend"
+        :ranking="ranking"
+        :days="days"
+        @navigate="navigate"
       />
-      <el-alert v-if="configSaveError" :title="configSaveError" type="error" :closable="false" />
-      <el-form :model="editableConfig" label-width="170px" inline>
-        <el-form-item label="配额开关">
-          <el-switch v-model="editableConfig.ai_quota_enabled" active-value="true" inactive-value="false" />
-        </el-form-item>
-        <el-form-item label="每日配额 token">
-          <el-input-number v-model="editableConfig.ai_quota_daily_tokens" :min="0" :step="1000" />
-        </el-form-item>
-        <el-form-item label="教师/管理员豁免">
-          <el-switch v-model="editableConfig.ai_quota_exempt_teacher_admin" active-value="true" inactive-value="false" />
-        </el-form-item>
-        <el-form-item label="比赛拦截">
-          <el-switch v-model="editableConfig.ai_contest_guard_enabled" active-value="true" inactive-value="false" />
-        </el-form-item>
-        <el-form-item label="拦截缓存秒数">
-          <el-input-number v-model="editableConfig.ai_contest_guard_cache_seconds" :min="0" />
-        </el-form-item>
-        <el-form-item label="模型">
-          <el-input v-model="editableConfig.ai_model" style="width: 220px" :disabled="serviceManaged" />
-        </el-form-item>
-        <el-form-item label="max_tokens">
-          <el-input-number v-model="editableConfig.ai_max_tokens" :min="256" :step="1024" :disabled="serviceManaged" />
-        </el-form-item>
-        <el-form-item label="JSON 模式">
-          <el-switch
-            v-model="editableConfig.ai_json_mode"
-            active-value="true"
-            inactive-value="false"
-            :disabled="serviceManaged"
-          />
-        </el-form-item>
-      </el-form>
-    </el-card>
-
-    <el-card shadow="never" class="block">
-      <template #header>配额人工干预</template>
-      <div class="quota-tool">
-        <el-input v-model="quotaUserId" placeholder="用户 ID" style="width: 140px" />
-        <el-button type="primary" @click="queryQuota">查询</el-button>
-        <template v-if="quotaInfo">
-          <span class="quota-info">
-            今日已用 <b>{{ quotaInfo.usedToday }}</b> / {{ quotaInfo.dailyLimit }} token（{{ quotaInfo.date }}）
-          </span>
-          <el-input-number v-model="quotaSetValue" :min="0" placeholder="设置已用" style="width: 130px" />
-          <el-button @click="setQuota">设置已用</el-button>
-          <el-button type="danger" plain @click="resetQuota">重置当日</el-button>
-        </template>
-      </div>
-    </el-card>
-
-    <!-- 提示词模板管理 -->
-    <el-dialog v-model="promptsVisible" title="提示词模板版本管理" width="820px" top="5vh">
-      <div class="prompt-tool">
-        <el-select v-model="promptKey" placeholder="选择模板 key" clearable style="width: 220px" @change="loadPrompts">
-          <el-option label="tutor（答疑导师）" value="tutor" />
-          <el-option label="review（AI 复盘）" value="review" />
-        </el-select>
-        <el-input v-model="promptNewContent" type="textarea" :rows="3" placeholder="新建版本内容（创建后自动激活）" />
-        <el-button type="primary" @click="createPrompt">新建版本并激活</el-button>
-      </div>
-      <el-table :data="prompts" size="small" max-height="360">
-        <el-table-column prop="promptKey" label="key" width="100" />
-        <el-table-column prop="version" label="版本" width="70" align="center" />
-        <el-table-column label="状态" width="80" align="center">
-          <template #default="{ row }">
-            <el-tag :type="row.isActive === 1 ? 'success' : 'info'" size="small">{{ row.isActive === 1 ? '激活' : '历史' }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="content" label="内容" min-width="300" show-overflow-tooltip />
-        <el-table-column label="操作" width="90" align="center">
-          <template #default="{ row }">
-            <el-button v-if="row.isActive !== 1" link type="primary" @click="activatePrompt(row)">激活</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-    </el-dialog>
+      <AiLogsPanel v-else-if="activeTab === 'logs'" />
+      <AiDiagnosticsPanel v-else-if="activeTab === 'diagnostics'" :days="days" />
+      <AiConfigPanel v-else :config="config" @saved="loadGlobal" />
+    </div>
   </div>
 </template>
 
 <script setup>
-import { showApiError } from '@/utils/errorFeedback'
-// AI 管理后台（仅管理员）：平台侧 AI 能力的运营面板。
-//
-// 四块内容：调用概览 + 趋势图、调用日志与用户 token 排行、运行时配置（配额开关、
-// 比赛拦截、模型与 max_tokens）、提示词模板版本管理。
-// 配置以「DB 覆盖 + 逐 key 保存」的方式生效，因此 saveConfig 是串行逐项写入，
-// 任一项失败即中断，避免出现半新半旧的配置组合。
-import { ref, reactive, computed, onMounted, onUnmounted, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
-import echarts from '@/utils/echarts'
+// AI 管理后台（仅管理员）：方案 A 运维仪表盘。
+// 常驻全局条 + KPI + 四个 Tab；Tab 与时间范围写入 URL query，刷新与返回可复现。
+// 全局数据（概览/趋势/排行/配置）在此加载，各 Tab 面板按需挂载并自行取数。
+import { ref, computed, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import AiOverviewPanel from './components/AiOverviewPanel.vue'
+import AiLogsPanel from './components/AiLogsPanel.vue'
+import AiDiagnosticsPanel from './components/AiDiagnosticsPanel.vue'
+import AiConfigPanel from './components/AiConfigPanel.vue'
 import {
-  getAiOverview, getAiTrend, getAiLogs, getAiRanking, getAiConfig, updateAiConfig,
-  getAiQuota, resetAiQuota, setAiQuota,
-  getPromptTemplates, createPromptTemplate, activatePromptTemplate
+  getAiOverview, getAiTrend, getAiRanking, getAiConfig
 } from '@/api/adminAi'
-import { unwrapResultData, isResultSuccess, getResultMessage } from '@/utils/response'
-import { ElMessage } from 'element-plus'
+import { unwrapResultData } from '@/utils/response'
+import { showApiError } from '@/utils/errorFeedback'
 
+const route = useRoute()
 const router = useRouter()
-const days = ref(7)
+
+const tabs = [
+  { key: 'overview', label: '概览' },
+  { key: 'logs', label: '日志与配额' },
+  { key: 'diagnostics', label: '诊断试跑' },
+  { key: 'config', label: '配置与模板' }
+]
+
+const activeTab = computed(() =>
+  tabs.some((t) => t.key === route.query.tab) ? route.query.tab : 'overview'
+)
+const days = computed(() => (Number(route.query.days) === 30 ? 30 : 7))
+
 const overview = ref({})
-const logs = ref([])
+const trend = ref([])
 const ranking = ref([])
 const config = ref({})
-const savingConfig = ref(false)
-const configSaveError = ref('')
-const editableConfig = ref({})
-const quotaUserId = ref('')
-const quotaInfo = ref(null)
-const quotaSetValue = ref(0)
-const promptsVisible = ref(false)
-const promptKey = ref('tutor')
-const promptNewContent = ref('')
-const prompts = ref([])
-const trendChartRef = ref(null)
-let chart = null
-
-const filters = reactive({ userId: '', scene: '', status: '', dates: [] })
-
-const serviceManaged = computed(() => config.value.runtimeMode === 'MANAGED')
+const loading = ref(false)
+const globalError = ref('')
 
 const runtimeModeLabel = computed(() => ({
   LEGACY: '旧环境',
   MANAGED: '后台服务',
   OFF: '已停用',
   UNKNOWN: '未知'
-}[config.value.runtimeMode] || '旧环境'))
+}[config.value.runtimeMode] || '读取中'))
 
-const cards = computed(() => [
-  { label: '调用次数', value: overview.value.calls ?? 0 },
-  { label: 'token 总量', value: (overview.value.tokens ?? 0).toLocaleString() },
-  { label: '失败率', value: `${overview.value.failRate ?? 0}%` },
-  { label: '运行模式', value: runtimeModeLabel.value }
-])
+const modeClass = computed(() => ({
+  LEGACY: 'mode-legacy',
+  MANAGED: 'mode-managed',
+  OFF: 'mode-off',
+  UNKNOWN: 'mode-unknown'
+}[config.value.runtimeMode] || 'mode-unknown'))
 
-const statusTag = (s) => ({
-  SUCCESS: 'success', FAIL: 'danger',
-  QUOTA_REJECTED: 'warning', CONTEST_BLOCKED: 'warning'
-}[s] || 'info')
-
-// 布尔开关在这里统一转成字符串：后端配置项以字符串存储，
-  // el-switch 的 active-value/inactive-value 也只认字符串，直接传布尔会显示为未选中。
-const syncEditableConfig = () => {
-  editableConfig.value = {
-    ai_quota_enabled: String(config.value.quotaEnabled),
-    ai_quota_daily_tokens: config.value.dailyTokens ?? 30000,
-    ai_quota_exempt_teacher_admin: String(config.value.exemptTeacherAdmin),
-    ai_contest_guard_enabled: String(config.value.contestGuardEnabled),
-    ai_contest_guard_cache_seconds: config.value.contestGuardCacheSeconds ?? 60,
-    ai_model: config.value.model || 'deepseek-chat',
-    ai_max_tokens: config.value.maxTokens ?? 8192,
-    ai_json_mode: String(config.value.jsonMode ?? true)
-  }
+// 迷你趋势线只用真实 trend 数据；不足两个点时画一条水平基线，避免空图形。
+const sparkPoints = (values) => {
+  const list = Array.isArray(values) ? values.map((v) => Number(v) || 0) : []
+  if (list.length < 2) return '0,9 64,9'
+  const min = Math.min(...list)
+  const span = Math.max(...list) - min || 1
+  const step = 64 / (list.length - 1)
+  return list.map((v, i) => `${(i * step).toFixed(1)},${(16 - ((v - min) / span) * 14).toFixed(1)}`).join(' ')
 }
 
-const loadOverview = async () => {
-  overview.value = unwrapResultData(await getAiOverview(days.value)) || {}
-  const trend = unwrapResultData(await getAiTrend(days.value)) || []
-  ranking.value = unwrapResultData(await getAiRanking(days.value)) || []
-  config.value = unwrapResultData(await getAiConfig()) || {}
-  syncEditableConfig()
-  renderTrend(trend)
-  loadLogs()
-}
-
-const saveConfig = async () => {
-  savingConfig.value = true
-  configSaveError.value = ''
-  try {
-    const serviceLevel = new Set(['ai_model', 'ai_max_tokens', 'ai_json_mode'])
-    const entries = Object.entries(editableConfig.value)
-      .filter(([key]) => !serviceManaged.value || !serviceLevel.has(key))
-    for (const [key, value] of entries) {
-      const res = await updateAiConfig(key, String(value))
-      if (!isResultSuccess(res)) throw new Error(getResultMessage(res, `保存 ${key} 失败`))
+const cards = computed(() => {
+  const o = overview.value
+  const t = trend.value
+  return [
+    {
+      key: 'calls', label: '调用次数', value: Number(o.calls ?? 0).toLocaleString(),
+      note: `成功 ${o.success ?? 0} · 失败 ${o.fail ?? 0}`,
+      spark: sparkPoints(t.map((x) => x.calls))
+    },
+    {
+      key: 'tokens', label: 'token 总量', value: Number(o.tokens ?? 0).toLocaleString(),
+      note: `主动停止 ${o.cancelled ?? 0} 次`,
+      spark: sparkPoints(t.map((x) => x.tokens))
+    },
+    {
+      key: 'fail', label: '失败率', value: `${o.failRate ?? 0}%`,
+      note: `配额拒绝 ${o.quotaBlocked ?? 0} · 比赛拦截 ${o.contestBlocked ?? 0}`,
+      spark: ''
+    },
+    {
+      key: 'mode', label: '运行模式', value: runtimeModeLabel.value, mode: true,
+      note: config.value.model || '模型信息待读取',
+      spark: ''
     }
-    config.value = unwrapResultData(await getAiConfig()) || {}
-    syncEditableConfig()
-    ElMessage.success('配置已保存，秒级生效')
-  } catch (error) {
-    configSaveError.value = '配置未完整保存，部分选项可能已生效。'
-    showApiError(error, '配置保存失败')
-    try {
-      config.value = unwrapResultData(await getAiConfig()) || {}
-      syncEditableConfig()
-      configSaveError.value += '已重新加载实际配置，请核对后重试。'
-    } catch {
-      configSaveError.value += '实际配置读取失败，请重新加载后再操作。'
-    }
-  } finally {
-    savingConfig.value = false
-  }
+  ]
+})
+
+const setTab = (key, extra = {}) => {
+  router.push({
+    query: { ...route.query, tab: key, status: extra.status || undefined }
+  })
 }
 
-const queryQuota = async () => {
-  if (!quotaUserId.value) return
-  const res = await getAiQuota(quotaUserId.value)
-  quotaInfo.value = unwrapResultData(res) || null
-  quotaSetValue.value = quotaInfo.value?.usedToday ?? 0
+const setDays = (value) => {
+  router.replace({ query: { ...route.query, days: value } })
 }
 
-const resetQuota = async () => {
-  const res = await resetAiQuota(quotaUserId.value)
-  if (isResultSuccess(res)) {
-    ElMessage.success('已重置')
-    queryQuota()
-  }
-}
-
-const setQuota = async () => {
-  const res = await setAiQuota(quotaUserId.value, quotaSetValue.value)
-  if (isResultSuccess(res)) {
-    ElMessage.success('已设置')
-    queryQuota()
-  }
-}
+const navigate = ({ tab, status }) => setTab(tab, { status })
 
 const openAiServices = () => router.push('/admin/ai-services')
 
-const openPrompts = async () => {
-  promptsVisible.value = true
-  loadPrompts()
-}
-
-const loadPrompts = async () => {
-  prompts.value = unwrapResultData(await getPromptTemplates(promptKey.value || undefined)) || []
-}
-
-const createPrompt = async () => {
-  if (!promptNewContent.value.trim()) {
-    ElMessage.warning('请输入模板内容')
-    return
-  }
-  const res = await createPromptTemplate(promptKey.value || 'tutor', promptNewContent.value)
-  if (!isResultSuccess(res)) {
-    ElMessage.error(getResultMessage(res, '创建失败'))
-    return
-  }
-  ElMessage.success('新版本已创建并激活')
-  promptNewContent.value = ''
-  loadPrompts()
-}
-
-const activatePrompt = async (row) => {
-  const res = await activatePromptTemplate(row.id)
-  if (isResultSuccess(res)) {
-    ElMessage.success('已激活')
-    loadPrompts()
+// 用版本号丢弃过期响应：切换时间范围或保存配置后可能同时存在多次全局请求。
+let generation = 0
+const loadGlobal = async () => {
+  const version = ++generation
+  loading.value = true
+  globalError.value = ''
+  try {
+    const [o, t, r, c] = await Promise.all([
+      getAiOverview(days.value),
+      getAiTrend(days.value),
+      getAiRanking(days.value),
+      getAiConfig()
+    ])
+    if (version !== generation) return
+    overview.value = unwrapResultData(o) || {}
+    trend.value = unwrapResultData(t) || []
+    ranking.value = unwrapResultData(r) || []
+    config.value = unwrapResultData(c) || {}
+  } catch (error) {
+    if (version !== generation) return
+    globalError.value = 'AI 概览数据加载失败，可重新加载。'
+    showApiError(error, 'AI 概览数据加载失败')
+  } finally {
+    if (version === generation) loading.value = false
   }
 }
 
-// 趋势图挂在常驻 DOM 上，只需 init 一次；重复 init 会在同一容器上叠加实例。
-// 用 nextTick 等容器真正渲染出非零尺寸，否则 echarts 会拿到 0 宽高而画出空白图。
-const renderTrend = (trend) => {
-  nextTick(() => {
-    if (!trendChartRef.value) return
-    if (!chart) chart = echarts.init(trendChartRef.value)
-    chart.setOption({
-      tooltip: { trigger: 'axis' },
-      legend: { data: ['调用次数', 'token'] },
-      grid: { left: 60, right: 60, top: 40, bottom: 30 },
-      xAxis: { type: 'category', data: trend.map((t) => t.day) },
-      yAxis: [
-        { type: 'value', name: '次数' },
-        { type: 'value', name: 'token' }
-      ],
-      series: [
-        { name: '调用次数', type: 'line', smooth: true, data: trend.map((t) => t.calls) },
-        { name: 'token', type: 'line', smooth: true, yAxisIndex: 1, data: trend.map((t) => t.tokens) }
-      ]
-    })
-  })
-}
-
-const loadLogs = async () => {
-  const res = await getAiLogs({
-    page: 1, size: 100,
-    userId: filters.userId || undefined,
-    scene: filters.scene || undefined,
-    status: filters.status || undefined,
-    start: filters.dates?.[0] || undefined,
-    end: filters.dates?.[1] || undefined
-  })
-  logs.value = unwrapResultData(res)?.records ?? []
-}
-
-onMounted(loadOverview)
-// 必须 dispose：ECharts 实例内部持有 ResizeObserver 与定时器，不销毁会在离开页面后继续占用内存。
-onUnmounted(() => chart && chart.dispose())
+watch(() => route.query.days, loadGlobal, { immediate: true })
 </script>
 
 <style scoped>
-.admin-ai { padding: 16px; }
-.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-.page-title { font-size: 18px; font-weight: 600; }
-.page-desc { color: var(--text-secondary); font-size: 13px; margin-top: 4px; }
-.cards { margin-bottom: 16px; }
-.card-label { color: var(--text-secondary); font-size: 13px; }
-.card-value { font-size: 26px; font-weight: 700; margin-top: 6px; }
-.cost-note { color: var(--text-secondary); font-size: 12px; margin: -8px 0 12px; }
+.admin-ai { padding: 16px 20px 28px; }
+.global-bar { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+.page-title { margin: 0; color: var(--text-primary); font-size: 18px; font-weight: 600; }
+.page-desc { margin: 4px 0 0; color: var(--text-secondary); font-size: 13px; }
+.bar-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mode-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--border-base); border-radius: 999px; font-size: 12px; color: var(--text-regular); background: var(--bg-surface); }
+.mode-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-secondary); }
+.mode-managed .mode-dot { background: var(--accent-success); }
+.mode-legacy .mode-dot { background: var(--accent-warning); }
+.mode-off .mode-dot { background: var(--accent-danger); }
+.kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.kpi-card { padding: 12px 14px; background: var(--bg-surface); border: 1px solid var(--border-light); border-radius: var(--radius-md); }
+.kpi-label { color: var(--text-secondary); font-size: 13px; }
+.kpi-value { margin-top: 6px; color: var(--text-primary); font-size: 24px; font-weight: 700; line-height: 1.25; }
+.kpi-value.is-mode { font-size: 19px; }
+.kpi-foot { display: flex; align-items: center; gap: 8px; min-height: 18px; margin-top: 6px; }
+.kpi-note { color: var(--text-secondary); font-size: 12px; }
+.tab-bar { display: flex; gap: 2px; border-bottom: 1px solid var(--border-base); margin-bottom: 16px; overflow-x: auto; }
+.tab-btn { flex: none; appearance: none; border: none; border-bottom: 2px solid transparent; background: none; padding: 9px 16px; font: inherit; font-size: 13px; color: var(--text-regular); cursor: pointer; }
+.tab-btn:hover { color: var(--accent-primary); }
+.tab-btn.active { color: var(--accent-primary); border-bottom-color: var(--accent-primary); font-weight: 600; }
+.tab-btn:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: -2px; }
 .block { margin-bottom: 16px; }
-.trend-chart { height: 280px; }
-.sub-header { display: flex; justify-content: space-between; align-items: center; }
-.filters { display: flex; gap: 8px; }
-.quota-tool { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.quota-info { color: var(--text-regular); font-size: 13px; }
-.prompt-tool { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+@media (max-width: 1100px) { .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .kpi-grid { grid-template-columns: minmax(0, 1fr); } .admin-ai { padding: 12px; } }
 </style>

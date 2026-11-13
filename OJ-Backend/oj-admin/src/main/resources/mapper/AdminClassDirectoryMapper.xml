@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.musealgo.oj.mapper.AdminClassDirectoryMapper">
+    <select id="selectPage" resultType="com.musealgo.oj.dto.AdminClassSummary">
+        SELECT
+            c.id AS id,
+            c.name AS name,
+            c.description AS description,
+            c.school AS school,
+            c.teacher_id AS teacherId,
+            CASE
+                WHEN u.nickname IS NOT NULL AND TRIM(u.nickname) != '' THEN u.nickname
+                ELSE u.username
+            END AS teacherName,
+            c.create_time AS createTime
+        FROM `class` c
+        LEFT JOIN `user` u ON u.id = c.teacher_id AND u.is_deleted = 0
+        WHERE c.is_deleted = 0
+        <if test="keyword != null and keyword != ''">
+            AND (
+                c.name LIKE CONCAT('%', #{keyword}, '%')
+                OR c.school LIKE CONCAT('%', #{keyword}, '%')
+                <if test="classId != null">
+                    OR c.id = #{classId}
+                </if>
+                OR EXISTS (
+                    SELECT 1
+                    FROM `user` teacher_search
+                    WHERE teacher_search.id = c.teacher_id
+                      AND teacher_search.is_deleted = 0
+                      AND (
+                          teacher_search.username LIKE CONCAT('%', #{keyword}, '%')
+                          OR teacher_search.nickname LIKE CONCAT('%', #{keyword}, '%')
+                      )
+                )
+            )
+        </if>
+        <if test="memberStatus == 'empty'">
+            AND NOT EXISTS (SELECT 1 FROM class_student cs_empty WHERE cs_empty.class_id = c.id)
+        </if>
+        <if test="memberStatus == 'hasMembers'">
+            AND EXISTS (SELECT 1 FROM class_student cs_member WHERE cs_member.class_id = c.id)
+        </if>
+        <choose>
+            <when test="sort == 'oldest'">ORDER BY c.create_time ASC, c.id ASC</when>
+            <when test="sort == 'name'">ORDER BY c.name ASC, c.id ASC</when>
+            <otherwise>ORDER BY c.create_time DESC, c.id DESC</otherwise>
+        </choose>
+    </select>
+
+    <select id="selectStudentCounts" resultType="com.musealgo.oj.dto.AdminClassMemberCount">
+        SELECT class_id AS classId, COUNT(*) AS studentCount
+        FROM class_student
+        WHERE class_id IN
+        <foreach collection="classIds" item="classId" open="(" separator="," close=")">
+            #{classId}
+        </foreach>
+        GROUP BY class_id
+    </select>
+</mapper>

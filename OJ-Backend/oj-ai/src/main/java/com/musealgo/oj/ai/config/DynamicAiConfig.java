@@ -22,10 +22,6 @@ public class DynamicAiConfig {
     private long fallbackDailyTokens;
     @Value("${oj.ai.quota.exempt-teacher-admin:true}")
     private boolean fallbackExemptTeacherAdmin;
-    @Value("${oj.ai.contest-guard.enabled:true}")
-    private boolean fallbackContestGuardEnabled;
-    @Value("${oj.ai.contest-guard.cache-seconds:60}")
-    private long fallbackContestGuardCacheSeconds;
     @Value("${ai.model:deepseek-flash}")
     private String fallbackModel;
     @Value("${ai.max-tokens:8192}")
@@ -47,14 +43,6 @@ public class DynamicAiConfig {
 
     public boolean exemptTeacherAdmin() {
         return config.getBool("ai.quota.exempt-teacher-admin", fallbackExemptTeacherAdmin);
-    }
-
-    public boolean contestGuardEnabled() {
-        return config.getBool("ai.contest-guard.enabled", fallbackContestGuardEnabled);
-    }
-
-    public long contestGuardCacheSeconds() {
-        return config.getInt("ai.contest-guard.cache-seconds", (int) fallbackContestGuardCacheSeconds);
     }
 
     public String model() {

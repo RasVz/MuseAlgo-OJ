@@ -97,6 +97,7 @@ public class RunCodeService {
         result.put("compile_output", compileOutput);
         result.put("stderr", stderr);
         result.put("message", message);
+        result.put("raw_stdout", stdout);
         result.put("stdout", buildDisplayOutput(status, stdout, compileOutput, stderr, message));
 
         return result;

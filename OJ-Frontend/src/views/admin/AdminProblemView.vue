@@ -28,11 +28,10 @@
           <div class="toolbar-right">
             <el-button
               :icon="MagicStick"
-              :loading="formatting"
               :disabled="selectedProblems.length === 0"
-              @click="handleFormatSelected"
+              @click="openFormatJob"
             >
-              批量格式化{{ selectedProblems.length ? ` (${selectedProblems.length})` : '' }}
+              批量优化{{ selectedProblems.length ? ` (${selectedProblems.length})` : '' }}
             </el-button>
             <el-popover trigger="click" placement="bottom-end" width="170">
               <template #reference>
@@ -142,7 +141,12 @@
       </div>
 
       <FpsImportResultDialog v-model="importResultVisible" :result="importResult" />
-      <FormatResultDialog v-model="formatResultVisible" :result="formatResult" />
+      <ProblemFormatJobPanel
+        v-model="jobPanelVisible"
+        :problem-ids="batchProblemIds"
+        @open-item="openJobItem"
+        @finished="handleJobFinished"
+      />
     </div>
   </el-config-provider>
 </template>
@@ -153,7 +157,7 @@ import { showApiError } from '@/utils/errorFeedback'
 // 题库管理：教师与管理员共用，按角色走不同的数据源。
 // 管理员（role >= 3）可见全站题目，教师只能看到自己创建的题目。
 // 除了常规增删改查，这里还挂了两条批处理链路：FPS 题集文件导入（useFpsImport）
-// 与 AI 批量格式化（useProblemFormat），两者都可能耗时数十秒到数分钟。
+// 与 AI 批量题面优化（ProblemFormatJobPanel，服务端异步任务）。两者都可能耗时数分钟。
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox, ElConfigProvider } from 'element-plus'
 import { Upload, Setting, MagicStick } from '@element-plus/icons-vue'
@@ -167,9 +171,8 @@ import {
   saveColumnVisibility
 } from '@/utils/adminProblemColumns'
 import FpsImportResultDialog from './components/FpsImportResultDialog.vue'
-import FormatResultDialog from './components/FormatResultDialog.vue'
+import ProblemFormatJobPanel from './problemFormat/ProblemFormatJobPanel.vue'
 import { useFpsImport } from './composables/useFpsImport'
-import { useProblemFormat } from './composables/useProblemFormat'
 
 const getDiffColor = getDifficultyColor
 const getDiffLabel = getDifficultyLabel
@@ -198,13 +201,31 @@ const keyword = ref('')
 const statusFilter = ref('all')
 const sortOrder = ref('ascending')
 
-// ---- 批量格式化（多选题目，确认弹窗内可选 IP 改名） ----
+// ---- 批量优化（异步任务）：待审项统一跳到题面工作区 ----
 const selectedProblems = ref([])
 const handleSelectionChange = (rows) => { selectedProblems.value = rows }
-const {
-  formatting, formatResultVisible, formatResult,
-  handleFormatSelected
-} = useProblemFormat({ selectedProblems, onChanged: fetchData })
+const jobPanelVisible = ref(false)
+const batchProblemIds = ref([])
+
+const openFormatJob = () => {
+  batchProblemIds.value = selectedProblems.value.map((item) => item.id).filter(Boolean)
+  if (!batchProblemIds.value.length) {
+    ElMessage.warning('请先勾选需要优化的题目')
+    return
+  }
+  jobPanelVisible.value = true
+}
+
+// 任务里的待审项：带着候选版本号进题面工作区，AI 结果直接作为草稿打开
+const openJobItem = ({ problemId, versionId }) => {
+  jobPanelVisible.value = false
+  const query = versionId ? `?version=${versionId}` : ''
+  router.push(`/admin/problem/edit/${problemId}${query}`)
+}
+
+const handleJobFinished = () => {
+  fetchData()
+}
 
 // isPublic 在后端可能以布尔、0/1 或 '0'/'1' 多种形态返回，
 // 归一成布尔后再判断，否则公开题会被误判为私有。
@@ -212,7 +233,7 @@ const isRowPublic = (row) => {
   return row?.isPublic === true || row?.isPublic === 1 || row?.isPublic === '1'
 }
 
-// 函数声明（提升）：供上方 useProblemFormat 的 onChanged 引用，避免 TDZ 报错
+// 函数声明（提升）：onMounted 与任务完成回调都在下方引用，保持声明式写法避免 TDZ
 async function fetchData() {
   loading.value = true
   try {

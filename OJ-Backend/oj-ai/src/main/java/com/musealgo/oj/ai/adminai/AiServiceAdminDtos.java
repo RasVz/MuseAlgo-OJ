@@ -33,6 +33,10 @@ public final class AiServiceAdminDtos {
         @Size(max = 512, message = "接口地址不能超过 512 个字符")
         private String apiUrl;
 
+        /** Input-only mode. The database always stores the resolved full URL. */
+        @jakarta.validation.constraints.Pattern(regexp = "AUTO|BASE_URL|FULL_URL", message = "接口地址填写方式无效")
+        private String addressType;
+
         @NotBlank(message = "模型名称不能为空")
         @Size(max = 128, message = "模型名称不能超过 128 个字符")
         private String model;
@@ -131,7 +135,8 @@ public final class AiServiceAdminDtos {
             Integer currentServiceVersion,
             boolean currentServiceReady,
             int runtimeVersion,
-            String legacyModel) {
+            String legacyModel,
+            com.musealgo.oj.ai.crypto.AiKeyCipher.Readiness masterKey) {
     }
 
     public record TestCheck(

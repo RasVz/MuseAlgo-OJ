@@ -47,6 +47,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -423,6 +424,58 @@ class AiServiceAdminIT {
         mockMvc.perform(get("/admin/ai/services"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value(403));
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void diagnosisChecksAddressWithoutCallingModelOrChangingRuntime() throws Exception {
+        int version = catalogService.runtimeView().runtimeVersion();
+        var principal = new com.musealgo.oj.system.entity.LoginUser();
+        principal.setId(1L); principal.setUsername("test-admin"); principal.setRole((byte) 3);
+        principal.setAuthorities(java.util.List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN")));
+        mockMvc.perform(post("/admin/ai/services/diagnose")
+                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user(principal))
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(java.util.Map.of("apiUrl", UPSTREAM_URL))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.masterKeyReady").value(true));
+        assertEquals(0, REQUEST_COUNT.get());
+        assertEquals(version, catalogService.runtimeView().runtimeVersion());
+        mockMvc.perform(get("/admin/ai/runtime")).andExpect(jsonPath("$.data.masterKey.ready").value(true));
+    }
+
+    @Test
+    @WithMockUser(roles = "TEACHER")
+    void teacherCannotUseDiagnosisEndpoint() throws Exception {
+        mockMvc.perform(post("/admin/ai/services/diagnose").contentType("application/json")
+                        .content(objectMapper.writeValueAsString(java.util.Map.of("apiUrl", UPSTREAM_URL))))
+                .andExpect(status().isForbidden());
+        assertEquals(0, REQUEST_COUNT.get());
+    }
+
+    @Test
+    void baseUrlIsStoredAsFullEndpointAndEditsStillInvalidateOldTests() {
+        String base = UPSTREAM_URL.substring(0, UPSTREAM_URL.lastIndexOf("/chat/completions"));
+        var request = new AiServiceAdminDtos.CreateRequest();
+        request.setName("基础地址服务"); request.setModel("model-a"); request.setApiUrl(base);
+        request.setApiKey("synthetic-key"); request.setAddressType("AUTO");
+        var created = catalogService.create(request, 1L);
+        assertEquals(UPSTREAM_URL, created.apiUrl());
+        assertTrue(testService.test(created.id(), created.version(), 1L).passed());
+        String cipher = rawCipher(created.id());
+        int calls = REQUEST_COUNT.get();
+        assertEquals(UPSTREAM_URL, catalogService.diagnose(base, "AUTO").apiUrl());
+        assertEquals(calls, REQUEST_COUNT.get(), "Diagnosis must not call the model");
+        var edit = new AiServiceAdminDtos.UpdateRequest();
+        edit.setName("基础地址服务"); edit.setModel("model-a"); edit.setApiUrl(base + "/");
+        edit.setAddressType("BASE_URL"); edit.setVersion(created.version());
+        var updated = catalogService.update(created.id(), edit, 1L);
+        assertEquals(UPSTREAM_URL, updated.apiUrl());
+        assertEquals(2, updated.version()); assertEquals("STALE", updated.testState());
+        assertEquals(cipher, rawCipher(created.id()), "Omitted key must retain the original ciphertext");
+        assertThrows(AiAdminException.class, () -> updateService.activate(updated.id(), updated.version(), catalogService.runtimeView().runtimeVersion(), 1L));
+        assertTrue(testService.test(updated.id(), updated.version(), 1L).passed());
+        assertEquals("MANAGED", updateService.activate(updated.id(), updated.version(), catalogService.runtimeView().runtimeVersion(), 1L).mode());
     }
 
     private AiServiceAdminDtos.ServiceVo create(String name, String model, String key) {

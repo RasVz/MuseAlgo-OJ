@@ -24,69 +24,16 @@
 </template>
 
 <script setup>
-// 管理后台首页：按角色分组的入口导航，本身不含业务逻辑。
-// role >= 3 即管理员；教师（role 2）只看到内容管理分组，学生无入口（不进后台）。
+// 管理后台首页：与侧栏共用 adminMenu 配置，按角色过滤分组。
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/userStore'
-import {
-  FolderOpened, List, Collection, Trophy, DataBoard, School, Bell, Flag,
-  UserFilled, MagicStick, Document, Odometer, Grid, Medal, RefreshRight, Notebook
-} from '@element-plus/icons-vue'
+import { getAdminMenuGroups } from '@/constants/adminMenu'
 
 const router = useRouter()
 const userStore = useUserStore()
-// 角色降级或退出登录后导航需要立即重算，否则会把管理员专属入口留在页面上
-const isAdmin = computed(() => userStore.role >= 3)
 
-const groups = computed(() => [
-  {
-    title: '内容管理',
-    items: [
-      { label: '题库管理', desc: '题目 CRUD / FPS 导入', path: '/admin/problem', icon: FolderOpened },
-      { label: '官方题单', desc: '维护题单广场', path: '/admin/problem-lists', icon: List },
-      { label: '比赛管理', desc: '创建 / 成绩导出', path: '/admin/contest', icon: Trophy },
-      { label: '课件资源', desc: 'Slidev 课件', path: '/admin/courseware', icon: DataBoard },
-      { label: '班级管理', desc: '班级 / 作业完成情况', path: '/admin/class', icon: School },
-      { label: '学习周报', desc: '生成 / 历史 / HTML / PNG', path: '/admin/reports', icon: Notebook },
-      { label: '公告管理', desc: '发布 / 置顶公告', path: '/admin/announcements', icon: Bell },
-      { label: '站内工具', desc: '教师 AI 助手等全部工具', path: '/admin/tools', icon: Grid }
-    ]
-  },
-  ...(isAdmin.value
-    ? [
-        {
-          title: '训练与内容',
-          items: [
-            { label: '训练试卷', desc: '套卷出题 / 成绩统计', path: '/admin/exam-paper', icon: Collection },
-            { label: '社区治理', desc: '帖子 / 评论治理', path: '/admin/community', icon: Flag }
-          ]
-        },
-        {
-          title: '用户与权限',
-          items: [
-            { label: '用户管理', desc: '角色 / 禁用', path: '/admin/users', icon: UserFilled },
-            { label: '全部班级', desc: '查看所有教师创建的班级', path: '/admin/classes', icon: School }
-          ]
-        },
-        {
-          title: '赛事配置',
-          items: [
-            { label: '比赛等级', desc: '等级 / Rating 范围', path: '/admin/contest-levels', icon: Medal },
-            { label: '受控重判', desc: '单提交 / 范围批量 / 操作记录', path: '/admin/rejudge', icon: RefreshRight }
-          ]
-        },
-        {
-          title: 'AI 与运维',
-          items: [
-            { label: 'AI 管理', desc: '用量 / 配置 / 模板 / 配额', path: '/admin/ai', icon: MagicStick },
-            { label: '审计日志', desc: '操作审计查询', path: '/admin/audit-logs', icon: Document },
-            { label: '运维仪表盘', desc: '统计与趋势', path: '/admin/dashboard', icon: Odometer }
-          ]
-        }
-      ]
-    : [])
-])
+const groups = computed(() => getAdminMenuGroups(userStore.role || 0))
 </script>
 
 <style scoped>

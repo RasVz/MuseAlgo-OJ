@@ -64,7 +64,7 @@ public class WeaknessAnalysisService {
         result.setRuleBasedAdvice(buildRuleAdvice(weaknesses));
 
         if (withAi && !weaknesses.isEmpty()) {
-            result.setAiAdvice(buildAiAdvice(stats, weaknesses));
+            result.setAiAdvice(buildAiAdvice(userId, stats, weaknesses));
         } else {
             result.setAiAdvice(result.getRuleBasedAdvice());
         }
@@ -127,7 +127,7 @@ public class WeaknessAnalysisService {
                 + "提交前用最小样例自测一遍，提高一次通过率。";
     }
 
-    private String buildAiAdvice(List<TagStat> stats, List<WeaknessResultVO.WeaknessVO> weaknesses) {
+    private String buildAiAdvice(Long userId, List<TagStat> stats, List<WeaknessResultVO.WeaknessVO> weaknesses) {
         String system = """
                 你是资深信奥教练。基于学生薄弱知识点数据，生成一段 120~160 字的中文训练建议：
                 具体到每天做什么、先补哪个知识点、用什么方法（如最小样例自测、限时练习），
@@ -140,7 +140,7 @@ public class WeaknessAnalysisService {
                 .map(w -> w.getTagName() + " " + w.getMastery() + " 分，错 " + w.getFailCount() + " 题")
                 .collect(Collectors.joining("，"));
         try {
-            String advice = aiAssistant.chat(system, user);
+            String advice = aiAssistant.chatForUser(userId, system, user);
             return (advice == null || advice.isBlank()) ? buildRuleAdvice(weaknesses) : advice;
         } catch (Exception e) {
             log.warn("【错题归因】AI 建议失败，回退规则文案: {}", e.getMessage());

@@ -130,15 +130,17 @@ const handleTabChange = () => {
 }
 
 // --- 操作逻辑 ---
+// 写作台已迁到独立的 /editor（块编辑器）；旧 /post/editor 仅作为班级内容与
+// 历史特殊结构的兜底入口保留，不再从列表直接进入。
 const handleCreate = () => {
-  const routeUrl = router.resolve({ path: '/post/editor' })
+  const routeUrl = router.resolve({ path: '/editor' })
   window.open(routeUrl.href, '_blank')
 }
 
 // 编辑器在新标签页打开：写长文时容易被切走，
 // 在本页开会把已填的半篇内容留在路由跳转里，得不偿失。
 const handleEdit = (post) => {
-  const routeUrl = router.resolve({ path: `/post/editor/${post.id}` })
+  const routeUrl = router.resolve({ path: '/editor', query: { id: post.id } })
   window.open(routeUrl.href, '_blank')
 }
 

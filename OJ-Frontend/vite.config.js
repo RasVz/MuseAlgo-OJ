@@ -39,6 +39,10 @@ export default defineConfig({
           if (id.includes('node_modules/monaco-editor') || id.includes('node_modules/@guolao')) {
             return 'monaco'
           }
+          // 块编辑器只在写作台路由加载，单独分包避免拖慢主包。
+          if (id.includes('node_modules/@tiptap') || id.includes('node_modules/prosemirror')) {
+            return 'tiptap'
+          }
           if (id.includes('node_modules/mathjax')) return 'mathjax'
           if (id.includes('node_modules/highlight.js')) return 'highlight'
         }

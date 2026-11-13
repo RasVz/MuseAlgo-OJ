@@ -34,7 +34,7 @@ class TeacherAiInputBoundaryTest {
     }
 
     private static TeacherAiController controller(TeacherWorkbenchService workbench) {
-        return new TeacherAiController(workbench, mock(AiUsageRecorder.class), mock(HintLadderQueryService.class));
+        return new TeacherAiController(workbench, mock(AiUsageRecorder.class));
     }
 
     static Stream<Arguments> endpoints() {

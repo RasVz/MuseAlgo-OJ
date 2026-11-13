@@ -73,7 +73,7 @@ public class AiAdviceBuilder {
                     profile.studentName() != null ? profile.studentName() : "同学",
                     profile.periodStart(), profile.periodEnd(), weakDesc);
 
-            String result = aiAssistant.chat(SYSTEM_PROMPT, userPrompt);
+            String result = aiAssistant.chatForUser(profile.studentId(), SYSTEM_PROMPT, userPrompt);
             if (result == null || result.isBlank() || isFallbackText(result)) {
                 log.info("AI 建议不可用，降级为模板文案");
                 return null;

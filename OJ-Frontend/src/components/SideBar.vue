@@ -87,7 +87,7 @@ const isActive = (path) => {
 
 .sidebar-brand {
   width: 100%; 
-  height: 84px; 
+  height: calc(var(--app-header-height) - 1px);
   background: var(--bg-sidebar-brand); 
   display: flex;
   justify-content: center;
@@ -102,7 +102,8 @@ const isActive = (path) => {
 }
 
 .brand-text {
-  color: var(--text-inverse);
+  /* 品牌块背景在明暗主题下都是深色；--text-inverse 在暗色下会与背景同色 */
+  color: var(--text-on-accent);
   font-family: 'Gill Sans', 'Gill Sans MT', Calibri, 'Trebuchet MS', sans-serif;
   font-size: 24px;
   font-weight: 800; 

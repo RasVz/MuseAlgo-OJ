@@ -26,6 +26,14 @@ const standaloneRoutes = [
     name: 'AdminCoursewareCreate',
     component: () => import('@/views/admin/CoursewareEditorView.vue'),
     meta: { title: '录入新课件', requiresAuth: true }
+  },
+  {
+    // 通用写作台（方案 B 块编辑器）：顶层路由，不继承站内布局，
+    // 与旧编辑器 /post/editor 并存，验收后再切换入口。
+    path: '/editor',
+    name: 'ContentEditor',
+    component: () => import('@/views/editor/ContentEditorView.vue'),
+    meta: { title: '写作台', requiresAuth: true }
   }
 ]
 
@@ -66,7 +74,7 @@ const trainingRoutes = [
 const communityRoutes = [
   { path: 'post', name: 'Post', component: () => import('@/views/post/PostView.vue'), meta: { title: '动态' } },
   { path: 'discussion', name: 'Discussion', component: () => import('@/views/post/DiscussionView.vue'), meta: { title: '讨论广场' } },
-  { path: 'discussion/create', name: 'DiscussionCreate', component: () => import('@/views/post/PostEditorView.vue'), meta: { title: '发起讨论', breadcrumb: [{ label: '讨论广场', path: '/discussion' }], requiresAuth: true } },
+  { path: 'discussion/create', name: 'DiscussionCreate', redirect: () => ({ path: '/editor', query: { channel: 'discussion' } }) },
   { path: 'post/:id', name: 'PostDetail', component: () => import('@/views/post/PostDetailView.vue'), meta: { title: '动态详情', breadcrumb: [{ label: '动态', path: '/post' }] } },
   { path: 'post/editor', name: 'PostCreate', component: () => import('@/views/post/PostEditorView.vue'), meta: { title: '写文章', breadcrumb: [{ label: '动态', path: '/post' }], requiresAuth: true } },
   { path: 'post/editor/:id', name: 'PostEdit', component: () => import('@/views/post/PostEditorView.vue'), meta: { title: '编辑文章', breadcrumb: [{ label: '动态', path: '/post' }], requiresAuth: true } },
@@ -148,19 +156,20 @@ const adminLayoutRoutes = [
       { path: 'rejudge', name: 'AdminRejudge', component: () => import('@/views/admin/AdminRejudgeView.vue'), meta: { title: '受控重判', requiresAuth: true } },
       { path: 'contest/:id/settlement-replay', name: 'AdminSettlementReplay', component: () => import('@/views/admin/AdminSettlementReplayView.vue'), meta: { title: '结算链式重放', requiresAuth: true } },
       { path: 'dashboard', name: 'AdminDashboard', component: () => import('@/views/admin/AdminDashboardView.vue'), meta: { title: '运维仪表盘', requiresAuth: true } },
-      { path: 'exam-paper', name: 'AdminExamPaper', component: () => import('@/views/admin/AdminExamPaperView.vue'), meta: { title: '训练试卷管理', requiresAuth: true } },
-      { path: 'exam-paper/create', name: 'AdminExamPaperCreate', component: () => import('@/views/admin/AdminExamPaperEditorView.vue'), meta: { title: '新建试卷', requiresAuth: true } },
-      { path: 'exam-paper/edit/:id', name: 'AdminExamPaperEdit', component: () => import('@/views/admin/AdminExamPaperEditorView.vue'), meta: { title: '编辑试卷', requiresAuth: true } },
+      { path: 'exam-paper', name: 'AdminExamPaper', component: () => import('@/views/admin/AdminExamPaperView.vue'), meta: { title: '训练试卷管理', requiresAuth: true, adminOnly: true } },
+      { path: 'exam-paper/create', name: 'AdminExamPaperCreate', component: () => import('@/views/admin/AdminExamPaperEditorView.vue'), meta: { title: '新建试卷', requiresAuth: true, adminOnly: true } },
+      { path: 'exam-paper/edit/:id', name: 'AdminExamPaperEdit', component: () => import('@/views/admin/AdminExamPaperEditorView.vue'), meta: { title: '编辑试卷', requiresAuth: true, adminOnly: true } },
       { path: 'ai', name: 'AdminAi', component: () => import('@/views/admin/AdminAiView.vue'), meta: { title: 'AI 管理', requiresAuth: true } },
       { path: 'ai-services', name: 'AdminAiServices', component: () => import('@/views/admin/AdminAiServicesView.vue'), meta: { title: 'AI 服务', requiresAuth: true, adminOnly: true } },
       { path: 'users', name: 'AdminUsers', component: () => import('@/views/admin/AdminUsersView.vue'), meta: { title: '用户管理', requiresAuth: true } },
-      { path: 'classes', name: 'AdminClasses', component: () => import('@/views/admin/AdminClassesView.vue'), meta: { title: '全部班级', requiresAuth: true } },
+      { path: 'classes', name: 'AdminClasses', component: () => import('@/views/admin/AdminClassesView.vue'), meta: { title: '全部班级', requiresAuth: true, adminOnly: true } },
       { path: 'problem-lists', name: 'AdminProblemLists', component: () => import('@/views/admin/AdminProblemListsView.vue'), meta: { title: '官方题单管理', requiresAuth: true } },
       { path: 'announcements', name: 'AdminAnnouncements', component: () => import('@/views/admin/AdminAnnouncementsView.vue'), meta: { title: '公告管理', requiresAuth: true } },
       { path: 'audit-logs', name: 'AdminAuditLogs', component: () => import('@/views/admin/AdminAuditLogsView.vue'), meta: { title: '审计日志', requiresAuth: true } },
       { path: 'community', name: 'AdminCommunity', component: () => import('@/views/admin/AdminCommunityView.vue'), meta: { title: '社区治理', requiresAuth: true } },
       { path: 'community/reports/:id', name: 'AdminReportDetail', component: () => import('@/views/admin/AdminReportDetailView.vue'), meta: { title: '举报详情', requiresAuth: true } },
-      { path: 'tools', name: 'AdminTools', component: () => import('@/views/admin/AdminToolsView.vue'), meta: { title: '站内工具', requiresAuth: true } },
+      // 站内工具聚合页已撤销，旧地址回管理中心首页
+      { path: 'tools', redirect: '/admin' },
       { path: 'tools/draft', name: 'AdminToolDraft', component: () => import('@/views/teacher/tools/DraftToolView.vue'), meta: { title: '题面生成', requiresAuth: true } },
       { path: 'plagiarism', name: 'AdminPlagiarism', component: () => import('@/views/teacher/PlagiarismReportView.vue'), meta: { title: '查重报告', requiresAuth: true } }
     ]
@@ -182,6 +191,13 @@ const router = createRouter({
     ...authRoutes,
     ...studyRoutes,
     ...standaloneRoutes,
+    // 学习周报全屏阅读页：脱离管理侧栏，便于浏览器新标签页打开与并排对比。
+    {
+      path: '/admin/reports/view/:jobId',
+      name: 'AdminWeeklyReportReader',
+      component: () => import('@/views/admin/report/ReportReaderView.vue'),
+      meta: { title: '学习周报阅读', requiresAuth: true, teacherOnly: true }
+    },
     ...adminLayoutRoutes,
     {
       path: '/',

@@ -2,7 +2,7 @@ import { ApiError, responseError } from './apiError.js'
 import { readEventStream } from './sse.js'
 
 /** A completed AI answer requires an explicit done event; EOF alone is not success. */
-export async function readAiResponse(response, onChunk) {
+export async function readAiResponse(response, onChunk, onMetadata = () => {}) {
   const type = response.headers.get('content-type') || ''
   if (type.includes('json')) {
     let data
@@ -29,6 +29,13 @@ export async function readAiResponse(response, onChunk) {
           throw responseError({ status: response.status, data: payload })
         }
         if (name === 'done') { completed = true; return }
+        if (name === 'diagnostic-status' || name === 'counterexample') {
+          if (data.length > 40000) throw new ApiError('诊断结果过大，请重试', { errorCode: 'INVALID_STREAM_RESPONSE' })
+          let payload
+          try { payload = JSON.parse(data) } catch { throw new ApiError('诊断结果格式错误，请重试', { errorCode: 'INVALID_STREAM_RESPONSE' }) }
+          onMetadata(name, payload)
+          return
+        }
         if (name !== 'message') return
         text += data
         onChunk(text)

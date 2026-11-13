@@ -21,6 +21,7 @@ class PostEditOwnershipTest {
         when(targets.requireEditable(11L, 1L)).thenReturn(original);
         when(mapper.updateById(any(Post.class))).thenReturn(1);
         Post edit = new Post(); edit.setId(11L); edit.setTitle("New title"); edit.setAuthorId(2L);
+        edit.setContent("正文内容");
         edit.setLikes(999); edit.setIsDeleted(1); edit.setIsOfficial(1);
         assertTrue(service.update(edit, 1L));
         var saved = org.mockito.ArgumentCaptor.forClass(Post.class);
@@ -39,6 +40,7 @@ class PostEditOwnershipTest {
         var service = new PostContentServiceImpl(mapper, null, null, tags, null, null, null, null);
         when(mapper.insert(any(Post.class))).thenReturn(0);
         Post request = new Post(); request.setId(99L); request.setTitle("Synthetic new post");
+        request.setContent("正文内容");
         request.setFavorites(999); request.setDislikes(999); request.setIsDeleted(1);
         request.setScore(999.0); request.setAuthorId(2L);
         service.publish(request, 1L);

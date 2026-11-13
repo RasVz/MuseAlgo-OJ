@@ -210,7 +210,7 @@ const goToUser = (userId) => {
 
 const goToProblem = (problemId) => {
   if (!problemId) return
-  const routeUrl = router.resolve({ path: `/problem/${problemId}` })
+  const routeUrl = router.resolve({ path: `/problem/${problemId}`, query: { contestId: contestId.value } })
   window.open(routeUrl.href, '_blank')
 }
 

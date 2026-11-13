@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 public class SubmissionDetailVO {
     private Long id;
     private Long problemId;
+    private Long contestId;
     private String problemTitle;
     private Long userId;
     private String username;

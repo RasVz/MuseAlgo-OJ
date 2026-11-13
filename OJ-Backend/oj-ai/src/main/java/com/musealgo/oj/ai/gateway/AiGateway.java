@@ -58,7 +58,7 @@ public class AiGateway {
         if (!jsonMode) {
             String cached = responseCache.get(snapshot.cacheScope(), messages);
             if (cached != null) {
-                return AiCompletionResult.success(cached, null, snapshot.source());
+                return new AiCompletionResult(cached, null, snapshot.source(), null, null, true);
             }
         }
         List<AiProvider> candidates = candidates(snapshot);
@@ -117,13 +117,36 @@ public class AiGateway {
             log.warn("【AI网关】协议 {} 流式失败 type={} emitted={}", provider.name(),
                     result == null ? "NULL" : result.errorType(),
                     result != null && result.emitted());
-            if ((result != null && result.emitted()) || "MANAGED".equals(snapshot.mode())) {
+            if ((result != null && (result.emitted() || "CANCELLED".equals(result.errorType()))) || "MANAGED".equals(snapshot.mode())) {
                 break;
             }
         }
         return last == null
                 ? AiStreamResult.failure(snapshot.source(), false, "MODEL_UNAVAILABLE", "AI 流式调用失败")
                 : last;
+    }
+
+    /** 一次教学对话的所有取证轮次固定同一服务快照和协议，避免第二轮切换供应商。 */
+    public TeachingSession openTeachingSession() {
+        try {
+            var snapshot = runtimeResolver.resolveCurrent();
+            var matching = candidates(snapshot);
+            return new PinnedTeachingSession(snapshot, matching.isEmpty() ? null : matching.get(0));
+        } catch (RuntimeException failure) { return new PinnedTeachingSession(null, null); }
+    }
+    public interface TeachingSession {
+        AiStreamResult stream(JSONArray messages, JSONArray tools, Consumer<String> sink);
+    }
+    private static final class PinnedTeachingSession implements TeachingSession {
+        private final AiServiceSnapshot snapshot;
+        private final AiProvider provider;
+        PinnedTeachingSession(AiServiceSnapshot snapshot, AiProvider provider) { this.snapshot=snapshot; this.provider=provider; }
+        public AiStreamResult stream(JSONArray messages, JSONArray tools, Consumer<String> sink) {
+            if (snapshot == null) return AiStreamResult.failure(AiCallSource.unavailable(), false, "MODEL_UNAVAILABLE", "AI 服务不可用");
+            if (!snapshot.available()) return AiStreamResult.failure(snapshot.source(),false,snapshot.unavailableType(),snapshot.unavailableMessage());
+            if (provider == null) return AiStreamResult.failure(snapshot.source(),false,"INVALID_RESPONSE","没有匹配的协议适配器");
+            return provider.stream(snapshot, messages, tools, sink);
+        }
     }
 
     private List<AiProvider> candidates(AiServiceSnapshot snapshot) {

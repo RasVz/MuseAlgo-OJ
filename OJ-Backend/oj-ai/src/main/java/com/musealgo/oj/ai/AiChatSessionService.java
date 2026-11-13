@@ -74,6 +74,37 @@ public class AiChatSessionService {
         redisTemplate.opsForValue().set(key(userId, problemId), new JSONArray(history).toString(), TTL);
     }
 
+    /** 同题串行化：和恢复/清空共用跨实例租约，防止读改写覆盖与清空后旧历史复活。 */
+    public Lease lock(Long userId, Long problemId) {
+        String lockKey = "ai:conversation-lock:" + userId + ":" + problemId;
+        String token = java.util.UUID.randomUUID().toString();
+        if (!Boolean.TRUE.equals(redisTemplate.opsForValue().setIfAbsent(lockKey, token, Duration.ofMinutes(6))))
+            throw new com.musealgo.oj.common.exception.BusinessException(
+                    com.musealgo.oj.ai.error.AiErrorCode.AI_STATE_CONFLICT, "本题有请求正在处理，请稍后重试");
+        return new Lease(lockKey, token);
+    }
+    public final class Lease implements AutoCloseable {
+        private final String lockKey;
+        private final String token;
+        private Lease(String lockKey, String token) { this.lockKey = lockKey; this.token = token; }
+        @Override public void close() {
+            try {
+                redisTemplate.execute(new org.springframework.data.redis.core.script.DefaultRedisScript<Long>(
+                    "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end", Long.class),
+                    java.util.List.of(lockKey), token);
+            } catch (RuntimeException e) {
+                // 租约会过期；释放失败不把已完成回答转换成上游失败。
+                org.slf4j.LoggerFactory.getLogger(AiChatSessionService.class).warn("AI 会话租约释放失败");
+            }
+        }
+    }
+    public List<JSONObject> conversation(Long userId, Long problemId) {
+        try (var lease = lock(userId, problemId)) { return loadHistory(userId, problemId); }
+    }
+    public void clearConversation(Long userId, Long problemId) {
+        try (var lease = lock(userId, problemId)) { redisTemplate.delete(key(userId, problemId)); }
+    }
+
     /** 当前已解锁的引导级别（默认 L1；0 = 学生还没主动使用阶梯） */
     public int getHintLevel(Long userId, Long problemId) {
         String raw = redisTemplate.opsForValue().get(hintKey(userId, problemId));

@@ -23,14 +23,23 @@ import com.musealgo.oj.problem.entity.vo.ProblemDetailVO;
 import com.musealgo.oj.problem.entity.vo.ProblemVO;
 import com.musealgo.oj.problem.entity.vo.ProblemFilterOptionsVO;
 import com.musealgo.oj.problem.format.ProblemFormatApplyRequest;
+import com.musealgo.oj.problem.format.ProblemFormatApplyResult;
+import com.musealgo.oj.problem.format.ProblemFormatJobRequest;
+import com.musealgo.oj.problem.format.ProblemFormatJobVO;
 import com.musealgo.oj.problem.format.ProblemFormatPreviewItem;
 import com.musealgo.oj.problem.format.ProblemFormatRequest;
-import com.musealgo.oj.problem.format.ProblemFormatResult;
+import com.musealgo.oj.problem.format.StatementComposeRequest;
+import com.musealgo.oj.problem.format.StatementOptimizeRequest;
+import com.musealgo.oj.problem.format.StatementVersionApplyRequest;
+import com.musealgo.oj.problem.format.StatementVersionDetailVO;
+import com.musealgo.oj.problem.format.StatementVersionVO;
 import com.musealgo.oj.problem.importer.FpsImportResult;
 import com.musealgo.oj.problem.importer.FpsImportService;
 import com.musealgo.oj.problem.application.CaseSetChangedException;
+import com.musealgo.oj.problem.application.ProblemFormatJobService;
 import com.musealgo.oj.problem.application.ProblemManagementApplicationService;
 import com.musealgo.oj.problem.application.ProblemSearchService;
+import com.musealgo.oj.problem.application.ProblemStatementVersionService;
 import com.musealgo.oj.problem.application.TestDataGenerationService;
 import com.musealgo.oj.problem.infrastructure.ProblemSearchIndexer;
 import com.musealgo.oj.problem.service.ProblemService;
@@ -64,6 +73,8 @@ public class ProblemController {
     private final FpsImportService fpsImportService;
     private final ProblemSearchService problemSearchService;
     private final TestDataGenerationService testDataGenerationService;
+    private final ProblemFormatJobService formatJobService;
+    private final ProblemStatementVersionService statementVersionService;
 
     @Operation(summary = "新增题目")
     @AuditLog(module = "problem", action = "create_problem")
@@ -170,14 +181,132 @@ public class ProblemController {
                 page, 50, keyword, difficulty, tag, privacy, isPublic, sortBy, sortOrder));
     }
 
-    @Operation(summary = "批量格式化题目（AI 整理并直接保存，不预览）")
-    @PostMapping("/format")
+    @Operation(summary = "题面版本列表（含 LIVE/历史/待审候选）")
+    @GetMapping("/{problemId}/statement/versions")
     @PreAuthorize("hasAuthority('problem:manage')")
-    public Result<ProblemFormatResult> formatProblems(@RequestBody ProblemFormatRequest request) {
-        return Result.success(appService.formatProblems(request));
+    public Result<List<StatementVersionVO>> listStatementVersions(@PathVariable Long problemId) {
+        return Result.success(statementVersionService.list(problemId));
     }
 
-    @Operation(summary = "单题格式化预览（AI 整理但未保存；ipMode=true 时同一次调用完成 IP 改名）")
+    @Operation(summary = "题面版本详情")
+    @GetMapping("/{problemId}/statement/versions/{versionId}")
+    @PreAuthorize("hasAuthority('problem:manage')")
+    public Result<StatementVersionDetailVO> getStatementVersion(@PathVariable Long problemId,
+                                                                @PathVariable Long versionId) {
+        return Result.success(statementVersionService.detail(problemId, versionId));
+    }
+
+    @Operation(summary = "候选版本的审阅数据（原文取基线版本，不调用 AI）")
+    @GetMapping("/{problemId}/statement/versions/{versionId}/proposal")
+    @PreAuthorize("hasAuthority('problem:manage')")
+    public Result<ProblemFormatPreviewItem> getStatementVersionProposal(@PathVariable Long problemId,
+                                                                        @PathVariable Long versionId) {
+        return Result.success(statementVersionService.proposal(problemId, versionId));
+    }
+
+    @Operation(summary = "基于指定版本发起优化（异步任务，单题）")
+    @AuditLog(module = "problem", action = "statement_optimize")
+    @PostMapping("/{problemId}/statement/versions/optimize")
+    @PreAuthorize("hasAuthority('problem:manage')")
+    public Result<ProblemFormatJobVO> optimizeStatement(@PathVariable Long problemId,
+                                                        @RequestBody StatementOptimizeRequest request) {
+        Long baseVersionId = request == null ? null : request.baseVersionId();
+        boolean ipMode = request != null && request.ipEnabled();
+        return Result.success(formatJobService.createVersionJob(problemId, baseVersionId, ipMode));
+    }
+
+    @Operation(summary = "保存编辑器内容为新版本（编辑与 AI 改写共用）")
+    @AuditLog(module = "problem", action = "statement_compose")
+    @PostMapping("/{problemId}/statement/versions/compose")
+    @PreAuthorize("hasAuthority('problem:manage')")
+    public Result<StatementVersionVO> composeStatement(@PathVariable Long problemId,
+                                                       @RequestBody StatementComposeRequest request) {
+        return Result.success(statementVersionService.compose(problemId, request));
+    }
+
+    @Operation(summary = "把当前题面记录为新版本")
+    @AuditLog(module = "problem", action = "statement_version_record")
+    @PostMapping("/{problemId}/statement/versions/current")
+    @PreAuthorize("hasAuthority('problem:manage')")
+    public Result<StatementVersionVO> recordCurrentStatement(@PathVariable Long problemId) {
+        return Result.success(statementVersionService.recordCurrent(problemId));
+    }
+
+    @Operation(summary = "把历史版本设为题目当前版本")
+    @AuditLog(module = "problem", action = "statement_version_activate")
+    @PostMapping("/{problemId}/statement/versions/{versionId}/activate")
+    @PreAuthorize("hasAuthority('problem:manage')")
+    public Result<StatementVersionVO> activateStatementVersion(@PathVariable Long problemId,
+                                                                @PathVariable Long versionId) {
+        return Result.success(statementVersionService.activate(problemId, versionId));
+    }
+
+    @Operation(summary = "应用候选版本（字段白名单）")
+    @AuditLog(module = "problem", action = "statement_version_apply")
+    @PostMapping("/{problemId}/statement/versions/{versionId}/apply")
+    @PreAuthorize("hasAuthority('problem:manage')")
+    public Result<StatementVersionVO> applyStatementVersion(@PathVariable Long problemId,
+                                                            @PathVariable Long versionId,
+                                                            @RequestBody StatementVersionApplyRequest request) {
+        return Result.success(statementVersionService.applyCandidate(problemId, versionId, request));
+    }
+
+    @Operation(summary = "丢弃候选版本")
+    @AuditLog(module = "problem", action = "statement_version_discard")
+    @DeleteMapping("/{problemId}/statement/versions/{versionId}")
+    @PreAuthorize("hasAuthority('problem:manage')")
+    public Result<String> discardStatementVersion(@PathVariable Long problemId, @PathVariable Long versionId) {
+        statementVersionService.discardCandidate(problemId, versionId);
+        return Result.success("已丢弃");
+    }
+
+    @Operation(summary = "创建批量整理任务（异步，立即返回任务详情）")
+    @AuditLog(module = "problem", action = "format_job_create")
+    @PostMapping("/format/jobs")
+    @PreAuthorize("hasAuthority('problem:manage')")
+    public Result<ProblemFormatJobVO> createFormatJob(@RequestBody ProblemFormatJobRequest request) {
+        return Result.success(formatJobService.create(request));
+    }
+
+    @Operation(summary = "查询当前登录人正在进行的整理任务（无则返回 null）")
+    @GetMapping("/format/jobs/active")
+    @PreAuthorize("hasAuthority('problem:manage')")
+    public Result<ProblemFormatJobVO> getActiveFormatJob() {
+        return Result.success(formatJobService.activeJob());
+    }
+
+    @Operation(summary = "查询整理任务进度与逐项结果")
+    @GetMapping("/format/jobs/{jobId}")
+    @PreAuthorize("hasAuthority('problem:manage')")
+    public Result<ProblemFormatJobVO> getFormatJob(@PathVariable Long jobId) {
+        return Result.success(formatJobService.detail(jobId));
+    }
+
+    @Operation(summary = "读取任务内单题提案（不再调用 AI，用于人工审阅）")
+    @GetMapping("/format/jobs/{jobId}/items/{problemId}")
+    @PreAuthorize("hasAuthority('problem:manage')")
+    public Result<ProblemFormatPreviewItem> getFormatJobItem(@PathVariable Long jobId,
+                                                             @PathVariable Long problemId) {
+        return Result.success(formatJobService.proposal(jobId, problemId));
+    }
+
+    @Operation(summary = "取消整理任务")
+    @AuditLog(module = "problem", action = "format_job_cancel")
+    @PostMapping("/format/jobs/{jobId}/cancel")
+    @PreAuthorize("hasAuthority('problem:manage')")
+    public Result<ProblemFormatJobVO> cancelFormatJob(@PathVariable Long jobId) {
+        return Result.success(formatJobService.cancel(jobId));
+    }
+
+    @Operation(summary = "重试整理任务中的失败项")
+    @AuditLog(module = "problem", action = "format_job_retry")
+    @PostMapping("/format/jobs/{jobId}/retry")
+    @PreAuthorize("hasAuthority('problem:manage')")
+    public Result<ProblemFormatJobVO> retryFormatJob(@PathVariable Long jobId) {
+        return Result.success(formatJobService.retryFailed(jobId));
+    }
+
+    @Operation(summary = "单题整理预览（AI 整理但未保存；ipMode=true 时同一次调用完成 IP 改名）")
     @PostMapping("/format/preview")
     @PreAuthorize("hasAuthority('problem:manage')")
     public Result<ProblemFormatPreviewItem> previewFormatProblem(@RequestBody ProblemFormatRequest request) {
@@ -187,13 +316,12 @@ public class ProblemController {
         return Result.success(appService.previewFormatProblem(request.problemIds().get(0), request.ipEnabled()));
     }
 
-    @Operation(summary = "应用单题格式化预览结果")
+    @Operation(summary = "应用单题整理结果（支持字段白名单与原文哈希校验）")
     @AuditLog(module = "problem", action = "apply_format")
     @PostMapping("/format/apply")
     @PreAuthorize("hasAuthority('problem:manage')")
-    public Result<String> applyFormattedProblem(@RequestBody ProblemFormatApplyRequest request) {
-        appService.applyFormattedProblem(request);
-        return Result.success("格式化已保存");
+    public Result<ProblemFormatApplyResult> applyFormattedProblem(@RequestBody ProblemFormatApplyRequest request) {
+        return Result.success(appService.applyFormattedProblem(request));
     }
 
     @Operation(summary = "保存标准答案（AI 题库工具落库）")

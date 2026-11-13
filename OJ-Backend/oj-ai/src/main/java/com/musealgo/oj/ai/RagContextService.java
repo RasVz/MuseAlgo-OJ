@@ -36,14 +36,18 @@ public class RagContextService {
     }
 
     /** 拼装多源参考资料；没有任何命中时返回 null（提示词里显示"暂无"） */
-    public String buildReference(Long problemId) {
+    public String buildReference(Long problemId) { return build(problemId, true); }
+
+    public String buildSupplement(Long problemId) { return build(problemId, false); }
+
+    private String build(Long problemId, boolean includeOfficial) {
         if (problemId == null) {
             return null;
         }
         StringBuilder sb = new StringBuilder();
 
         // 来源 1：官方题解 —— problem_id 精确命中
-        String solution = officialSolutionMapper.findOfficialSolutionByProblemId(problemId);
+        String solution = includeOfficial ? officialSolutionMapper.findOfficialSolutionByProblemId(problemId) : null;
         if (solution != null && !solution.isBlank()) {
             sb.append("[官方题解]\n")
                     .append(truncate(solution, SOLUTION_MAX_CHARS))

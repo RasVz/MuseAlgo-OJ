@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.authentication.AccountStatusException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.util.StringUtils;
@@ -86,8 +87,24 @@ public class AuthController {
 
     @ExceptionHandler(AuthenticationServiceException.class)
     public Result<String> handleAuthenticationServiceFailure(AuthenticationServiceException exception) {
+        // 账号状态异常（禁用/锁定/过期）在 DaoAuthenticationProvider 的 retrieveUser 阶段
+        // 抛出时会被包装成 InternalAuthenticationServiceException，直接落到这里。
+        // 它不是依赖故障，而是认证失败；按既有契约统一返回凭据错误，避免泄露账号状态。
+        if (hasCause(exception, AccountStatusException.class)) {
+            log.debug("登录认证账号状态异常: {}", exception.getMessage());
+            return ErrorResponses.failure(CommonErrorCode.AUTH_INVALID_CREDENTIALS);
+        }
         log.error("登录认证依赖失败", exception);
         return ErrorResponses.failure(CommonErrorCode.AUTH_DEPENDENCY_UNAVAILABLE);
+    }
+
+    private boolean hasCause(Throwable throwable, Class<? extends Throwable> type) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (type.isInstance(current)) return true;
+            current = current.getCause();
+        }
+        return false;
     }
 
     @Operation(summary = "刷新 Token")
@@ -200,6 +217,13 @@ public class AuthController {
         loginFailureGuard.clearFailures(username);
 
         User authenticatedUser = (User) authentication.getPrincipal();
+
+        // 封禁判断放在密码校验之后：只有持正确密码的人才会看到明确原因，
+        // 错误密码在 Provider 内已抛 BadCredentials，无法借此枚举账号状态。
+        if (authenticatedUser.getIsBanned() != null && authenticatedUser.getIsBanned() == 1) {
+            log.info("封禁账号登录被拒: {}", authenticatedUser.getUsername());
+            return ErrorResponses.failure(CommonErrorCode.AUTH_ACCOUNT_DISABLED);
+        }
 
         // 2. 生成 Token
         long credentialVersion = credentialVersion(authenticatedUser);

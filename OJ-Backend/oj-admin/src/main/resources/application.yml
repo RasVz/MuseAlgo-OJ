@@ -224,16 +224,15 @@ oj:
     network:
       # 仅测试环境使用的精确完整 URL 白名单，逗号分隔；生产保持为空，管理页无绕过开关。
       private-targets: ${OJ_AI_PRIVATE_TARGETS:}
+      # 仅系统解析全部为 fake-ip 时恢复公网解析；不放行保留地址。
+      fake-ip-recovery: ${OJ_AI_FAKE_IP_RECOVERY:true}
+      doh-url: ${OJ_AI_DOH_URL:https://dns.alidns.com/dns-query}
+      doh-bootstrap: ${OJ_AI_DOH_BOOTSTRAP:223.5.5.5,223.6.6.6}
     quota:
       # 每用户每日 token 配额：超限后当日拒绝调用，次日自动重置
       enabled: ${OJ_AI_QUOTA_ENABLED:true}
       daily-tokens: ${OJ_AI_QUOTA_DAILY_TOKENS:30000}
       exempt-teacher-admin: ${OJ_AI_QUOTA_EXEMPT_PRIVILEGED:true}   # 教师/管理员豁免
-    contest-guard:
-      # 比赛防护：题目处于进行中比赛时拦截 AI 答疑，防止实时作弊
-      enabled: ${OJ_AI_CONTEST_GUARD_ENABLED:true}
-      cache-seconds: ${OJ_AI_CONTEST_GUARD_CACHE_SECONDS:60}       # 判定结果短时缓存
-      exempt-teacher-admin: ${OJ_AI_CONTEST_GUARD_EXEMPT_PRIVILEGED:true}
   monitoring:
     # OPS-02 监控收口：周期性只读聚合 → Micrometer gauge，经 /actuator/prometheus 暴露（仅 ADMIN，见 SecurityConfig）。
     # 关键语义：未配置 backup.root 时 oj.backup.configured=0、oj.backup.healthy 恒 0、oj.ops.health.status 恒 0，

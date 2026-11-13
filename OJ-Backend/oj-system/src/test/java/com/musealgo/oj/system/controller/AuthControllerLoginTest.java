@@ -72,6 +72,46 @@ class AuthControllerLoginTest {
     }
 
     @org.junit.jupiter.api.Test
+    void wrappedDisabledAccountIsReportedAsInvalidCredentials() throws Exception {
+        AuthenticationManager manager = mock(AuthenticationManager.class);
+        // 生产路径：禁用异常在 retrieveUser 阶段抛出，被包装成 InternalAuthenticationServiceException。
+        when(manager.authenticate(any())).thenThrow(new org.springframework.security.authentication.InternalAuthenticationServiceException(
+                "wrapped", new DisabledException("banned user")));
+        var mvc = MockMvcBuilders.standaloneSetup(new AuthController(mock(UserService.class), manager,
+                mock(JwtUtils.class), mock(JwtBlacklistService.class), mock(LoginFailureGuard.class)))
+                .setControllerAdvice(new GlobalExceptionHandler()).build();
+        mvc.perform(post("/auth/login").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"student\",\"password\":\"password\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(401))
+                .andExpect(jsonPath("$.errorCode").value("AUTH_INVALID_CREDENTIALS"))
+                .andExpect(jsonPath("$.message").value("用户名或密码错误"));
+    }
+
+    @org.junit.jupiter.api.Test
+    void bannedAccountWithCorrectPasswordGetsExplicitReason() throws Exception {
+        AuthenticationManager manager = mock(AuthenticationManager.class);
+        org.springframework.security.core.Authentication authentication = mock(org.springframework.security.core.Authentication.class);
+        com.musealgo.oj.system.entity.User principal = new com.musealgo.oj.system.entity.User();
+        principal.setUsername("banned");
+        principal.setIsBanned((byte) 1);
+        when(authentication.getPrincipal()).thenReturn(principal);
+        when(manager.authenticate(any())).thenReturn(authentication);
+        JwtUtils jwt = mock(JwtUtils.class);
+
+        var mvc = MockMvcBuilders.standaloneSetup(new AuthController(mock(UserService.class), manager,
+                jwt, mock(JwtBlacklistService.class), mock(LoginFailureGuard.class)))
+                .setControllerAdvice(new GlobalExceptionHandler()).build();
+        mvc.perform(post("/auth/login").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"banned\",\"password\":\"correct\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(403))
+                .andExpect(jsonPath("$.errorCode").value("AUTH_ACCOUNT_DISABLED"))
+                .andExpect(jsonPath("$.message").value("账号已被禁用"));
+        org.mockito.Mockito.verifyNoInteractions(jwt);
+    }
+
+    @org.junit.jupiter.api.Test
     void duplicateRegistrationHasStableConflictReason() throws Exception {
         UserService users = mock(UserService.class);
         when(users.registerCheck(any())).thenReturn(1);

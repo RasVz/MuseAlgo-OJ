@@ -108,7 +108,7 @@ public class AiServiceUpdateService {
                 plaintextKey = keyCipher.decrypt(existing.getApiKeyEncrypted(), existing.getEncryptionVersion());
             }
         } catch (AiKeyException e) {
-            throw new AiAdminException(503, e.getMessage());
+            throw new AiAdminException(503, e.errorCode(), e.getMessage());
         }
 
         int nextVersion = existing.getVersion() + 1;

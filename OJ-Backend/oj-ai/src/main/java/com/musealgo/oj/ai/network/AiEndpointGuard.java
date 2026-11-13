@@ -11,7 +11,6 @@ import java.net.InetAddress;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.UnknownHostException;
-import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -32,9 +31,14 @@ public class AiEndpointGuard {
     private final Set<String> exactPrivateTargets;
     private final Dns resolver;
 
-    @Autowired
-    public AiEndpointGuard(@Value("${oj.ai.network.private-targets:}") String configuredTargets) {
+    public AiEndpointGuard(String configuredTargets) {
         this(configuredTargets, Dns.SYSTEM);
+    }
+
+    @Autowired
+    public AiEndpointGuard(@Value("${oj.ai.network.private-targets:}") String configuredTargets,
+                           FakeIpRecoveringDns resolver) {
+        this(configuredTargets, (Dns) resolver);
     }
 
     AiEndpointGuard(String configuredTargets, Dns resolver) {
@@ -94,14 +98,18 @@ public class AiEndpointGuard {
         String allowedHost = exactTarget ? endpoint.getHost() : null;
         return hostname -> {
             try {
-                List<InetAddress> resolved = resolve(hostname);
+                List<InetAddress> resolved = allowedHost != null && allowedHost.equalsIgnoreCase(hostname)
+                        && resolver instanceof FakeIpRecoveringDns recovering
+                        ? recovering.systemLookup(hostname) : resolve(hostname);
                 if (allowedHost == null || !allowedHost.equalsIgnoreCase(hostname)) {
                     requirePublic(resolved);
                 }
                 return resolved;
             } catch (IllegalArgumentException e) {
                 // 解析失败和地址拒绝都遵循 Dns 的 IOException 契约，避免流式调用抛出未处理异常。
-                throw new UnknownHostException(e.getMessage());
+                UnknownHostException failure = new UnknownHostException(e.getMessage());
+                failure.initCause(e);
+                throw failure;
             }
         };
     }
@@ -121,18 +129,20 @@ public class AiEndpointGuard {
         try {
             List<InetAddress> addresses = resolver.lookup(host);
             if (addresses == null || addresses.isEmpty()) {
-                throw new IllegalArgumentException("接口地址域名无法解析");
+                throw new AiEndpointException("AI_DNS_UNAVAILABLE", 503, "接口地址域名无法解析，请检查后端网络后重试");
             }
             return List.copyOf(addresses);
         } catch (UnknownHostException e) {
-            throw new IllegalArgumentException("接口地址域名无法解析");
+            var failure = new AiEndpointException("AI_DNS_UNAVAILABLE", 503, "接口地址域名无法解析，请检查后端网络后重试");
+            failure.initCause(e);
+            throw failure;
         }
     }
 
-    private static void requirePublic(List<InetAddress> addresses) {
+    static void requirePublic(List<InetAddress> addresses) {
         for (InetAddress address : addresses) {
             if (!isPublicAddress(address)) {
-                throw new IllegalArgumentException("接口地址不能指向回环、私网或保留地址");
+                throw new AiEndpointException("AI_ENDPOINT_FORBIDDEN", 400, "接口地址不能指向回环、私网或保留地址");
             }
         }
     }
@@ -204,7 +214,7 @@ public class AiEndpointGuard {
         return !(first16 == 0x3fff && ((b[2] & 0xff) & 0xf0) == 0);
     }
 
-    private static String canonicalize(String rawUrl, boolean allowHttp) {
+    static String canonicalize(String rawUrl, boolean allowHttp) {
         if (rawUrl == null) {
             throw new IllegalArgumentException("接口地址不能为空");
         }

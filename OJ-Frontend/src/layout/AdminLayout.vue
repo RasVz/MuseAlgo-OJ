@@ -1,10 +1,10 @@
 <template>
   <div class="admin-layout">
-    <aside class="admin-side">
-      <div class="admin-brand" @click="router.push('/admin')" title="回到管理中心首页">
+    <aside class="admin-side" aria-label="管理导航">
+      <button type="button" class="admin-brand" @click="router.push('/admin')" title="回到管理中心首页" aria-label="回到管理中心首页">
         <span class="brand-dot"></span>
         睿思学院管理中心
-      </div>
+      </button>
       <nav class="admin-nav">
         <el-menu
           :default-active="activeMenu"
@@ -31,9 +31,9 @@
           </el-sub-menu>
         </el-menu>
       </nav>
-      <div class="admin-back" @click="router.push('/')">
+      <button type="button" class="admin-back" @click="router.push('/')" title="返回主站" aria-label="返回主站">
         <el-icon><Back /></el-icon> 返回主站
-      </div>
+      </button>
     </aside>
     <div class="admin-body">
       <main class="admin-main">
@@ -47,72 +47,26 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/userStore'
-import {
-  FolderOpened, List, Collection, Trophy, DataBoard, School, Bell, Flag,
-  UserFilled, MagicStick, Document, Odometer, Back, HomeFilled, Grid, Medal, RefreshRight, Notebook, Connection
-} from '@element-plus/icons-vue'
+import { getAdminMenuGroups } from '@/constants/adminMenu'
+import { Back, HomeFilled } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
-const isAdmin = computed(() => userStore.role >= 3)
 
-const contentMenu = [
-  { label: '题库管理', path: '/admin/problem', icon: FolderOpened },
-  { label: '官方题单', path: '/admin/problem-lists', icon: List },
-  { label: '比赛管理', path: '/admin/contest', icon: Trophy },
-  { label: '课件资源', path: '/admin/courseware', icon: DataBoard },
-  { label: '班级管理', path: '/admin/class', icon: School },
-  { label: '学习周报', path: '/admin/reports', icon: Notebook },
-  { label: '公告管理', path: '/admin/announcements', icon: Bell },
-  { label: '站内工具', path: '/admin/tools', icon: Grid }
-]
+const menuGroups = computed(() => getAdminMenuGroups(userStore.role || 0))
 
-// 比赛等级配置仅管理员可维护（后端 @PreAuthorize hasRole('ADMIN')），单列一个分组。
-const contestConfigMenu = [
-  { label: '比赛等级', path: '/admin/contest-levels', icon: Medal }
-]
-
-const adminOnlyMenu = [
-  { label: '受控重判', path: '/admin/rejudge', icon: RefreshRight },
-  { label: '训练试卷', path: '/admin/exam-paper', icon: Collection },
-  { label: '报告通知队列', path: '/admin/report-notifications', icon: Bell },
-  { label: '社区治理', path: '/admin/community', icon: Flag },
-  { label: '用户管理', path: '/admin/users', icon: UserFilled },
-  { label: '全部班级', path: '/admin/classes', icon: School },
-  { label: 'AI 管理', path: '/admin/ai', icon: MagicStick },
-  { label: 'AI 服务', path: '/admin/ai-services', icon: Connection },
-  { label: '审计日志', path: '/admin/audit-logs', icon: Document },
-  { label: '运维仪表盘', path: '/admin/dashboard', icon: Odometer }
-]
-
-const menuGroups = computed(() => [
-  { title: '内容管理', items: contentMenu },
-  ...(isAdmin.value
-    ? [
-        { title: '用户与权限', items: adminOnlyMenu.filter((i) => ['/admin/users', '/admin/classes'].includes(i.path)) },
-        { title: '赛事配置', items: contestConfigMenu },
-        { title: 'AI 与运维', items: adminOnlyMenu.filter((i) => !['/admin/users', '/admin/classes'].includes(i.path)) }
-      ]
-    : [])
-])
-
-// 分组默认全部展开（管理员三个分组 / 教师仅内容管理）
 const defaultOpeneds = computed(() => menuGroups.value.map((g) => g.title))
 
 // 菜单高亮：最长前缀匹配，保证详情页（如 /admin/class/:id）时对应菜单项保持选中
 const allMenuPaths = computed(() => [
   '/admin',
-  ...contentMenu.map((i) => i.path),
-  ...contestConfigMenu.map((i) => i.path),
-  ...adminOnlyMenu.map((i) => i.path)
+  ...menuGroups.value.flatMap((g) => g.items.map((i) => i.path))
 ])
 const activeMenu = computed(() => {
   let best = '/admin'
-  // 子页面归属映射：查重报告已并入站内工具，侧边栏高亮「站内工具」
-  const matched = route.path === '/admin/plagiarism' ? '/admin/tools' : route.path
   for (const p of allMenuPaths.value) {
-    if (matched === p || matched.startsWith(p + '/')) {
+    if (route.path === p || route.path.startsWith(p + '/')) {
       if (p.length > best.length) best = p
     }
   }
@@ -157,6 +111,11 @@ const activeMenu = computed(() => {
   flex-direction: column;
 }
 .admin-brand {
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  text-align: left;
+  width: 100%;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -189,6 +148,12 @@ const activeMenu = computed(() => {
 }
 .group-title { font-size: 12px; color: var(--admin-side-muted); }
 .admin-back {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  width: 100%;
   padding: 14px 16px;
   border-top: 1px solid var(--admin-side-hover);
   cursor: pointer;
@@ -198,6 +163,7 @@ const activeMenu = computed(() => {
   font-size: 13px;
 }
 .admin-back:hover { color: var(--admin-side-active-text); }
+.admin-brand:focus-visible, .admin-back:focus-visible { outline: 2px solid var(--admin-side-active-text); outline-offset: -4px; }
 .admin-main {
   flex: 1;
   min-width: 0;

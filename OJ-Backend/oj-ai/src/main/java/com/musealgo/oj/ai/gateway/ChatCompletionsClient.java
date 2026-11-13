@@ -64,6 +64,8 @@ public class ChatCompletionsClient {
         this.maxStreamBytes = maxStreamBytes;
         this.maxLineBytes = maxLineBytes;
         this.client = new OkHttpClient.Builder()
+                .proxy(java.net.Proxy.NO_PROXY)
+                .protocols(java.util.List.of(okhttp3.Protocol.HTTP_1_1))
                 .connectTimeout(connectSeconds, TimeUnit.SECONDS)
                 .readTimeout(readSeconds, TimeUnit.SECONDS)
                 .writeTimeout(30, TimeUnit.SECONDS)
@@ -90,6 +92,8 @@ public class ChatCompletionsClient {
         URI endpoint;
         try {
             endpoint = resolveEndpoint(snapshot);
+        } catch (com.musealgo.oj.ai.network.AiEndpointException e) {
+            return AiCompletionResult.failure(source, e.errorCode(), e.getMessage());
         } catch (IllegalArgumentException e) {
             return AiCompletionResult.failure(source, "NETWORK", "接口地址未通过安全检查");
         }
@@ -110,8 +114,8 @@ public class ChatCompletionsClient {
         try (Response response = clientForEndpoint(endpoint).newCall(request).execute()) {
             if (!response.isSuccessful()) {
                 String type = classifyHttpStatus(response.code());
-                log.warn("【AI上游】非成功响应 status={} type={} serviceId={} reason={}",
-                        response.code(), type, snapshot.serviceId(), upstreamReason(response));
+                log.warn("【AI上游】非成功响应 status={} type={} serviceId={}",
+                        response.code(), type, snapshot.serviceId());
                 return AiCompletionResult.failure(source, type, httpErrorMessage(type));
             }
             ResponseBody body = response.body();
@@ -137,7 +141,8 @@ public class ChatCompletionsClient {
             return AiCompletionResult.failure(source, "TIMEOUT", "上游请求超时");
         } catch (IOException e) {
             log.warn("【AI上游】网络失败 serviceId={} exception={}", snapshot.serviceId(), e.getClass().getSimpleName());
-            return AiCompletionResult.failure(source, "NETWORK", "无法连接上游服务");
+            var failure = networkFailure(e);
+            return AiCompletionResult.failure(source, failure.type(), failure.message());
         } catch (RuntimeException e) {
             log.warn("【AI上游】响应解析失败 serviceId={} exception={}", snapshot.serviceId(), e.getClass().getSimpleName());
             return AiCompletionResult.failure(source, "INVALID_RESPONSE", "上游响应格式无效");
@@ -145,6 +150,10 @@ public class ChatCompletionsClient {
     }
 
     public AiStreamResult stream(AiServiceSnapshot snapshot, JSONArray messages, Consumer<String> onChunk) {
+        return stream(snapshot, messages, null, onChunk);
+    }
+
+    public AiStreamResult stream(AiServiceSnapshot snapshot, JSONArray messages, JSONArray tools, Consumer<String> onChunk) {
         AiCallSource source = snapshot.source();
         String unavailable = unavailableReason(snapshot);
         if (unavailable != null) {
@@ -153,12 +162,18 @@ public class ChatCompletionsClient {
         URI endpoint;
         try {
             endpoint = resolveEndpoint(snapshot);
+        } catch (com.musealgo.oj.ai.network.AiEndpointException e) {
+            return AiStreamResult.failure(source, false, e.errorCode(), e.getMessage());
         } catch (IllegalArgumentException e) {
             return AiStreamResult.failure(source, false, "NETWORK", "接口地址未通过安全检查");
         }
 
         JSONObject requestBody = baseRequest(snapshot, messages, false);
         requestBody.set("stream", true);
+        if (tools != null && !tools.isEmpty()) {
+            requestBody.set("tools", tools); requestBody.set("tool_choice", "auto");
+        }
+        requestBody.set("max_tokens", snapshot.maxTokens());
         if (snapshot.streamIncludeUsage()) {
             JSONObject streamOptions = new JSONObject();
             streamOptions.set("include_usage", true);
@@ -176,20 +191,31 @@ public class ChatCompletionsClient {
         }
 
         StringBuilder full = new StringBuilder();
+        var toolParts = new java.util.TreeMap<Integer, ToolParts>();
         AiTokenUsage usage = null;
         boolean emitted = false;
         boolean finished = false;
+        boolean outputLimited = false;
+        boolean contentFiltered = false;
         long totalBytes = 0;
-        try (Response response = clientForEndpoint(endpoint).newCall(request).execute()) {
+        var requestSent = new java.util.concurrent.atomic.AtomicBoolean();
+        var call = clientForEndpoint(endpoint).newBuilder().eventListener(new okhttp3.EventListener() {
+            @Override public void requestBodyEnd(okhttp3.Call call, long byteCount) { requestSent.set(true); }
+        }).build().newCall(request);
+        if (onChunk instanceof AiStreamControl control) control.onCancel(call::cancel);
+        try (Response response = call.execute()) {
             if (!response.isSuccessful()) {
-                String type = classifyHttpStatus(response.code());
-                log.warn("【AI上游】流式非成功响应 status={} type={} serviceId={} reason={}",
-                        response.code(), type, snapshot.serviceId(), upstreamReason(response));
-                return AiStreamResult.failure(source, false, type, httpErrorMessage(type));
+                String reason = upstreamReason(response);
+                String type = tools != null && (response.code() == 400 || response.code() == 422)
+                        && (reason.toLowerCase(java.util.Locale.ROOT).contains("tool") || reason.toLowerCase(java.util.Locale.ROOT).contains("function"))
+                        ? "TOOLS_UNSUPPORTED" : classifyHttpStatus(response.code());
+                log.warn("【AI上游】流式非成功响应 status={} type={} serviceId={}",
+                        response.code(), type, snapshot.serviceId());
+                return partial(full, usage, source, false, requestSent.get(), type, httpErrorMessage(type));
             }
             ResponseBody body = response.body();
             if (body == null) {
-                return AiStreamResult.failure(source, false, "INVALID_RESPONSE", "上游返回空响应");
+                return partial(full, usage, source, false, requestSent.get(), "INVALID_RESPONSE", "上游返回空响应");
             }
             BufferedSource input = body.source();
             while (true) {
@@ -215,17 +241,20 @@ public class ChatCompletionsClient {
                 try {
                     JSONObject chunk = new JSONObject(data);
                     if (chunk.containsKey("error")) {
-                        return AiStreamResult.failure(source, emitted, "MODEL_UNAVAILABLE", "上游返回流式错误");
+                        return partial(full, usage, source, emitted, requestSent.get(), "MODEL_UNAVAILABLE", "上游返回流式错误");
                     }
                     chunkUsage = extractUsage(chunk);
                     delta = extractDeltaContent(chunk);
                     JSONArray choices = chunk.getJSONArray("choices");
                     if (choices != null && !choices.isEmpty()) {
+                        collectTools(choices.getJSONObject(0).getJSONObject("delta"), toolParts);
                         String reason = choices.getJSONObject(0).getStr("finish_reason");
                         finished |= reason != null && !reason.isBlank();
+                        outputLimited |= "length".equals(reason);
+                        contentFiltered |= "content_filter".equals(reason);
                     }
                 } catch (RuntimeException e) {
-                    return AiStreamResult.failure(source, emitted, "INVALID_RESPONSE", "上游流式响应格式无效");
+                    return partial(full, usage, source, emitted, requestSent.get(), "INVALID_RESPONSE", "上游流式响应格式无效");
                 }
                 if (chunkUsage != null) {
                     usage = chunkUsage;
@@ -236,24 +265,77 @@ public class ChatCompletionsClient {
                     onChunk.accept(delta);
                 }
             }
-            if (full.isEmpty()) {
-                return AiStreamResult.failure(source, false, "INVALID_RESPONSE", "上游流式响应缺少有效内容");
+            if (contentFiltered) return partial(full, usage, source, emitted, requestSent.get(), "CONTENT_FILTER", "供应商未能完成本次回复，请调整问题后重试");
+            if (full.isEmpty() && toolParts.isEmpty()) {
+                return partial(full, usage, source, false, requestSent.get(), "INVALID_RESPONSE", "上游流式响应缺少有效内容");
             }
             if (!finished) {
-                return AiStreamResult.failure(source, emitted, "NETWORK", "上游流式连接未完整结束");
+                return partial(full, usage, source, emitted, requestSent.get(), "NETWORK", "上游流式连接未完整结束");
             }
-            return AiStreamResult.success(full.toString(), usage, source, emitted);
+            if (outputLimited) return partial(full, usage, source, emitted, requestSent.get(), "OUTPUT_LIMIT", "回复达到输出上限，尚未完成");
+                        var calls = new java.util.ArrayList<AiStreamResult.ToolCall>();
+            for (var part : toolParts.values()) {
+                if (part.id.isEmpty() || part.name.isEmpty() || part.arguments.isEmpty())
+                    return partial(full, usage, source, emitted, requestSent.get(), "INVALID_RESPONSE", "工具调用不完整");
+                calls.add(new AiStreamResult.ToolCall(part.id.toString(),part.name.toString(),part.arguments.toString()));
+            }
+            return new AiStreamResult(full.toString(), usage, source, true, emitted, null, null, requestSent.get(), calls, false);
+        } catch (AiStreamControl.Cancelled e) {
+            return partial(full, usage, source, emitted, requestSent.get(), "CANCELLED", "用户已停止生成，最终供应商成本未知");
         } catch (ResponseTooLargeException e) {
-            return AiStreamResult.failure(source, emitted, "RESPONSE_TOO_LARGE", "上游流式响应超过大小限制");
+            return partial(full, usage, source, emitted, requestSent.get(), "RESPONSE_TOO_LARGE", "上游流式响应超过大小限制");
         } catch (SocketTimeoutException e) {
-            return AiStreamResult.failure(source, emitted, "TIMEOUT", "上游流式请求超时");
+            return partial(full, usage, source, emitted, requestSent.get(), "TIMEOUT", "上游流式请求超时");
         } catch (InterruptedIOException e) {
-            return AiStreamResult.failure(source, emitted, "TIMEOUT", "上游流式请求超时");
+            if (onChunk instanceof AiStreamControl control && control.isCancelled())
+                return partial(full, usage, source, emitted, requestSent.get(), "CANCELLED", "用户已停止生成，最终供应商成本未知");
+            return partial(full, usage, source, emitted, requestSent.get(), "TIMEOUT", "上游流式请求超时");
         } catch (IOException e) {
+            if (onChunk instanceof AiStreamControl control && control.isCancelled())
+                return partial(full, usage, source, emitted, requestSent.get(), "CANCELLED", "用户已停止生成，最终供应商成本未知");
             log.warn("【AI上游】流式网络失败 serviceId={} exception={}",
                     snapshot.serviceId(), e.getClass().getSimpleName());
-            return AiStreamResult.failure(source, emitted, "NETWORK", "上游流式连接中断");
+            var failure = networkFailure(e);
+            return partial(full, usage, source, emitted, requestSent.get(), failure.type(), failure.message());
         }
+    }
+
+    private static final class ToolParts {
+        final StringBuilder id = new StringBuilder(), name = new StringBuilder(), arguments = new StringBuilder();
+    }
+    private static void collectTools(JSONObject delta, java.util.Map<Integer,ToolParts> parts) {
+        JSONArray calls = delta == null ? null : delta.getJSONArray("tool_calls");
+        if (calls == null) return;
+        for (Object value : calls) {
+            JSONObject call = (JSONObject)value;
+            int index = call.getInt("index", 0);
+            if (index < 0 || index > 1) throw new IllegalArgumentException("too many tool calls");
+            ToolParts part = parts.computeIfAbsent(index, ignored -> new ToolParts());
+            part.id.append(call.getStr("id", ""));
+            JSONObject function = call.getJSONObject("function");
+            if (function != null) {
+                part.name.append(function.getStr("name", "")); part.arguments.append(function.getStr("arguments", ""));
+            }
+            if (part.id.length()>200 || part.name.length()>64 || part.arguments.length()>8192)
+                throw new IllegalArgumentException("tool arguments too large");
+        }
+    }
+
+    private static AiStreamResult partial(StringBuilder content, AiTokenUsage usage, AiCallSource source,
+                                          boolean emitted, boolean requestSent, String type, String notice) {
+        return new AiStreamResult(content.toString(), usage, source, false, emitted, type, notice, requestSent);
+    }
+
+    private record NetworkFailure(String type, String message) { }
+
+    private static NetworkFailure networkFailure(IOException error) {
+        Throwable cause = error;
+        for (int depth = 0; cause != null && depth < 8; depth++, cause = cause.getCause()) {
+            if (cause instanceof com.musealgo.oj.ai.network.AiEndpointException rejected) {
+                return new NetworkFailure(rejected.errorCode(), rejected.getMessage());
+            }
+        }
+        return new NetworkFailure("AI_TARGET_UNREACHABLE", "后端无法连接目标服务，请检查后端出站网络后重试");
     }
 
     private OkHttpClient clientForEndpoint(URI endpoint) {
@@ -261,7 +343,10 @@ public class ChatCompletionsClient {
         if (!endpointGuard.isExactPrivateTarget(endpoint.toString())) {
             return client;
         }
-        return client.newBuilder().dns(endpointGuard.guardedDns(endpoint)).build();
+        // Private permissions belong to one full URL. Never share these sockets with public requests.
+        return client.newBuilder()
+                .connectionPool(new okhttp3.ConnectionPool(0, 1, TimeUnit.MILLISECONDS))
+                .dns(endpointGuard.guardedDns(endpoint)).build();
     }
 
     private SseLine readStreamLine(BufferedSource input, long remainingBytes) throws IOException {
@@ -348,7 +433,7 @@ public class ChatCompletionsClient {
             if (body == null) {
                 return "";
             }
-            String raw = body.string();
+            String raw = readBounded(body, 8192);
             if (raw == null || raw.isBlank()) {
                 return "";
             }
@@ -435,7 +520,10 @@ public class ChatCompletionsClient {
         if (status >= 300 && status < 400) {
             return "REDIRECT_BLOCKED";
         }
-        if (status >= 500 || status == 400 || status == 404 || status == 422) {
+        if (status == 404) {
+            return "UPSTREAM_NOT_FOUND";
+        }
+        if (status >= 500 || status == 400 || status == 422) {
             return "MODEL_UNAVAILABLE";
         }
         return "INVALID_RESPONSE";
@@ -447,6 +535,7 @@ public class ChatCompletionsClient {
             case "QUOTA_EXCEEDED" -> "上游额度不足或被限流";
             case "TIMEOUT" -> "上游请求超时";
             case "REDIRECT_BLOCKED" -> "上游返回重定向，已拒绝跟随";
+            case "UPSTREAM_NOT_FOUND" -> "上游返回 HTTP 404，请检查完整请求路径和模型名称";
             case "MODEL_UNAVAILABLE" -> "上游模型不可用或拒绝参数";
             default -> "上游返回无效响应";
         };

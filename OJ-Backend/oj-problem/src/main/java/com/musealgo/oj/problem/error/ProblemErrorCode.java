@@ -6,10 +6,14 @@ import com.musealgo.oj.common.exception.ErrorCode;
 public enum ProblemErrorCode implements ErrorCode {
     EXAM_ATTEMPT_EXPIRED(409, "作答时间已结束，试卷已自动交卷"),
     PROBLEM_CASE_SET_CHANGED(409, "测试用例已变化，请重新测试"),
+    /** 预览之后题目被其他会话修改：整理结果基于旧内容，不允许覆盖。 */
+    PROBLEM_CONTENT_CHANGED(409, "题目内容已变化，请重新整理"),
     AI_RESPONSE_INVALID(502, "AI 未返回内容"),
     AI_UNAVAILABLE(503, "AI 服务暂不可用，请稍后重试"),
     EXAM_ATTEMPT_NOT_ACTIVE(409, "请先开始作答，或当前试卷已交卷"),
+    EXAM_ATTEMPT_GRADING_PENDING(409, "编程题仍在判题，请等待判题完成后交卷"),
     EXAM_PAPER_NOT_FOUND(404, "试卷不存在: "),
+    EXAM_PAPER_HAS_ATTEMPTS(409, "试卷已有作答记录，请复制新卷后修改题目、分值或时长"),
     PROBLEM_CASE_NOT_FOUND(404, "测试用例不存在"),
     PROBLEM_INPUT_INVALID(400, "请求参数不合法"),
     PROBLEM_LIST_ITEM_ALREADY_EXISTS(409, "该题目已在题单中"),
