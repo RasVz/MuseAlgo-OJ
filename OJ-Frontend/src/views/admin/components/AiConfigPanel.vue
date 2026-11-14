@@ -66,7 +66,7 @@
         <span class="panel-title">提示词模板版本</span>
         <el-select v-model="promptKey" style="width: 200px" @change="loadPrompts">
           <el-option label="开放答疑" value="tutor-open" />
-          <el-option label="开放复盘" value="review-open" />
+          <el-option label="提交诊断" value="submission-diagnosis" />
         </el-select>
       </div>
       <div class="prompt-create">
