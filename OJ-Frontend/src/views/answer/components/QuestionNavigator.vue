@@ -40,7 +40,8 @@ const STATUS_LABELS = {
   INCORRECT: '错误',
   ATTEMPTED: '已尝试',
   SOLVED: '已通过',
-  PENDING: '判题中'
+  PENDING: '判题中',
+  SUBMITTED: '已提交'
 }
 
 const statusLabel = item => STATUS_LABELS[item.status] || STATUS_LABELS.UNTOUCHED

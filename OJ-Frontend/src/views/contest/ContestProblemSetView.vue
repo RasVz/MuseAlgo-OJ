@@ -111,8 +111,21 @@
         <ul class="rules-list">
           <li>严禁使用 AI 辅助生成比赛代码。</li>
           <li>严禁共享代码、讨论题解、代打等作弊行为。</li>
-          <li>系统会进行代码查重与行为检测，违规将取消成绩。</li>
+          <li>系统会进行代码查重，违规将取消成绩。</li>
         </ul>
+
+        <el-divider />
+
+        <el-button
+          type="primary"
+          class="entry-button"
+          :loading="registering"
+          :disabled="entryDisabled"
+          @click="handleEntry"
+        >
+          {{ entryLabel }}
+        </el-button>
+        <p v-if="entryHint" class="entry-hint">{{ entryHint }}</p>
       </el-card>
     </div>
   </div>
@@ -123,20 +136,27 @@
 // 比赛基本信息来自 contestStore（比赛布局统一注入），本页只额外拉一次赛题列表。
 import { ref, onMounted, computed, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getContestProblemList } from '@/api/contest'
+import { ElMessage } from 'element-plus'
+import { getContestProblemList, getMyContestRegistration, registerContestApi } from '@/api/contest'
 import { useContestStore } from '@/stores/contestContext'
+import { useUserStore } from '@/stores/userStore'
+import { unwrapResultData } from '@/utils/response'
+import { showApiError } from '@/utils/errorFeedback'
 import { Check, Minus, Calendar, Tickets } from '@element-plus/icons-vue'
 import dayjs from 'dayjs'
 
 const route = useRoute()
 const router = useRouter()
 const contestStore = useContestStore()
+const userStore = useUserStore()
 
 const contestId = computed(() => route.params.id || route.params.contestId)
 const contest = computed(() => contestStore.info || {})
 
 const loading = ref(false)
 const problems = ref([])
+const registration = ref(null)
+const registering = ref(false)
 
 // 每秒推进一次"当前时间"，让状态与倒计时在页面开着不动时也能自动翻转。
 // 定时器必须在卸载时清理，否则每次进出这个页面都会多留一个。
@@ -196,20 +216,108 @@ const getProblemIndex = (index) => String.fromCharCode(65 + index)
 
 const tableRowClassName = () => 'clickable-row'
 
-// 必须带 contestId：题面页据此把提交识别为比赛提交，
-// 漏传会让用户在比赛里提交的成绩不进榜单。
-const openProblemInNewTab = (row) => {
-  const target = router.resolve({
-    name: 'ProblemDetail',
-    params: { id: row.problemId },
-    query: { contestId: contestId.value }
-  })
-  window.open(target.href, '_blank')
+const isApprovedRegistration = computed(() =>
+  ['APPROVED', 'AUTO_APPROVED'].includes(registration.value?.status))
+const registrationPending = computed(() => registration.value?.status === 'PENDING')
+const registrationRejected = computed(() => registration.value?.status === 'REJECTED')
+
+const entryLabel = computed(() => {
+  if (realStatus.value === 'NotStarted') return '比赛未开始'
+  if (realStatus.value === 'Ended') return isApprovedRegistration.value ? '进入复盘' : '比赛已结束'
+  if (registrationRejected.value) return '报名未通过'
+  if (registrationPending.value) return '审核中'
+  if (isApprovedRegistration.value) return '进入答题'
+  if (registration.value?.registrationReviewRequired) return '报名参赛（需审核）'
+  return '参赛'
+})
+
+const entryDisabled = computed(() => {
+  if (realStatus.value === 'NotStarted') return true
+  if (realStatus.value === 'Ended') return !isApprovedRegistration.value
+  return registrationPending.value || registrationRejected.value
+})
+
+const entryHint = computed(() => {
+  if (realStatus.value === 'NotStarted') return '比赛开始后可进入答题'
+  if (realStatus.value === 'Ended' && !isApprovedRegistration.value) return '比赛已结束，未参赛不能查看题目'
+  if (registrationPending.value) return '报名审核中，通过后可进入答题'
+  if (registrationRejected.value) return '报名未通过审核，不能查看题目'
+  if (entryDisabled.value) return '当前不可进入答题'
+  return ''
+})
+
+const fetchRegistration = async () => {
+  if (!userStore.getAccessToken() || !contestId.value) return
+  try {
+    const res = await getMyContestRegistration(contestId.value)
+    if (res.code === 200) registration.value = unwrapResultData(res) || null
+  } catch {
+    registration.value = null
+  }
 }
 
-const handleRowClick = (row) => {
-  openProblemInNewTab(row)
+/**
+ * 进入比赛答题页前的准入：未开始/已结束/审核中/未通过都挡下；
+ * 无需审核且未报名的用户在点击时自动报名，与后端提交入口口径一致。
+ */
+const ensureEntry = async () => {
+  if (!userStore.getAccessToken()) {
+    ElMessage.warning('请先登录后参赛')
+    router.push({ name: 'Login', query: { redirect: route.fullPath } })
+    return false
+  }
+  if (realStatus.value === 'NotStarted') {
+    ElMessage.info('比赛尚未开始')
+    return false
+  }
+  if (realStatus.value === 'Ended') {
+    if (isApprovedRegistration.value) return true
+    ElMessage.warning('比赛已结束，未参赛不能查看题目')
+    return false
+  }
+  if (registrationRejected.value) {
+    ElMessage.warning('报名未通过审核，不能查看题目')
+    return false
+  }
+  if (registrationPending.value) {
+    ElMessage.info('报名审核中，通过后可进入答题')
+    return false
+  }
+  if (isApprovedRegistration.value) return true
+
+  registering.value = true
+  try {
+    const res = await registerContestApi(contestId.value)
+    if (res.code !== 200) {
+      ElMessage.error(res.message || '报名失败')
+      return false
+    }
+    await fetchRegistration()
+    if (registrationPending.value) {
+      ElMessage.info('报名已提交，等待审核')
+      return false
+    }
+    return isApprovedRegistration.value
+  } catch (error) {
+    showApiError(error, '报名失败，请稍后重试')
+    return false
+  } finally {
+    registering.value = false
+  }
 }
+
+const enterAnswer = async (problemId) => {
+  if (!(await ensureEntry())) return
+  const target = problemId || problems.value[0]?.problemId
+  router.push({
+    name: 'ContestAnswer',
+    params: { id: contestId.value },
+    query: target ? { q: `coding-${target}` } : {}
+  })
+}
+
+const handleEntry = () => enterAnswer()
+const handleRowClick = (row) => enterAnswer(row.problemId)
 
 const fetchData = async () => {
   if (!contestId.value) return
@@ -226,10 +334,10 @@ const fetchData = async () => {
   }
 }
 
-// 比赛中途打开新标签页写代码很常见，回到本页时状态要能自动更新，
-// 所以比赛状态由 now 每秒推算，而非首次加载时定格。
+// 比赛状态由 now 每秒推算，回到本页时能自动更新。
 onMounted(() => {
   fetchData()
+  fetchRegistration()
 })
 </script>
 
@@ -376,5 +484,15 @@ onMounted(() => {
   color: var(--text-regular);
   line-height: 1.8;
   font-size: 13px;
+}
+
+.entry-button {
+  width: 100%;
+}
+.entry-hint {
+  margin: 8px 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-align: center;
 }
 </style>

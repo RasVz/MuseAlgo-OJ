@@ -5,8 +5,10 @@ import com.musealgo.oj.common.exception.CommonErrorCode;
 import com.musealgo.oj.community.error.CommunityErrorCode;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
+import com.musealgo.oj.api.contest.ContestProblemAccessQuery;
 import com.musealgo.oj.common.api.Result;
 import com.musealgo.oj.common.utils.SecurityUtils;
 import com.musealgo.oj.community.entity.Post;
@@ -56,6 +58,20 @@ public class PostController {
     private final CommunityInteractionService interactionService;
     private final PostContentService postContent;
     private final PostQueryService postQueries;
+    private final ContestProblemAccessQuery contestProblems;
+
+    /**
+     * 比赛进行期按题目过滤题解/讨论：题目关联是唯一可靠归属条件，未关联的帖子无法判定。
+     * 教师/管理员保留查看能力，用于赛后复核与内容管理。
+     */
+    private boolean blockedByRunningContest(Long problemId) {
+        return problemId != null && !SecurityUtils.isTeacherOrAdmin()
+                && contestProblems.hasRunningFormalContestProblem(problemId);
+    }
+
+    private static <T> IPage<T> emptyPage(Integer currentPage, Integer pageSize) {
+        return new Page<>(currentPage == null ? 1 : currentPage, pageSize == null ? 10 : pageSize, 0);
+    }
 
     @Operation(summary = "获取公告列表")
     @GetMapping("/announcements")
@@ -83,6 +99,9 @@ public class PostController {
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String tags,
             @RequestParam(defaultValue = "latest") String sort) {
+        if (blockedByRunningContest(problemId)) {
+            return Result.success(emptyPage(currentPage, pageSize));
+        }
         IPage<PostVO> result = postQueries.list(
                 currentPage, pageSize, category, type, parseTypes(types),
                 authorId, contestId, problemId, classId, keyword, parseTags(tags), sort);
@@ -97,6 +116,9 @@ public class PostController {
             @RequestParam(defaultValue = "1") Integer currentPage,
             @RequestParam(defaultValue = "6") Integer pageSize,
             @RequestParam(defaultValue = "latest") String sort) {
+        if (blockedByRunningContest(problemId)) {
+            return Result.success(emptyPage(currentPage, pageSize));
+        }
         IPage<PostVO> result = postQueries.relatedArticles(problemId, currentPage, pageSize, sort);
         hydrateReactionState(result, SecurityUtils.getUserId());
         return Result.success(result);
@@ -116,6 +138,9 @@ public class PostController {
             @RequestParam(required = false) Long classId,
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String tags) {
+        if (blockedByRunningContest(problemId)) {
+            return Result.success(emptyPage(currentPage, pageSize));
+        }
         return Result.success(postQueries.list(
                 currentPage, pageSize, category, type, parseTypes(types),
                 authorId, contestId, problemId, classId, keyword, parseTags(tags), "hot"));
@@ -147,6 +172,12 @@ public class PostController {
     public Result<Map<String, Object>> getDetail(@PathVariable Long id) {
         Map<String, Object> data;
         data = postQueries.detail(id, SecurityUtils.getUserId());
+        if (data != null) {
+            Object problemId = data.get("problemId");
+            if (problemId instanceof Number number && blockedByRunningContest(number.longValue())) {
+                return ErrorResponses.failure(CommonErrorCode.ACCESS_DENIED, "比赛进行中，不提供该题的题解与讨论");
+            }
+        }
         Long userId = SecurityUtils.getUserId();
         if (data != null && userId != null) {
             data.put("isFavorited", interactionService.isActive(

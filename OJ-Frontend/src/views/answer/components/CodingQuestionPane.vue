@@ -1,13 +1,19 @@
 <template>
   <section class="coding-pane" v-loading="loading">
-    <div v-if="lastResult" class="result-strip" :class="resultClass">
-      <strong>{{ resultLabel }}</strong>
-      <span v-if="lastResult.runTime != null">耗时 {{ lastResult.runTime }} ms</span>
-      <span v-if="lastResult.runMemory != null">内存 {{ lastResult.runMemory }} KB</span>
-      <span v-if="lastResult.score != null">得分 {{ lastResult.score }}</span>
-      <span v-if="lastResult.status === 0 || pending" class="pending-text">判题中，稍后自动刷新</span>
+    <div v-if="lastResult || pending" class="result-strip" :class="resultClass">
+      <template v-if="resultVisibility === 'SUBMITTED_ONLY'">
+        <strong>已提交</strong>
+        <span class="pending-text">判题结果将在赛后公布</span>
+      </template>
+      <template v-else>
+        <strong>{{ resultLabel }}</strong>
+        <span v-if="lastResult?.runTime != null">耗时 {{ lastResult.runTime }} ms</span>
+        <span v-if="lastResult?.runMemory != null">内存 {{ lastResult.runMemory }} KB</span>
+        <span v-if="resultVisibility === 'FULL' && lastResult?.score != null">得分 {{ lastResult.score }}</span>
+        <span v-if="lastResult?.status === 0 || pending" class="pending-text">判题中，稍后自动刷新</span>
+      </template>
     </div>
-    <pre v-if="lastResult?.errorMessage" class="error-output">{{ lastResult.errorMessage }}</pre>
+    <pre v-if="resultVisibility !== 'SUBMITTED_ONLY' && lastResult?.errorMessage" class="error-output">{{ lastResult.errorMessage }}</pre>
 
     <ProblemIdeWorkspace
       v-if="workspaceProblem"
@@ -48,7 +54,9 @@ const props = defineProps({
   lastResult: { type: Object, default: null },
   pending: { type: Boolean, default: false },
   canSubmit: { type: Boolean, default: false },
-  loading: { type: Boolean, default: false }
+  loading: { type: Boolean, default: false },
+  // FULL：完整结果；VERDICT_TIME_MEMORY：ACM 赛中只看结论/耗时/内存；SUBMITTED_ONLY：OI 赛中等赛后公布。
+  resultVisibility: { type: String, default: 'FULL' }
 })
 
 const emit = defineEmits(['submit'])

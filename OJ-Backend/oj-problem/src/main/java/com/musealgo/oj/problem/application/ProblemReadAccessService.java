@@ -31,7 +31,13 @@ public class ProblemReadAccessService implements ProblemAccessQuery {
     @Override public void requireReadable(Long id) {
         Problem problem = requireExisting(id);
         Long actor = SecurityUtils.getUserId();
-        if (SecurityUtils.isAdmin() || (actor != null && actor.equals(problem.getAuthorId())) || Boolean.TRUE.equals(problem.getIsPublic())) return;
+        if (SecurityUtils.isAdmin() || (actor != null && actor.equals(problem.getAuthorId()))) return;
+        // 比赛进行期：题目题面只能从比赛答题页进入。参赛者与未参赛者一样被通用详情页挡下，
+        // 避免通过题库、收藏、历史链接等旁路在赛中断开比赛上下文看题。
+        if (contests.hasRunningFormalContestProblem(id)) {
+            throw new ForbiddenException("比赛进行中，请从比赛页面进入答题");
+        }
+        if (Boolean.TRUE.equals(problem.getIsPublic())) return;
         if (actor != null && (contests.canReadProblem(id, actor) || lists.selectAssignedClassIds(id).stream().anyMatch(classId ->
                 classes.findById(classId).map(c -> (SecurityUtils.isTeacherOrAdmin() && actor.equals(c.teacherId())) || classes.findStudentIds(classId).contains(actor)).orElse(false)))) return;
         throw new ForbiddenException("无权查看该题目");

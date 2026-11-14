@@ -11,6 +11,8 @@ import com.musealgo.oj.contest.entity.ProblemContest;
 import com.musealgo.oj.contest.mapper.ContestMapper;
 import com.musealgo.oj.contest.mapper.ProblemContestMapper;
 import java.time.LocalDateTime;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Component
 @RequiredArgsConstructor
@@ -51,5 +53,31 @@ public class ContestProblemAccessAdapter implements ContestProblemAccessQuery {
                 .anyMatch(c -> !Integer.valueOf(1).equals(c.getIsDeleted()) && c.getStartTime() != null && c.getEndTime() != null
                         && !now.isBefore(c.getStartTime()) && !now.isAfter(c.getEndTime())
                         && canReadContestProblem(c.getId(), problemId, actor));
+    }
+
+    @Override public boolean hasRunningFormalContestProblem(Long problemId) {
+        return problemId != null && findRunningFormalContestProblemIds().contains(problemId);
+    }
+
+    /**
+     * 取「公开且正在进行」的比赛题目 ID 集合。
+     * <p>未公开比赛可能仍在配置中，不能用来阻断题目在题库中的正常练习；只封锁已公开比赛的赛程窗口。</p>
+     */
+    @Override public Set<Long> findRunningFormalContestProblemIds() {
+        LocalDateTime now = LocalDateTime.now();
+        Set<Long> runningContestIds = contests.selectList(new LambdaQueryWrapper<Contest>()
+                        .select(Contest::getId)
+                        .eq(Contest::getVisible, 1)
+                        .eq(Contest::getIsDeleted, 0)
+                        .le(Contest::getStartTime, now)
+                        .ge(Contest::getEndTime, now))
+                .stream().map(Contest::getId).collect(Collectors.toSet());
+        if (runningContestIds.isEmpty()) return Set.of();
+        return problems.selectList(new LambdaQueryWrapper<ProblemContest>()
+                        .select(ProblemContest::getProblemId)
+                        .in(ProblemContest::getContestId, runningContestIds)
+                        .eq(ProblemContest::getIsDeleted, 0)
+                        .eq(ProblemContest::getVisible, 1))
+                .stream().map(ProblemContest::getProblemId).collect(Collectors.toSet());
     }
 }

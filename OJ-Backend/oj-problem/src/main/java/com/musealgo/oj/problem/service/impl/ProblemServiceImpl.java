@@ -2,6 +2,8 @@ package com.musealgo.oj.problem.service.impl;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
+import com.musealgo.oj.api.contest.ContestProblemAccessQuery;
+import com.musealgo.oj.common.utils.SecurityUtils;
 import com.musealgo.oj.problem.entity.Problem;
 import com.musealgo.oj.problem.entity.vo.ProblemVO;
 import com.musealgo.oj.problem.entity.vo.ProblemFilterOptionsVO;
@@ -31,6 +33,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ProblemServiceImpl extends ServiceImpl<ProblemMapper, Problem> implements ProblemService {
     private final ProblemMapper problemMapper;
+    private final ContestProblemAccessQuery contestAccess;
 
     @Override
     public Page<ProblemVO> getProblemVOPage(Integer page, Integer size, String keyword, Integer difficulty,
@@ -43,7 +46,7 @@ public class ProblemServiceImpl extends ServiceImpl<ProblemMapper, Problem> impl
         }
         return (Page<ProblemVO>) problemMapper.getProblemVOList(
                 pageParam, keyword, difficulty, minDifficulty, maxDifficulty,
-                tagNames, source, userStatus, userId);
+                tagNames, source, userStatus, userId, hiddenContestProblemIds());
     }
 
     @Override
@@ -86,7 +89,19 @@ public class ProblemServiceImpl extends ServiceImpl<ProblemMapper, Problem> impl
     @Override
     public List<Problem> getRandomUnsolvedPublicProblems(Long userId, Integer limit) {
         int finalLimit = (limit == null || limit <= 0) ? 3 : Math.min(limit, 3);
-        return problemMapper.selectRandomUnsolvedPublicProblems(userId, finalLimit);
+        return problemMapper.selectRandomUnsolvedPublicProblems(userId, finalLimit, hiddenContestProblemIds());
+    }
+
+    /**
+     * 比赛进行期需要从题库/搜索/推荐中排除的题目 ID。
+     * 教师与管理员保留全量视图用于预览和配置；比赛结束后集合自动为空，题目恢复正常展示。
+     */
+    @Override
+    public List<Long> hiddenContestProblemIds() {
+        if (SecurityUtils.isTeacherOrAdmin()) {
+            return List.of();
+        }
+        return contestAccess.findRunningFormalContestProblemIds().stream().toList();
     }
 
     @Override

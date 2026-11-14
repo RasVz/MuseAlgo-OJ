@@ -25,6 +25,9 @@ public interface ProblemService extends IService<Problem> {
 
     List<Problem> getRandomUnsolvedPublicProblems(Long userId, Integer limit);
 
+    /** 比赛进行期需要从题库/搜索/推荐中排除的题目 ID；教师/管理员返回空列表。 */
+    List<Long> hiddenContestProblemIds();
+
     /**
      * 只写标准答案三列（std_answer / std_explanation / std_tested）。
      *

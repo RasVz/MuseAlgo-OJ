@@ -27,7 +27,14 @@
         >
           提交客观题
         </el-button>
-        <el-button type="primary" size="small" :loading="finishing" :disabled="!canSubmit" @click="$emit('finish')">
+        <el-button
+          v-if="showFinish"
+          type="primary"
+          size="small"
+          :loading="finishing"
+          :disabled="!canSubmit"
+          @click="$emit('finish')"
+        >
           交卷
         </el-button>
       </div>
@@ -64,7 +71,8 @@ const props = defineProps({
   canSubmit: { type: Boolean, default: false },
   finishing: { type: Boolean, default: false },
   savingObjective: { type: Boolean, default: false },
-  showSaveObjective: { type: Boolean, default: false }
+  showSaveObjective: { type: Boolean, default: false },
+  showFinish: { type: Boolean, default: true }
 })
 
 const emit = defineEmits(['select', 'back', 'finish', 'save-objective'])

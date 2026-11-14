@@ -15,6 +15,7 @@ import com.musealgo.oj.common.utils.SecurityUtils;
 import com.musealgo.oj.contest.entity.Contest;
 import com.musealgo.oj.contest.entity.ContestUser;
 import com.musealgo.oj.contest.entity.vo.ContestRegistrationVO;
+import com.musealgo.oj.contest.application.ContestAnswerApplicationService;
 import com.musealgo.oj.contest.service.ContestService;
 import com.musealgo.oj.contest.service.ContestUserService;
 import com.musealgo.oj.contest.service.impl.ContestUserServiceImpl;
@@ -30,6 +31,18 @@ public class ContestUserController {
 
     private final ContestUserService contestUserService;
     private final ContestService contestService;
+    private final ContestAnswerApplicationService contestAnswerApplicationService;
+
+    @Operation(summary = "我的报名状态")
+    @GetMapping("/{contestId}/registration/mine")
+    public Result<MineRegistration> myRegistration(@PathVariable Long contestId) {
+        ContestUser record = contestAnswerApplicationService.myRegistration(contestId);
+        Contest contest = contestService.getById(contestId);
+        return Result.success(new MineRegistration(
+                record != null,
+                record == null ? null : record.getStatus(),
+                contest != null && Integer.valueOf(1).equals(contest.getRegistrationReview())));
+    }
 
     @Operation(summary = "报名比赛")
     @PostMapping("/register/{contestId}")
@@ -82,5 +95,9 @@ public class ContestUserController {
 
     /** 审核请求体。 */
     public record ReviewRequest(boolean approve, String reason) {
+    }
+
+    /** 比赛详情页「参赛」按钮所需的本人报名状态。 */
+    public record MineRegistration(boolean registered, String status, boolean registrationReviewRequired) {
     }
 }
