@@ -13,17 +13,14 @@
           <span class="label">分数</span>
           <span class="value score">{{ detail.score }}</span>
         </div>
-        <div class="divider"></div>
         <div class="metric-item">
           <span class="label">耗时</span>
           <span class="value">{{ detail.runTime }} ms</span>
         </div>
-        <div class="divider"></div>
         <div class="metric-item">
           <span class="label">内存</span>
           <span class="value">{{ (detail.runMemory / 1024).toFixed(2) }} MB</span>
         </div>
-        <div class="divider"></div>
         <div class="metric-item">
           <span class="label">语言</span>
           <span class="value">{{ detail.language }}</span>
@@ -112,15 +109,19 @@ const getStatusIcon = (s) => ({
 
 .status-metrics {
   display: flex;
-  align-items: center;
-  gap: 44px;
+  align-items: stretch;
   margin-left: auto;
 }
 
+/* 四个信息各占一格，用浅竖线分隔；最后一格的右缘与下方内容右缘对齐。 */
 .metric-item {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
+  min-width: 104px;
+  padding: 2px 24px;
+  border-left: 1px solid var(--border-light);
 }
 
 .metric-item .label {
@@ -134,12 +135,6 @@ const getStatusIcon = (s) => ({
   font-weight: bold;
   font-size: 16px;
   color: var(--text-primary);
-}
-
-.divider {
-  width: 1px;
-  height: 24px;
-  background-color: var(--border-light);
 }
 
 .status-ac { background: var(--accent-success-light); }
