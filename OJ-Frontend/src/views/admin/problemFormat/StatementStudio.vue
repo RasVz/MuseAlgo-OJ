@@ -22,9 +22,11 @@
           <header class="st-block-head">
             <span class="st-block-label">{{ block.label }}</span>
             <span class="st-block-actions">
-              <el-button link size="small" @click="toggleEdit(block.key)">
-                {{ editingKey === block.key ? '完成' : '编辑' }}
-              </el-button>
+              <template v-if="editingKey === block.key">
+                <el-button link size="small" @click="cancelEdit(block.key)">取消</el-button>
+                <el-button link size="small" type="primary" @click="finishEdit">完成</el-button>
+              </template>
+              <el-button v-else link size="small" @click="startEdit(block.key)">编辑</el-button>
               <el-button link size="small" @click="openDiff(block.key, block.label)">差异</el-button>
             </span>
           </header>
@@ -317,8 +319,27 @@ function formatTime(value) {
   return String(value).replace('T', ' ').slice(5, 16)
 }
 
-function toggleEdit(key) {
-  editingKey.value = editingKey.value === key ? null : key
+function startEdit(key) {
+  editingKey.value = key
+}
+
+function finishEdit() {
+  editingKey.value = null
+}
+
+/** 取消当前区块的编辑：只把这一块恢复成已载入版本的基线内容，其余区块的草稿保持不变。 */
+function cancelEdit(key) {
+  const base = baseline.value
+  if (key === 'limits') {
+    draft.timeLimit = base.timeLimit
+    draft.memoryLimit = base.memoryLimit
+  } else if (key === 'samples') {
+    draft.samples = base.samples.map((s) => ({ input: s.input, output: s.output }))
+  } else {
+    draft[key] = base[key] ?? ''
+  }
+  editingKey.value = null
+  emitUpdate()
 }
 
 function textOf(key, snapshot) {
