@@ -51,7 +51,9 @@ class PostInteractionFacadeImpl implements PostInteractionFacade {
 
     @Override
     public PostStatsVO snapshot(Long userId, Long postId) {
-        var post = postTargets.requireExisting(postId);
+        // 统计快照也会出现在 HTTP 读接口上，必须和详情使用同一套可见性规则，
+        // 否则登录用户可以通过计数接口探测私密帖或班级帖是否存在。
+        var post = postTargets.requireReadable(postId, userId);
         Map<String, Integer> values = postHotService.getPostStats(postId);
         PostStatsVO stats = new PostStatsVO();
         stats.setLikes(values.getOrDefault("likes", 0));

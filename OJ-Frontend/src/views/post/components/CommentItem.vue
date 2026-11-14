@@ -161,25 +161,27 @@ const handleReply = (targetComment) => {
 // 点赞是乐观更新：先翻转 UI 让点击有即时反馈，请求失败再回滚。
 // 评论区点赞是高频操作，等一次往返会让界面显得"卡"。
 const handleLike = async (item) => {
-  try {
-    const oldStatus = item.isLiked
-    item.isLiked = !oldStatus
-    if (item.isLiked) {
-      item.likeCount = (item.likeCount || 0) + 1
-    } else {
-      item.likeCount = (item.likeCount || 0) - 1
-    }
+  const oldStatus = item.isLiked
+  // 回滚：恢复点赞态与计数。计数用反向加减而不是记 oldCount，
+  // 是因为期间可能有其他人点赞，加回旧值会把别人的那份抹掉。
+  const rollback = () => {
+    item.isLiked = oldStatus
+    item.likeCount = oldStatus ? item.likeCount + 1 : item.likeCount - 1
+  }
 
-    const res = await toggleCommentLike(item.id, item.isLiked)
-    if (res.code !== 200) {
-      // 回滚：恢复点赞态与计数。计数用反向加减而不是记 oldCount，
-      // 是因为期间可能有其他人点赞，加回旧值会把别人的那份抹掉。
-      item.isLiked = oldStatus
-      item.likeCount = oldStatus ? item.likeCount + 1 : item.likeCount - 1
-      ElMessage.error(res.msg || '操作失败')
-    }
+  item.isLiked = !oldStatus
+  if (item.isLiked) {
+    item.likeCount = (item.likeCount || 0) + 1
+  } else {
+    item.likeCount = (item.likeCount || 0) - 1
+  }
+
+  try {
+    await toggleCommentLike(item.id, item.isLiked)
   } catch (e) {
-    console.error(e)
+    // 请求拦截器对非 200 与网络失败都会 reject，这里统一回滚。
+    rollback()
+    ElMessage.error(e?.message || '操作失败')
   }
 }
 </script>

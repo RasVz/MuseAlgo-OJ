@@ -72,7 +72,8 @@ const isClassPost = (item = {}) => item.classId !== null && item.classId !== und
  */
 export function usePublicPostFeed({ notify = () => {} } = {}) {
   const currentCategory = ref('all')
-  const sortBy = ref('latest')
+  // 广场默认展示推荐（热度排序）；「最新」是用户主动切换的第二维度。
+  const sortBy = ref('hot')
   const searchKeyword = ref('')
   const selectedTags = ref([])
   const tagGroups = ref([])

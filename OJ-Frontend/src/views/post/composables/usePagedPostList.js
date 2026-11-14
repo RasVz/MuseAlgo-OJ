@@ -27,6 +27,9 @@ export function usePagedPostList({
   const records = ref([])
   const total = ref(0)
   const currentPage = ref(1)
+  // 请求序号用于丢弃过期响应：快速切换分类/排序/翻页时，
+  // 较早发出的请求可能最后返回，不能让它覆盖用户最后一次选择。
+  let requestSeq = 0
 
   const getRecords = (data) => {
     if (Array.isArray(data)) return data
@@ -48,9 +51,11 @@ export function usePagedPostList({
   // 任何失败都先清空列表：保留上一批数据会让用户误以为筛选条件没生效。
   // 具体要不要弹提示交给调用方的 onError，避免各处重复写 toast。
   const load = async (page = 1) => {
+    const seq = ++requestSeq
     loading.value = true
     try {
       const response = await fetchPage({ page, pageSize })
+      if (seq !== requestSeq) return false
       if (!isResultSuccess(response)) {
         clear()
         onError(getResultMessage(response, '获取列表失败'))
@@ -67,11 +72,12 @@ export function usePagedPostList({
       currentPage.value = page
       return true
     } catch (error) {
+      if (seq !== requestSeq) return false
       clear()
       onError(error?.message || '获取列表失败', error)
       return false
     } finally {
-      loading.value = false
+      if (seq === requestSeq) loading.value = false
     }
   }
 

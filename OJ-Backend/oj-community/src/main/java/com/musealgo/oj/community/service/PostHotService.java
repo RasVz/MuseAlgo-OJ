@@ -9,9 +9,12 @@ import com.musealgo.oj.common.utils.PostRedisKey;
 
 import java.time.LocalDateTime;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * 帖子热度行为域：点赞/点踩/收藏/浏览/评论计数（原子 Lua）+ 用户行为集合判定。
@@ -88,10 +91,31 @@ public class PostHotService {
                     "local comments = tonumber(redis.call('HGET', statKey, 'comments') or '0') " +
                     "return {changed, delta, views, likes, dislikes, favorites, comments}";
 
+    /**
+     * 批量读取多篇帖子的统计快照，避免列表页对每篇帖子各发一次 HGETALL。
+     * 整个 hash 不存在的帖子不会出现在返回值里，调用方回退到数据库快照。
+     */
+    private static final String BATCH_STATS_LUA =
+            "local result = {} " +
+                    "for i, key in ipairs(KEYS) do " +
+                    "  result[i] = redis.call('HMGET', key, 'views', 'likes', 'dislikes', 'favorites', 'comments') " +
+                    "end " +
+                    "return result";
+
+    /** 批量判断当前用户是否点赞过多篇帖子，一次往返替代 N 次 SISMEMBER。 */
+    private static final String BATCH_LIKED_LUA =
+            "local result = {} " +
+                    "for i, key in ipairs(KEYS) do " +
+                    "  result[i] = redis.call('SISMEMBER', key, ARGV[1]) " +
+                    "end " +
+                    "return result";
+
     private final StringRedisTemplate redisTemplate;
     private final PostRankingService rankingService;
 
     private final DefaultRedisScript<List> applyActionScript = buildListScript(APPLY_ACTION_AND_GET_STATS_LUA);
+    private final DefaultRedisScript<List> batchStatsScript = buildListScript(BATCH_STATS_LUA);
+    private final DefaultRedisScript<List> batchLikedScript = buildListScript(BATCH_LIKED_LUA);
 
     public boolean like(Long postId, Long userId, String category,
                         boolean isTop, boolean isEssence, LocalDateTime createTime) {
@@ -287,6 +311,54 @@ public class PostHotService {
         return rankingService.getPostStats(postId);
     }
 
+    public Map<Long, Map<String, Integer>> getPostStatsBatch(Collection<Long> postIds) {
+        List<Long> ids = postIds == null ? List.of() : postIds.stream()
+                .filter(Objects::nonNull).distinct().toList();
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+
+        List<String> keys = ids.stream().map(PostRedisKey::stat).toList();
+        List<?> raw = redisTemplate.execute(batchStatsScript, keys);
+        Map<Long, Map<String, Integer>> result = new LinkedHashMap<>();
+        for (int index = 0; index < ids.size(); index++) {
+            Object row = raw != null && index < raw.size() ? raw.get(index) : null;
+            if (!(row instanceof List<?> values)) {
+                continue;
+            }
+            Map<String, Integer> stats = new LinkedHashMap<>();
+            for (int fieldIndex = 0; fieldIndex < PostRankingService.STAT_FIELDS.size(); fieldIndex++) {
+                Object value = fieldIndex < values.size() ? values.get(fieldIndex) : null;
+                if (value != null) {
+                    stats.put(PostRankingService.STAT_FIELDS.get(fieldIndex), safeToInt(value));
+                }
+            }
+            // 整个 hash 都不存在时不返回条目，调用方回退到数据库快照；
+            // 部分字段缺失时只覆盖 Redis 中真实存在的字段。
+            if (!stats.isEmpty()) {
+                result.put(ids.get(index), stats);
+            }
+        }
+        return result;
+    }
+
+    public Map<Long, Boolean> getLikedStateBatch(Collection<Long> postIds, Long userId) {
+        List<Long> ids = postIds == null ? List.of() : postIds.stream()
+                .filter(Objects::nonNull).distinct().toList();
+        if (ids.isEmpty() || userId == null) {
+            return Map.of();
+        }
+
+        List<String> keys = ids.stream().map(PostRedisKey::likedUsers).toList();
+        List<?> raw = redisTemplate.execute(batchLikedScript, keys, userId.toString());
+        Map<Long, Boolean> result = new LinkedHashMap<>();
+        for (int index = 0; index < ids.size(); index++) {
+            Object value = raw != null && index < raw.size() ? raw.get(index) : null;
+            result.put(ids.get(index), safeToInt(value) == 1);
+        }
+        return result;
+    }
+
     public boolean hasLiked(Long postId, Long userId) {
         if (postId == null || userId == null) {
             return false;
@@ -385,6 +457,12 @@ public class PostHotService {
         }
         if (value instanceof Number) {
             return ((Number) value).intValue();
+        }
+        if (value instanceof Boolean bool) {
+            return bool ? 1 : 0;
+        }
+        if (value instanceof byte[] bytes) {
+            value = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
         }
         try {
             return Integer.parseInt(value.toString());

@@ -39,13 +39,14 @@
         </div>
         <el-input
           v-show="editorMode === 'write'"
+          ref="contentInputRef"
           v-model="postForm.content"
           type="textarea"
           :rows="24"
           placeholder="在这里开始撰写正文（支持 Markdown、代码块与 LaTex）..."
           class="main-textarea"
         />
-        <article v-show="editorMode === 'preview'" class="markdown-preview markdown-body" v-html="previewHtml" />
+        <article v-if="editorMode === 'preview'" class="markdown-preview markdown-body" v-html="previewHtml" />
       </div>
     </div>
   </div>
@@ -59,7 +60,7 @@ import { showApiError } from '@/utils/errorFeedback'
 // 核心机制是"本地草稿"：编辑内容防抖存 localStorage，关闭页面前自动存一次，
 // 下次进入同一篇（同一 draftKey）时询问是否恢复。草稿键里带 problemId，
 // 因为"为题目 A 写的题解"和"为题目 B 写的题解"是两篇不同的文章，不能共用草稿。
-import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Picture } from '@element-plus/icons-vue'
@@ -78,6 +79,7 @@ const draftStatus = ref('草稿会自动保存到本机')
 const initialSnapshot = ref('')
 const serverUpdatedAt = ref(0)
 const metaFormRef = ref(null)
+const contentInputRef = ref(null)
 const draftKey = computed(() => `musealgo:post-draft:${route.params.id || `new:${route.query.problemId || 'article'}`}`)
 
 const postForm = ref({
@@ -158,12 +160,32 @@ const handleBeforeUnload = (event) => {
   event.returnValue = ''
 }
 
+// 图片插入到光标位置，而不是无脑追加到文末；没有光标信息时退回追加。
+const insertAtCursor = (snippet) => {
+  const textarea = contentInputRef.value?.textarea
+  const content = postForm.value.content || ''
+  if (!textarea) {
+    postForm.value.content = `${content}${snippet}`
+    return
+  }
+  const start = textarea.selectionStart ?? content.length
+  const end = textarea.selectionEnd ?? start
+  const prefix = content && start === content.length && !content.endsWith('\n') ? '\n\n' : ''
+  const insert = `${prefix}${snippet}\n`
+  postForm.value.content = `${content.slice(0, start)}${insert}${content.slice(end)}`
+  nextTick(() => {
+    textarea.focus()
+    const cursor = start + insert.length
+    textarea.setSelectionRange(cursor, cursor)
+  })
+}
+
 const uploadAndInsertImage = async ({ file }) => {
   uploading.value = true
   try {
     const res = await uploadImage(file)
     if (res.code !== 200 || !res.data) throw new Error(res.message || '上传失败')
-    postForm.value.content += `${postForm.value.content ? '\n\n' : ''}![${file.name}](${res.data})\n`
+    insertAtCursor(`![${file.name}](${res.data})`)
     ElMessage.success('图片已插入正文')
   } catch (error) {
     showApiError(error, error.message || '图片上传失败')

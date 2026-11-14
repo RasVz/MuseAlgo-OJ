@@ -99,11 +99,13 @@ public class PostController {
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String tags,
             @RequestParam(defaultValue = "latest") String sort) {
+        int page = currentPage == null ? 1 : Math.max(currentPage, 1);
+        int size = clampPageSize(pageSize);
         if (blockedByRunningContest(problemId)) {
-            return Result.success(emptyPage(currentPage, pageSize));
+            return Result.success(emptyPage(page, size));
         }
         IPage<PostVO> result = postQueries.list(
-                currentPage, pageSize, category, type, parseTypes(types),
+                page, size, category, type, parseTypes(types),
                 authorId, contestId, problemId, classId, keyword, parseTags(tags), sort);
         hydrateReactionState(result, SecurityUtils.getUserId());
         return Result.success(result);
@@ -138,11 +140,13 @@ public class PostController {
             @RequestParam(required = false) Long classId,
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String tags) {
+        int page = currentPage == null ? 1 : Math.max(currentPage, 1);
+        int size = clampPageSize(pageSize);
         if (blockedByRunningContest(problemId)) {
-            return Result.success(emptyPage(currentPage, pageSize));
+            return Result.success(emptyPage(page, size));
         }
         return Result.success(postQueries.list(
-                currentPage, pageSize, category, type, parseTypes(types),
+                page, size, category, type, parseTypes(types),
                 authorId, contestId, problemId, classId, keyword, parseTags(tags), "hot"));
     }
 
@@ -154,7 +158,7 @@ public class PostController {
             @RequestParam(defaultValue = "all") String contentType) {
         Long userId = SecurityUtils.getUserId();
         if (userId == null) return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "请先登录");
-        return Result.success(postQueries.authoredBy(userId, page, size, contentType));
+        return Result.success(postQueries.authoredBy(userId, Math.max(page, 1), clampPageSize(size), contentType));
     }
 
     @Operation(summary = "文章可选标签")
@@ -279,12 +283,30 @@ public class PostController {
     }
 
     private void hydrateReactionState(IPage<PostVO> page, Long userId) {
-        if (page == null || page.getRecords() == null) return;
+        if (page == null || page.getRecords() == null || page.getRecords().isEmpty()) return;
+
+        List<Long> postIds = new ArrayList<>();
         for (PostVO post : page.getRecords()) {
-            Map<String, Integer> stats = postHotService.getPostStats(post.getId());
-            post.setLikes(stats.getOrDefault("likes", post.getLikes() == null ? 0 : post.getLikes()));
-            post.setCommentCount(stats.getOrDefault("comments", post.getCommentCount() == null ? 0 : post.getCommentCount()));
-            post.setIsLiked(userId != null && postHotService.hasLiked(post.getId(), userId));
+            if (post.getId() != null) postIds.add(post.getId());
         }
+
+        // 列表页一次批量读取统计与点赞态，避免每篇帖子各发两次 Redis 请求。
+        Map<Long, Map<String, Integer>> statsByPost = postHotService.getPostStatsBatch(postIds);
+        Map<Long, Boolean> likedByPost = postHotService.getLikedStateBatch(postIds, userId);
+
+        for (PostVO post : page.getRecords()) {
+            Map<String, Integer> stats = statsByPost.get(post.getId());
+            if (stats != null) {
+                post.setLikes(stats.getOrDefault("likes", post.getLikes() == null ? 0 : post.getLikes()));
+                post.setCommentCount(stats.getOrDefault("comments",
+                        post.getCommentCount() == null ? 0 : post.getCommentCount()));
+            }
+            post.setIsLiked(likedByPost.getOrDefault(post.getId(), false));
+        }
+    }
+
+    private static int clampPageSize(Integer pageSize) {
+        int size = pageSize == null ? 10 : pageSize;
+        return Math.min(Math.max(size, 1), 50);
     }
 }

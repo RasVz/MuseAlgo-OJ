@@ -55,14 +55,14 @@
           <div class="feed-filter-bar">
             <div class="sort-tabs">
               <span 
-                :class="['sort-item', { active: sortBy === 'latest' }]" 
-                @click="changeSort('latest')"
-              >最新发布</span>
-              <el-divider direction="vertical" />
-              <span 
                 :class="['sort-item', { active: sortBy === 'hot' }]" 
                 @click="changeSort('hot')"
-              >热门推荐</span>
+              >推荐</span>
+              <el-divider direction="vertical" />
+              <span 
+                :class="['sort-item', { active: sortBy === 'latest' }]" 
+                @click="changeSort('latest')"
+              >最新</span>
             </div>
             <button class="feed-tag-trigger" @click="tagDialogVisible = true">
               <span v-if="selectedTags.length">已选 {{ selectedTags.length }} 个标签</span>
@@ -142,6 +142,7 @@
               layout="prev, pager, next" 
               :total="total" 
               :page-size="pageSize"
+              :current-page="currentPage"
               @current-change="handlePageChange"
             />
           </div>
@@ -165,7 +166,7 @@
 // 文章广场：分类 / 排序 / 关键词 / 标签四类筛选的组合。
 // 所有数据与请求逻辑都在 usePublicPostFeed 里，本页只做展示与交互绑定。
 import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import NavbarContext from '@/components/NavbarContext.vue'
 import PostTagSelectorDialog from './components/PostTagSelectorDialog.vue'
@@ -177,6 +178,7 @@ import {
 import dayjs from 'dayjs'
 
 const router = useRouter()
+const route = useRoute()
 
 const tagDialogVisible = ref(false)
 // 分类表里存的是图标名字符串，这里映射成组件对象供模板直接渲染。
@@ -192,6 +194,7 @@ const {
   records: articleList,
   total,
   pageSize,
+  currentPage,
   load: fetchData,
   currentCategory,
   sortBy,
@@ -199,11 +202,38 @@ const {
   selectedTags,
   tagGroups,
   loadTagOptions,
-  applyTags,
-  removeTag,
-  clearTags,
-  filterByTag
+  applyTags: applyTagsRaw,
+  removeTag: removeTagRaw,
+  clearTags: clearTagsRaw,
+  filterByTag: filterByTagRaw
 } = usePublicPostFeed({ notify: (message) => ElMessage.error(message) })
+
+// 筛选与页码写入 query：从详情返回时能恢复用户刚才的浏览位置。
+const syncQuery = (page) => {
+  const query = {}
+  if (currentCategory.value !== 'all') query.category = currentCategory.value
+  if (sortBy.value !== 'hot') query.sort = sortBy.value
+  if (selectedTags.value.length) query.tags = selectedTags.value.join(',')
+  if (page > 1) query.page = String(page)
+  router.replace({ query })
+}
+
+const applyTags = (tags) => {
+  applyTagsRaw(tags)
+  syncQuery(1)
+}
+const removeTag = (tag) => {
+  removeTagRaw(tag)
+  syncQuery(1)
+}
+const clearTags = () => {
+  clearTagsRaw()
+  syncQuery(1)
+}
+const filterByTag = (tag) => {
+  filterByTagRaw(tag)
+  syncQuery(1)
+}
 
 const formatTime = (time) => {
   if (!time) return ''
@@ -214,15 +244,18 @@ const formatTime = (time) => {
 // 用户会以为"这个分类没有文章"。
 const handleCategoryChange = (id) => {
   currentCategory.value = id
+  syncQuery(1)
   fetchData(1)
 }
 
 const changeSort = (type) => {
   sortBy.value = type
+  syncQuery(1)
   fetchData(1)
 }
 
 const handlePageChange = (val) => {
+  syncQuery(val)
   fetchData(val)
 }
 
@@ -230,9 +263,17 @@ const goToPostDetail = (id) => router.push({ name: 'PostDetail', params: { id: i
 const goToUserProfile = (id) => router.push({ name: 'UserProfile', params: { id: id } })
 
 // 标签选项与首屏列表并发拉：两者互不依赖，串行会让首屏多等一个往返。
-onMounted(async () => {
-  await loadTagOptions()
-  fetchData()
+// loadTagOptions 内部已捕获异常，失败只影响标签弹窗，不阻塞列表。
+onMounted(() => {
+  const category = String(route.query.category || 'all')
+  if (categories.some((item) => item.id === category)) currentCategory.value = category
+  if (route.query.sort === 'latest') sortBy.value = 'latest'
+  const tags = typeof route.query.tags === 'string' ? route.query.tags.split(',').filter(Boolean) : []
+  if (tags.length) selectedTags.value = tags
+
+  const page = Number(route.query.page)
+  loadTagOptions()
+  fetchData(Number.isFinite(page) && page > 0 ? page : 1)
 })
 </script>
 

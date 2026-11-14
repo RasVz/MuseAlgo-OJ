@@ -10,7 +10,7 @@
 
     <div class="post-body">
       <h3 v-if="post.title" class="post-title">{{ post.title }}</h3>
-      <p class="post-text">{{ post.content }}</p>
+      <p class="post-text">{{ post.summary || '暂无内容' }}</p>
     </div>
 
     <div v-if="post.imagesArray && post.imagesArray.length > 0" :class="['image-grid', getGridClass(post.imagesArray.length)]">

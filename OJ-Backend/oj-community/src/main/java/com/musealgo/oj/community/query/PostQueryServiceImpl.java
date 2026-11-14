@@ -74,6 +74,16 @@ class PostQueryServiceImpl implements PostQueryService {
         applyContentFilter(query, contentType); posts.page(records, query);
         UserDisplayInfo author = users.findDisplayInfo(userId).orElse(null);
         List<PostVO> views = records.getRecords().stream().map(post -> toAuthorView(post, author)).collect(Collectors.toList());
+        Map<Long, Map<String, Integer>> statsByPost = hotPosts.getPostStatsBatch(
+                records.getRecords().stream().map(Post::getId).toList());
+        for (PostVO view : views) {
+            Map<String, Integer> stats = statsByPost.get(view.getId());
+            if (stats != null) {
+                view.setViews(stats.getOrDefault("views", value(view.getViews())));
+                view.setLikes(stats.getOrDefault("likes", value(view.getLikes())));
+                view.setCommentCount(stats.getOrDefault("comments", value(view.getCommentCount())));
+            }
+        }
         Page<PostVO> result = new Page<>(page, size, records.getTotal()); result.setRecords(views); return result;
     }
 
@@ -115,10 +125,10 @@ class PostQueryServiceImpl implements PostQueryService {
 
     private PostVO toAuthorView(Post post, UserDisplayInfo author) {
         PostVO view = new PostVO(); BeanUtils.copyProperties(post, view);
+        // 我的内容列表同样不需要正文，避免把 longtext 带进列表响应。
+        view.setContent(null);
         if (author != null) { view.setAuthorName(author.username()); view.setAuthorAvatar(author.avatar()); }
-        Map<String, Integer> stats = hotPosts.getPostStats(post.getId());
-        view.setViews(stats.getOrDefault("views", value(post.getViews()))); view.setLikes(stats.getOrDefault("likes", value(post.getLikes())));
-        view.setCommentCount(stats.getOrDefault("comments", value(post.getCommentCount()))); return view;
+        return view;
     }
 
     /**
