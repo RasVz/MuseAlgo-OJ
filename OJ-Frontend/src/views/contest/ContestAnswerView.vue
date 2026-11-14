@@ -121,7 +121,7 @@ const bootstrap = async () => {
   loading.value = true
   error.value = ''
   try {
-    await refreshPaper(true)
+    await refreshPaper()
     startPaperLoop()
   } catch (caught) {
     error.value = caught.message || '比赛答题加载失败'
@@ -130,19 +130,18 @@ const bootstrap = async () => {
   }
 }
 
-const refreshPaper = async (initial = false) => {
+const refreshPaper = async () => {
   const res = await getContestAnswerPaper(contestId.value)
   if (!isResultSuccess(res)) {
     throw new Error(getResultMessage(res, '比赛答题加载失败'))
   }
   paper.value = unwrapResultData(res)
+  // 草稿范围每次刷新都按当前比赛重建：从一场比赛答题页直接切到另一场时仍能正确隔离。
+  draftAdapter.value = createScopedDraftAdapter(`contest:${contestId.value}`)
   sync({
     remainingSeconds: paper.value?.remainingSeconds,
     deadline: paper.value?.deadline
   })
-  if (initial) {
-    draftAdapter.value = createScopedDraftAdapter(`contest:${contestId.value}`)
-  }
   syncActiveKey()
   await loadActiveProblem()
 }
@@ -242,7 +241,7 @@ const pollSubmission = (submissionId, problemId) => {
         if (terminal) {
           clearInterval(submissionPollTimer)
           submissionPollTimer = null
-          await refreshPaper(false)
+          await refreshPaper()
         }
       }
     } catch {
@@ -260,7 +259,7 @@ const startPaperLoop = () => {
   paperTimer = setInterval(async () => {
     if (disposed) return
     try {
-      await refreshPaper(false)
+      await refreshPaper()
     } catch {
       // 定时刷新失败不打断作答。
     }
@@ -299,12 +298,18 @@ const backToContest = () => {
 }
 
 const handleVisibility = () => {
-  if (document.visibilityState === 'visible') refreshPaper(false).catch(() => {})
+  if (document.visibilityState === 'visible') refreshPaper().catch(() => {})
 }
 
 watch(() => route.query.q, () => {
   syncActiveKey()
   loadActiveProblem()
+})
+
+watch(contestId, () => {
+  paper.value = null
+  codingProblem.value = null
+  bootstrap()
 })
 
 onMounted(() => {

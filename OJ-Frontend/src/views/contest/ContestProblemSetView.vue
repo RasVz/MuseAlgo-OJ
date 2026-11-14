@@ -285,10 +285,29 @@ const ensureEntry = async () => {
   }
   if (isApprovedRegistration.value) return true
 
+  // 进入报名前再拉一次：上次加载可能因瞬时失败把已报名用户误判成未报名。
+  await fetchRegistration()
+  if (isApprovedRegistration.value) return true
+  if (registrationRejected.value) {
+    ElMessage.warning('报名未通过审核，不能查看题目')
+    return false
+  }
+  if (registrationPending.value) {
+    ElMessage.info('报名审核中，通过后可进入答题')
+    return false
+  }
+
   registering.value = true
   try {
     const res = await registerContestApi(contestId.value)
     if (res.code !== 200) {
+      // 并发或重复报名：重新读取一次状态，已通过则直接进入。
+      await fetchRegistration()
+      if (isApprovedRegistration.value) return true
+      if (registrationPending.value) {
+        ElMessage.info('报名已提交，等待审核')
+        return false
+      }
       ElMessage.error(res.message || '报名失败')
       return false
     }
