@@ -55,6 +55,7 @@ import CodingQuestionPane from '@/views/answer/components/CodingQuestionPane.vue
 import { getContestAnswerPaper, getContestAnswerProblem, finishVp } from '@/api/contest'
 import { submitCode } from '@/api/problem'
 import { getSubmissionDetail } from '@/api/submission'
+import { useUserStore } from '@/stores/userStore'
 import { useServerClock } from '@/composables/useServerClock'
 import { createScopedDraftAdapter } from '@/composables/useScopedCodeDraft'
 import { getResultMessage, isResultSuccess, unwrapResultData } from '@/utils/response'
@@ -74,7 +75,8 @@ const codingLoading = ref(false)
 const submitting = ref(false)
 const finishing = ref(false)
 const resultsByProblem = reactive({})
-const draftAdapter = ref(createScopedDraftAdapter(`contest:${contestId.value}`))
+const userStore = useUserStore()
+const draftAdapter = ref(createScopedDraftAdapter(`contest:${contestId.value}`, userStore.userId))
 
 let paperTimer = null
 let submissionPollTimer = null
@@ -137,7 +139,7 @@ const refreshPaper = async () => {
   }
   paper.value = unwrapResultData(res)
   // 草稿范围每次刷新都按当前比赛重建：从一场比赛答题页直接切到另一场时仍能正确隔离。
-  draftAdapter.value = createScopedDraftAdapter(`contest:${contestId.value}`)
+  draftAdapter.value = createScopedDraftAdapter(`contest:${contestId.value}`, userStore.userId)
   sync({
     remainingSeconds: paper.value?.remainingSeconds,
     deadline: paper.value?.deadline

@@ -5,9 +5,11 @@
       <el-tag size="small" effect="plain">{{ typeLabel }}</el-tag>
       <el-tag size="small" effect="plain">{{ question.score ?? 0 }} 分</el-tag>
       <el-tag v-if="answered" size="small" type="info" effect="plain">已作答</el-tag>
-      <el-tag v-if="question.correct === true" size="small" type="success">正确</el-tag>
-      <el-tag v-else-if="question.correct === false" size="small" type="danger">错误</el-tag>
+      <el-tag v-if="hasCurrentResult && question.correct === true" size="small" type="success">正确</el-tag>
+      <el-tag v-else-if="hasCurrentResult && question.correct === false" size="small" type="danger">错误</el-tag>
     </div>
+
+    <p v-if="saveStatusText" class="save-status" role="status">{{ saveStatusText }}</p>
 
     <div class="question-statement markdown-body" v-html="renderedStatement"></div>
 
@@ -48,7 +50,7 @@
       </el-radio-group>
     </div>
 
-    <div v-if="question.correct != null" class="question-result" :class="question.correct ? 'result-ok' : 'result-bad'">
+    <div v-if="hasCurrentResult && question.correct != null" class="question-result" :class="question.correct ? 'result-ok' : 'result-bad'">
       {{ question.correct ? '回答正确' : '回答错误' }}，得分 {{ question.gainedScore ?? 0 }} 分
       <span class="result-hint">交卷后可查看正确答案与解析</span>
     </div>
@@ -57,6 +59,7 @@
 
 <script setup>
 import { computed } from 'vue'
+import { serializeQuestionAnswer } from '@/utils/examPaper'
 import { createMarkdown } from '@/utils/markdown'
 import { sanitizeStatementMarkup } from '@/utils/statement-markup'
 
@@ -64,6 +67,7 @@ const props = defineProps({
   question: { type: Object, required: true },
   modelValue: { type: [String, Array], default: '' },
   disabled: { type: Boolean, default: false },
+  saveStatusText: { type: String, default: '' },
   index: { type: Number, default: 0 }
 })
 
@@ -77,6 +81,8 @@ const options = computed(() => props.question.options || [])
 const answered = computed(() => Array.isArray(props.modelValue)
   ? props.modelValue.length > 0
   : String(props.modelValue ?? '').trim().length > 0)
+const hasCurrentResult = computed(() => answered.value
+  && serializeQuestionAnswer(props.question, props.modelValue) === serializeQuestionAnswer(props.question, props.question.myAnswer))
 const typeLabel = computed(() => ({
   SINGLE: '单选题',
   MULTIPLE: '多选题',
@@ -87,6 +93,8 @@ const renderOption = option => render(`${option.key}. ${option.text}`)
 </script>
 
 <style scoped>
+.save-status { color: var(--text-secondary); font-size: 12px; }
+
 .objective-pane {
   height: 100%;
   overflow-y: auto;

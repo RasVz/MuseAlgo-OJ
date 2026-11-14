@@ -10,6 +10,9 @@ async function installApi(page, options = {}) {
     mode: options.mode || 'ACM',
     status: options.status || 'RUNNING',
     submitted: false,
+    vpStatus: options.vpStatus ?? null,
+    vpStarts: 0,
+    entryFails: false,
     hasLastSubmission: options.hasLastSubmission ?? false,
     registrationStatus: options.registrationStatus ?? 'APPROVED',
     registrationReviewRequired: options.registrationReviewRequired ?? false,
@@ -22,7 +25,7 @@ async function installApi(page, options = {}) {
   await page.addInitScript(() => {
     localStorage.setItem('accessToken', 'synthetic-contest-token')
     localStorage.setItem('user', JSON.stringify({ id: 41, username: 'student', nickname: '合成学生', role: 0 }))
-    localStorage.setItem(`musealgo:scoped-draft:contest:77:${201}:cpp`, JSON.stringify({
+    localStorage.setItem(`musealgo:scoped-draft:user:41:contest:77:${201}:cpp`, JSON.stringify({
       code: 'int main() { return 0; }',
       language: 'cpp',
       updatedAt: Date.now()
@@ -44,7 +47,7 @@ async function installApi(page, options = {}) {
         title: '合成比赛',
         mode: state.mode,
         startTime: new Date(Date.now() - 600000).toISOString(),
-        endTime: new Date(Date.now() + 3600000).toISOString(),
+        endTime: new Date(Date.now() + (state.status === 'ENDED' ? -1000 : 3600000)).toISOString(),
         registrationReview: state.registrationReviewRequired ? 1 : 0,
         visible: 1
       })
@@ -56,12 +59,20 @@ async function installApi(page, options = {}) {
       ])
     }
     if (path === `/contest/${CONTEST_ID}/registration/mine`) {
+      if (state.entryFails) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ code: 503, message: '状态读取失败' }) })
       return json({
         registered: state.registrationStatus != null,
         status: state.registrationStatus,
         registrationReviewRequired: state.registrationReviewRequired
       })
     }
+    if (path === `/contest/${CONTEST_ID}/vp/start`) {
+      state.vpStarts += 1
+      state.vpStatus = 'RUNNING'
+      state.canSubmit = true
+      return json({ status: 'RUNNING', remainingSeconds: 3600 })
+    }
+    if (path === `/contest/${CONTEST_ID}/vp`) return json(state.vpStatus ? { status: state.vpStatus, remainingSeconds: 3600 } : null)
     if (path === `/contest/${CONTEST_ID}/answer/paper`) {
       if (state.status === 'NOT_STARTED') {
         return json({
@@ -242,3 +253,41 @@ test('contest answer page fits four desktop widths in light and dark themes', as
     await page.evaluate(() => document.documentElement.classList.remove('dark'))
   }
 })
+
+
+for (const [vpStatus, label] of [[null, '开始虚拟参赛'], ['RUNNING', '继续虚拟参赛'], ['FINISHED', '进入复盘']]) {
+  test(`ended problem page exposes VP entry: ${label}`, async ({ page }) => {
+    const state = await installApi(page, { status: 'ENDED', canSubmit: false, registrationStatus: null, vpStatus })
+    await page.goto(`/contest/${CONTEST_ID}/problem`, { waitUntil: 'networkidle' })
+    await page.getByRole('button', { name: label, exact: true }).click()
+    await expect(page).toHaveURL(new RegExp(`/contest/${CONTEST_ID}/answer`))
+    expect(state.vpStarts).toBe(vpStatus ? 0 : 1)
+  })
+}
+
+
+test('entry state failures can be retried without creating a VP attempt', async ({ page }) => {
+  const state = await installApi(page, { status: 'ENDED', registrationStatus: null })
+  state.entryFails = true
+  await page.goto(`/contest/${CONTEST_ID}/problem`, { waitUntil: 'networkidle' })
+  await expect(page.getByRole('button', { name: '重试参赛状态' })).toBeVisible()
+  expect(state.vpStarts).toBe(0)
+  state.entryFails = false
+  await page.getByRole('button', { name: '重试参赛状态' }).click()
+  await expect(page.getByRole('button', { name: '开始虚拟参赛' })).toBeEnabled()
+  expect(state.vpStarts).toBe(0)
+})
+
+
+for (const registrationStatus of ['PENDING', 'REJECTED']) {
+  for (const vpStatus of ['FINISHED', 'SETTLING']) {
+    test(`own ${vpStatus} VP review remains available with ${registrationStatus} formal registration`, async ({ page }) => {
+      const state = await installApi(page, { status: 'ENDED', canSubmit: false, registrationStatus, vpStatus })
+      await page.goto(`/contest/${CONTEST_ID}/problem`, { waitUntil: 'networkidle' })
+      await page.getByRole('button', { name: '进入复盘', exact: true }).click()
+      await expect(page).toHaveURL(new RegExp(`/contest/${CONTEST_ID}/answer`))
+      await expect(page.getByText('输入两个整数，输出它们的和。')).toBeVisible()
+      expect(state.vpStarts).toBe(0)
+    })
+  }
+}

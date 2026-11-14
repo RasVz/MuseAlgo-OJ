@@ -39,7 +39,13 @@ async function installApi(page, options = {}) {
     attemptStatus: options.attemptStatus || 'RUNNING',
     remainingSeconds: options.remainingSeconds ?? 600,
     gradingPending: options.gradingPending ?? false,
-    finishPending: options.finishPending ?? false
+    finishPending: options.finishPending ?? false,
+    objectiveAnswer: '',
+    answerAtFinish: null,
+    saveFails: false,
+    paperReads: 0,
+    saveCalls: [],
+    releaseSave: null
   }
   await page.route('**/monaco-editor@*/min/vs/**', route => {
     const asset = new URL(route.request().url()).pathname.split('/min/vs/')[1]
@@ -48,7 +54,7 @@ async function installApi(page, options = {}) {
   await page.addInitScript(id => {
     localStorage.setItem('accessToken', 'synthetic-answer-token')
     localStorage.setItem('user', JSON.stringify({ id: 41, username: 'student', nickname: '合成学生', role: 0 }))
-    localStorage.setItem(`musealgo:scoped-draft:paper:${id}:${2001}:cpp`, JSON.stringify({
+    localStorage.setItem(`musealgo:scoped-draft:user:41:paper:${id}:${2001}:cpp`, JSON.stringify({
       code: 'int main() { return 0; }',
       language: 'cpp',
       updatedAt: Date.now()
@@ -89,6 +95,7 @@ async function installApi(page, options = {}) {
         })
       }
       const expired = state.remainingSeconds <= 0
+      state.answerAtFinish = state.objectiveAnswer
       state.attemptStatus = expired ? 'TIMEOUT' : 'SUBMITTED'
       state.remainingSeconds = 0
       return json({
@@ -101,6 +108,7 @@ async function installApi(page, options = {}) {
       })
     }
     if (path === `/exam-paper/${PAPER_ID}/attempt/${ATTEMPT_ID}/answer/paper`) {
+      state.paperReads += 1
       return json({
         paperId: PAPER_ID,
         attemptId: ATTEMPT_ID,
@@ -123,10 +131,10 @@ async function installApi(page, options = {}) {
           options: [],
           score: 5,
           questionOrder: 1,
-          myAnswer: state.submitted ? 'T' : '',
-          correct: state.submitted ? true : null,
+          myAnswer: state.objectiveAnswer,
+          correct: state.submitted ? state.objectiveAnswer === 'T' : null,
           gainedScore: state.submitted ? 5 : 0
-        }],
+        }, ...(options.twoObjective ? [{ id: 1002, questionType: 'JUDGE', statement: '第二道未作答题', options: [], score: 5, questionOrder: 2, myAnswer: '', correct: null }] : [])],
         codingProblems: [{
           problemId: CODING_ID,
           problemOrder: 1,
@@ -156,8 +164,13 @@ async function installApi(page, options = {}) {
       })
     }
     if (path === `/exam-paper/${PAPER_ID}/submit-answers` && request.method() === 'POST') {
+      if (state.saveFails) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ code: 503, message: '答案保存失败' }) })
+      const submittedAnswer = request.postDataJSON().answers.find(item => item.questionId === OBJECTIVE_ID)?.answer || ''
+      state.saveCalls.push(submittedAnswer)
+      if (options.holdFirstSave && state.saveCalls.length === 1) await new Promise(resolve => { state.releaseSave = resolve })
+      state.objectiveAnswer = request.postDataJSON().answers.find(item => item.questionId === OBJECTIVE_ID)?.answer || ''
       state.submitted = true
-      return json([{ questionId: OBJECTIVE_ID, correct: true, score: 5, myAnswer: 'T' }])
+      return json(request.postDataJSON().answers.map(item => ({ questionId: item.questionId, correct: item.answer === 'T', score: item.answer === 'T' ? 5 : 0, myAnswer: item.answer })))
     }
     if (path === '/submission/submit' && request.method() === 'POST') {
       state.codingSolved = true
@@ -234,6 +247,7 @@ test('objective draft restores and manual finish returns to the result page', as
   await expect(page).toHaveURL(new RegExp(`/training/${PAPER_ID}$`))
   await expect(page.getByText('本次作答已交卷')).toBeVisible()
   expect(state.attemptStatus).toBe('SUBMITTED')
+  expect(state.answerAtFinish).toBe('T')
 })
 
 test('pending judgement keeps the attempt open until judging finishes', async ({ page }) => {
@@ -260,4 +274,112 @@ test('expired attempt finishes automatically and returns to the timeout result',
   await expect(page).toHaveURL(new RegExp(`/training/${PAPER_ID}$`), { timeout: 15000 })
   await expect(page.locator('.el-tag__content').filter({ hasText: '时间到，已自动交卷' })).toBeVisible()
   expect(state.attemptStatus).toBe('TIMEOUT')
+})
+
+
+test('selecting an objective answer saves it without a separate submit click', async ({ page }) => {
+  const state = await installApi(page)
+  await page.goto(`/training/${PAPER_ID}`, { waitUntil: 'networkidle' })
+  await page.locator('.option-group .el-radio').filter({ hasText: '对' }).click()
+  await expect.poll(() => state.objectiveAnswer).toBe('T')
+})
+
+test('manual finish stops when the latest objective answer cannot be saved', async ({ page }) => {
+  const state = await installApi(page)
+  await page.goto(`/training/${PAPER_ID}`, { waitUntil: 'networkidle' })
+  state.saveFails = true
+  await page.locator('.option-group .el-radio').filter({ hasText: '对' }).click()
+  await page.getByRole('button', { name: '交卷', exact: true }).click()
+  await page.getByRole('button', { name: '确定交卷', exact: true }).click()
+  await expect(page.getByText(/答案.*保存.*失败|保存.*答案.*失败/).first()).toBeVisible()
+  expect(state.answerAtFinish).toBeNull()
+  expect(state.attemptStatus).toBe('RUNNING')
+})
+
+test('deadline with pending judging keeps refreshing and eventually finishes', async ({ page }) => {
+  const state = await installApi(page, { remainingSeconds: 0, gradingPending: true, finishPending: true })
+  await page.goto(`/training/${PAPER_ID}`, { waitUntil: 'networkidle' })
+  await expect(page).toHaveURL(new RegExp(`/training/${PAPER_ID}/answer`))
+  const reads = state.paperReads
+  state.gradingPending = false
+  state.finishPending = false
+  await expect.poll(() => state.paperReads, { timeout: 22000 }).toBeGreaterThan(reads)
+  await expect(page).toHaveURL(new RegExp(`/training/${PAPER_ID}$`), { timeout: 22000 })
+  expect(state.attemptStatus).toBe('TIMEOUT')
+})
+
+
+test('finish waits for an in-flight save and then saves the latest changed answer', async ({ page }) => {
+  const state = await installApi(page, { holdFirstSave: true })
+  await page.goto(`/training/${PAPER_ID}`, { waitUntil: 'networkidle' })
+  await page.locator('.option-group .el-radio').filter({ hasText: '对' }).click()
+  await expect.poll(() => state.saveCalls.length).toBe(1)
+  try {
+    await page.locator('.option-group .el-radio').filter({ hasText: '错' }).click()
+    await page.getByRole('button', { name: '交卷', exact: true }).click()
+    await page.getByRole('button', { name: '确定交卷', exact: true }).click()
+    await expect(page.getByRole('button', { name: '交卷', exact: true })).toHaveClass(/is-loading/)
+    expect(state.answerAtFinish).toBeNull()
+    state.releaseSave()
+    await expect(page).toHaveURL(new RegExp(`/training/${PAPER_ID}$`))
+    expect(state.saveCalls).toEqual(['T', 'F'])
+    expect(state.answerAtFinish).toBe('F')
+  } finally { state.releaseSave?.() }
+})
+
+
+test('timeout preserves an objective draft that could not be submitted before the deadline', async ({ page }) => {
+  const state = await installApi(page, { remainingSeconds: 0 })
+  await page.addInitScript(() => {
+    localStorage.setItem('exam-draft:41:501:700', JSON.stringify({ answers: [{ questionId: 1001, answer: 'T' }], savedAt: Date.now() }))
+  })
+  await page.goto(`/training/${PAPER_ID}/answer?attemptId=${ATTEMPT_ID}`, { waitUntil: 'networkidle' })
+  await expect(page).toHaveURL(new RegExp(`/training/${PAPER_ID}$`))
+  expect(state.saveCalls).toEqual([])
+  const draft = await page.evaluate(() => JSON.parse(localStorage.getItem('exam-draft:41:501:700')))
+  expect(draft.answers).toEqual([{ questionId: '1001', answer: 'T' }])
+})
+
+test('effective TIMEOUT while judging is pending stays on the answer page and later settles', async ({ page }) => {
+  const state = await installApi(page, { attemptStatus: 'TIMEOUT', remainingSeconds: 0, finishPending: true })
+  await page.goto(`/training/${PAPER_ID}/answer?attemptId=${ATTEMPT_ID}`, { waitUntil: 'networkidle' })
+  await expect(page.getByText('合成判断题：本题答案为对。')).toBeVisible()
+  expect(state.answerAtFinish).toBeNull()
+  state.finishPending = false
+  await expect(page).toHaveURL(new RegExp(`/training/${PAPER_ID}$`), { timeout: 22000 })
+  expect(state.attemptStatus).toBe('TIMEOUT')
+})
+
+
+test('autosaving one answer keeps blank questions untouched', async ({ page }) => {
+  const state = await installApi(page, { twoObjective: true })
+  await page.goto(`/training/${PAPER_ID}`, { waitUntil: 'networkidle' })
+  await page.locator('.option-group .el-radio').filter({ hasText: '对' }).click()
+  await expect.poll(() => state.objectiveAnswer).toBe('T')
+  await expect(page.getByRole('button', { name: /客观题 2，未作答/ }).first()).toBeVisible()
+  await page.getByRole('button', { name: /客观题 2/ }).first().click()
+  await expect(page.getByText('回答错误，得分 0 分')).toHaveCount(0)
+})
+
+
+test('a failed autosave retries the latest answer after connectivity recovers', async ({ page }) => {
+  const state = await installApi(page)
+  await page.goto(`/training/${PAPER_ID}`, { waitUntil: 'networkidle' })
+  state.saveFails = true
+  await page.locator('.option-group .el-radio').filter({ hasText: '对' }).click()
+  await expect(page.getByRole('status').filter({ hasText: '答案保存失败' })).toBeVisible()
+  await page.locator('.option-group .el-radio').filter({ hasText: '错' }).click()
+  state.saveFails = false
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+  await expect.poll(() => state.objectiveAnswer).toBe('F')
+  await expect(page.getByRole('status').filter({ hasText: '答案保存失败' })).toHaveCount(0)
+})
+
+test('an already submitted attempt redirects a direct answer URL to its result page', async ({ page }) => {
+  const state = await installApi(page, { attemptStatus: 'SUBMITTED', remainingSeconds: 0 })
+  await page.goto(`/training/${PAPER_ID}/answer?attemptId=${ATTEMPT_ID}`, { waitUntil: 'networkidle' })
+  await expect(page).toHaveURL(new RegExp(`/training/${PAPER_ID}$`))
+  await expect(page.getByText('本次作答已交卷')).toBeVisible()
+  expect(state.answerAtFinish).toBeNull()
+  expect(state.saveCalls).toEqual([])
 })

@@ -31,9 +31,10 @@ export function deleteExamPaper(id) {
   })
 }
 
-export function submitExamPaperAnswers(id, data) {
+export function submitExamPaperAnswers(id, data, { silent = false } = {}) {
   return request({
     url: `/exam-paper/${id}/submit-answers`,
+    silent,
     method: 'post',
     data
   })
@@ -53,9 +54,10 @@ export function getExamAttempt(id) {
   })
 }
 
-export function finishExamAttempt(id) {
+export function finishExamAttempt(id, { silent = false } = {}) {
   return request({
     url: `/exam-paper/${id}/attempt/finish`,
+    silent,
     method: 'post'
   })
 }
