@@ -346,6 +346,7 @@ onBeforeUnmount(() => {
   max-width: 1000px;
   margin: 20px auto;
   width: 100%;
+  box-sizing: border-box;
   background: var(--bg-surface);
   padding: 30px;
   border-radius: 4px;

@@ -43,7 +43,7 @@ onMounted(() => {
 <style scoped>
 .main-content { 
     background-color: var(--bg-app); 
-    padding: 20px; 
+    padding: 0; 
 }
 /* 整卷答题等沉浸式页面：去掉页面内边距并锁住滚动，由页面自己管理高度。 */
 .main-content.immersive {

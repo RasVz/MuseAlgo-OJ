@@ -166,7 +166,6 @@ function handlePrefSave(payload) {
 
 <style scoped>
 .settings-page {
-  margin: -20px;
   padding-bottom: 40px;
   min-width: 0;
   font-family: var(--font-family);

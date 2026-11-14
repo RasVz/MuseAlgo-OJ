@@ -194,7 +194,7 @@ watch(() => route.query, () => {
 .submissions-page-wrapper {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - var(--app-header-height) - 40px);
+  height: calc(100vh - var(--app-header-height));
   padding: 0px;
   background-color: var(--bg-app);
 }

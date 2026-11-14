@@ -252,7 +252,7 @@ watch(
 /* 整个容器撑满剩余高度 */
 .class-contest-container {
   padding: 10px;
-  height: calc(100vh - var(--app-header-height) - 60px); /* 视口高度减去顶栏及页面外层占用 */
+  height: calc(100vh - var(--app-header-height));
   display: flex;
   flex-direction: column;
 }

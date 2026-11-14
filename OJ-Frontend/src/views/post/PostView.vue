@@ -240,7 +240,7 @@ onMounted(async () => {
 /* ===== PostView ===== */
 .columns-square-container { min-height: 100%; }
 .navbar-title { font-size: 18px; font-weight: 600; color: var(--text-primary); display: flex; align-items: center; }
-.main-content-wrapper { max-width: 1280px; margin: 0 auto; padding: 10px 0; }
+.main-content-wrapper { max-width: 1280px; margin: 0 auto; padding: 10px; }
 
 /* --- 侧边栏 --- */
 .category-card { border-radius: var(--radius-md); border: 1px solid var(--border-light); box-shadow: none; }

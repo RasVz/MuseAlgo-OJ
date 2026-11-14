@@ -85,7 +85,6 @@ watch(() => route.params.id, loadUser, { immediate: true })
 .profile-page {
   font-family: var(--font-family);
   min-width: 0;
-  margin: -20px;
   padding-bottom: 40px;
 }
 .user-banner {
