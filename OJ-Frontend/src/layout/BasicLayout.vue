@@ -44,6 +44,11 @@ onMounted(() => {
 .main-content { 
     background-color: var(--bg-app); 
     padding: 0; 
+    /* el-main 自己是滚动容器；强制保留纵向滚动条槽位，
+       避免筛选后内容变短、滚动条消失时整页横向抖动。
+       scrollbar-gutter 作为现代浏览器补充，overflow-y: scroll 兼容旧浏览器。 */
+    overflow-y: scroll;
+    scrollbar-gutter: stable;
 }
 /* 整卷答题等沉浸式页面：去掉页面内边距并锁住滚动，由页面自己管理高度。 */
 .main-content.immersive {
