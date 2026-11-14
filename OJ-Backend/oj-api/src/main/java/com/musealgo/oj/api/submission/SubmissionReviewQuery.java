@@ -33,8 +33,15 @@ public interface SubmissionReviewQuery {
             Integer runMemory,
             String errorMessage,
             Long contestId,
-            List<CaseStatusCount> caseStats
+            List<CaseStatusCount> caseStats,
+            Long examAttemptId
     ) {
+        public SubmissionReviewData(Long id, Long userId, Long problemId, Byte status, String language,
+                                    String code, Integer score, Integer runTime, Integer runMemory,
+                                    String errorMessage, Long contestId, List<CaseStatusCount> caseStats) {
+            this(id, userId, problemId, status, language, code, score, runTime, runMemory,
+                    errorMessage, contestId, caseStats, null);
+        }
     }
 
     /** 某状态（status code）下的用例数量。 */

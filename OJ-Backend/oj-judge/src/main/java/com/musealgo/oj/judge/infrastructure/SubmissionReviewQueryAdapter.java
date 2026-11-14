@@ -49,7 +49,8 @@ public class SubmissionReviewQueryAdapter implements SubmissionReviewQuery {
                 submission.getRunMemory(),
                 submission.getErrorMessage(),
                 submission.getContestId(),
-                caseStats
+                caseStats,
+                submission.getExamAttemptId()
         ));
     }
 }
