@@ -149,6 +149,7 @@ public class ContestAnswerApplicationService {
             item.setScore(row.getScore());
             item.setMyStatus(myStatus(context, row.getStatus()));
             item.setPending("0".equals(row.getStatus()));
+            item.setLastSubmissionId(row.getLastSubmissionId());
             items.add(item);
         }
         return items;

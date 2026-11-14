@@ -155,6 +155,30 @@ const syncActiveKey = () => {
   }
 }
 
+/**
+ * 赛后/刷新恢复：按最新提交补回判题结果。
+ * 赛中的 OI 由后端脱敏，前端只显示「已提交」；ACM 可恢复结论/耗时/内存。
+ */
+const loadLastResult = async problem => {
+  if (!problem?.lastSubmissionId || resultsByProblem[problem.problemId]) return
+  try {
+    const res = await getSubmissionDetail(problem.lastSubmissionId)
+    const detail = unwrapResultData(res)
+    if (!detail) return
+    resultsByProblem[problem.problemId] = {
+      id: detail.id,
+      status: detail.status,
+      judgePhase: detail.judgePhase,
+      score: detail.score,
+      runTime: detail.runTime,
+      runMemory: detail.runMemory,
+      errorMessage: detail.errorMessage
+    }
+  } catch {
+    // 复盘结果加载失败不阻断题面与导航。
+  }
+}
+
 const loadActiveProblem = async () => {
   const item = activeItem.value
   if (!item) {
@@ -171,6 +195,7 @@ const loadActiveProblem = async () => {
     if (generation !== codingGeneration) return
     if (!isResultSuccess(res)) throw new Error(getResultMessage(res, '题面加载失败'))
     codingProblem.value = unwrapResultData(res)
+    await loadLastResult(activeProblem.value)
   } catch (caught) {
     if (generation === codingGeneration) showApiError(caught, '题面加载失败')
   } finally {

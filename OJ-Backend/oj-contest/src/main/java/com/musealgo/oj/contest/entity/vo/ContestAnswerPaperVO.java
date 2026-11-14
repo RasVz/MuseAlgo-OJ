@@ -37,5 +37,6 @@ public class ContestAnswerPaperVO {
         private Integer score;
         private String myStatus;
         private Boolean pending;
+        private Long lastSubmissionId;
     }
 }

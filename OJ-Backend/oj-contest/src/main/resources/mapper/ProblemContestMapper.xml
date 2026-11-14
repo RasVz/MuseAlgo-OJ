@@ -207,7 +207,15 @@
                AND s.problem_id = p.id
                AND s.contest_id = pc.contest_id
              ORDER BY s.create_time DESC
-             LIMIT 1) as status
+             LIMIT 1) as status,
+            -- 复盘用：最新一次提交 ID，供答题页按题恢复判题结果
+            (SELECT s.id
+             FROM submission s
+             WHERE s.user_id = #{userId}
+               AND s.problem_id = p.id
+               AND s.contest_id = pc.contest_id
+             ORDER BY s.create_time DESC
+             LIMIT 1) as lastSubmissionId
         FROM problem_contest pc
                  INNER JOIN problem p ON pc.problem_id = p.id
         WHERE pc.contest_id = #{contestId}

@@ -14,7 +14,7 @@
         <span class="timer" :class="{ warning: remainingSeconds <= 300 }" aria-live="polite">
           {{ formattedRemaining }}
         </span>
-        <el-button size="small" @click="navigatorVisible = true">
+        <el-button v-if="navItems.length" size="small" @click="navigatorVisible = true">
           <el-icon class="el-icon--left"><Tickets /></el-icon>
           答题卡
         </el-button>
@@ -41,7 +41,7 @@
     </header>
 
     <div class="workspace-body">
-      <aside class="question-rail" aria-label="题号导航">
+      <aside v-if="navItems.length" class="question-rail" aria-label="题号导航">
         <div class="rail-title">答题卡</div>
         <QuestionNavigator :items="navItems" :active-key="activeKey" @select="selectQuestion" />
       </aside>
@@ -51,7 +51,7 @@
       </main>
     </div>
 
-    <el-drawer v-model="navigatorVisible" title="答题卡" size="320px" direction="rtl">
+    <el-drawer v-if="navItems.length" v-model="navigatorVisible" title="答题卡" size="320px" direction="rtl">
       <QuestionNavigator :items="navItems" :active-key="activeKey" @select="selectQuestion" />
     </el-drawer>
   </div>

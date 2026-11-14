@@ -10,6 +10,7 @@ async function installApi(page, options = {}) {
     mode: options.mode || 'ACM',
     status: options.status || 'RUNNING',
     submitted: false,
+    hasLastSubmission: options.hasLastSubmission ?? false,
     registrationStatus: options.registrationStatus ?? 'APPROVED',
     registrationReviewRequired: options.registrationReviewRequired ?? false,
     canSubmit: options.canSubmit ?? (options.status || 'RUNNING') === 'RUNNING'
@@ -91,12 +92,12 @@ async function installApi(page, options = {}) {
         canSubmit: state.canSubmit,
         canSelfTest: true,
         canFinish: false,
-        resultVisibility: state.mode === 'OI' ? 'SUBMITTED_ONLY' : 'VERDICT_TIME_MEMORY',
+        resultVisibility: state.status === 'ENDED' ? 'FULL' : (state.mode === 'OI' ? 'SUBMITTED_ONLY' : 'VERDICT_TIME_MEMORY'),
         registrationStatus: state.registrationStatus,
         registrationReviewRequired: state.registrationReviewRequired,
         problems: [
-          { problemId: PROBLEM_A, order: 1, title: 'A + B', score: 100, myStatus: state.submitted ? 'ATTEMPTED' : 'UNTOUCHED', pending: false },
-          { problemId: PROBLEM_B, order: 2, title: '求和', score: 100, myStatus: 'UNTOUCHED', pending: false }
+          { problemId: PROBLEM_A, order: 1, title: 'A + B', score: 100, myStatus: state.submitted || state.hasLastSubmission ? 'ATTEMPTED' : 'UNTOUCHED', pending: false, lastSubmissionId: state.hasLastSubmission ? 9101 : null },
+          { problemId: PROBLEM_B, order: 2, title: '求和', score: 100, myStatus: 'UNTOUCHED', pending: false, lastSubmissionId: null }
         ]
       })
     }
@@ -208,5 +209,36 @@ test('not-started contest only shows the countdown and no problems', async ({ pa
   await page.goto(`/contest/${CONTEST_ID}/answer`, { waitUntil: 'networkidle' })
 
   await expect(page.getByText('比赛尚未开始，开始后可进入答题')).toBeVisible()
+  await expect(page.getByRole('button', { name: '答题卡' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: /题目 A/ })).toHaveCount(0)
+})
+
+test('ended contest restores my latest submission for review', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await installApi(page, { status: 'ENDED', canSubmit: false, hasLastSubmission: true })
+  await page.goto(`/contest/${CONTEST_ID}/answer?q=coding-${PROBLEM_A}`, { waitUntil: 'networkidle' })
+
+  await expect(page.locator('.result-strip strong').filter({ hasText: '答案错误' })).toBeVisible()
+  await expect(page.getByText('耗时 120 ms')).toBeVisible()
+  await expect(page.getByText('内存 2048 KB')).toBeVisible()
+})
+
+test('contest answer page fits four desktop widths in light and dark themes', async ({ page }) => {
+  await installApi(page)
+  for (const width of [1920, 1440, 1280, 1024]) {
+    await page.setViewportSize({ width, height: 900 })
+    await page.goto(`/contest/${CONTEST_ID}/answer?q=coding-${PROBLEM_A}`, { waitUntil: 'networkidle' })
+    await expect(page.locator('.workspace-topbar')).toBeVisible()
+
+    const lightOverflow = await page.evaluate(() =>
+      document.documentElement.scrollWidth - document.documentElement.clientWidth)
+    expect(lightOverflow).toBeLessThanOrEqual(1)
+
+    await page.evaluate(() => document.documentElement.classList.add('dark'))
+    await expect(page.locator('.workspace-topbar')).toBeVisible()
+    const darkOverflow = await page.evaluate(() =>
+      document.documentElement.scrollWidth - document.documentElement.clientWidth)
+    expect(darkOverflow).toBeLessThanOrEqual(1)
+    await page.evaluate(() => document.documentElement.classList.remove('dark'))
+  }
 })

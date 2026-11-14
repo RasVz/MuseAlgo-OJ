@@ -1,5 +1,6 @@
 package com.musealgo.oj.problem.application;
 import com.musealgo.oj.problem.entity.vo.ProblemVO;
+import com.musealgo.oj.api.contest.ContestProblemAccessQuery;
 import com.musealgo.oj.problem.mapper.ProblemListItemMapper;
 import com.musealgo.oj.problem.service.impl.ProblemListItemServiceImpl;
 import com.musealgo.oj.common.exception.ForbiddenException;
@@ -39,5 +40,17 @@ class ProblemListItemReadBoundaryTest {
   when(mapper.selectProblemsWithStatus(3L,4L)).thenReturn(List.of(item));
   var service=new ProblemListItemServiceImpl();ReflectionTestUtils.setField(service,"baseMapper",mapper);ReflectionTestUtils.setField(service,"readAccess",access);
   assertEquals(List.of(item),service.selectProblemsWithStatus(3L,4L));verifyNoInteractions(access);
+ }
+
+ @Test void runningContestProblemIsHiddenFromProblemLists() {
+  var mapper=mock(ProblemListItemMapper.class);
+  var contestAccess=mock(ContestProblemAccessQuery.class);
+  var item=new ProblemVO();item.setId(8L);item.setIsPublic(true);item.setIsDeleted(0);
+  when(mapper.selectProblemsWithStatus(3L,4L)).thenReturn(List.of(item));
+  when(contestAccess.findRunningFormalContestProblemIds()).thenReturn(java.util.Set.of(8L));
+  var service=new ProblemListItemServiceImpl();
+  ReflectionTestUtils.setField(service,"baseMapper",mapper);
+  ReflectionTestUtils.setField(service,"contestAccess",contestAccess);
+  assertTrue(service.selectProblemsWithStatus(3L,4L).isEmpty());
  }
 }
