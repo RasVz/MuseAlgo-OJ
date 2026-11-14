@@ -1,5 +1,5 @@
 <template>
-  <div class="contest-answer" v-loading="loading">
+  <div class="contest-answer" :class="{ standalone: isVpPaper }" v-loading="loading">
     <el-result v-if="error" icon="error" title="无法进入比赛答题" :sub-title="error">
       <template #extra>
         <el-button type="primary" @click="backToContest">返回比赛</el-button>
@@ -32,6 +32,7 @@
         :can-submit="canSubmit"
         :loading="codingLoading"
         :result-visibility="paper.resultVisibility || 'FULL'"
+        :read-mode="isVpPaper"
         @submit="submitCoding"
       />
 
@@ -66,6 +67,8 @@ const router = useRouter()
 const { remaining, sync } = useServerClock()
 
 const contestId = computed(() => String(route.params.id))
+// 虚拟参赛卷走独立路由，默认只读题面；正式比赛仍沿用原答题行为。
+const isVpPaper = computed(() => route.name === 'ContestVpAnswer')
 const paper = ref(null)
 const loading = ref(true)
 const error = ref('')
@@ -321,6 +324,11 @@ const finishVpPaper = async () => {
 }
 
 const backToContest = () => {
+  // 虚拟参赛卷由比赛页在新标签页打开，返回时优先关闭本标签页回到原页面。
+  if (isVpPaper.value && window.opener && !window.opener.closed) {
+    window.close()
+    return
+  }
   router.push({ name: 'ContestProblem', params: { id: contestId.value } })
 }
 
@@ -358,6 +366,8 @@ onBeforeUnmount(() => {
   min-height: 0;
   overflow: hidden;
 }
+/* 独立路由没有 BasicLayout 的 el-main 提供高度，需要自己占满视口。 */
+.contest-answer.standalone { height: 100dvh; }
 .contest-placeholder {
   display: flex;
   align-items: center;

@@ -376,13 +376,29 @@ const ensureEntry = async (startVirtual = false) => {
 
 const enterAnswer = async (problemId, startVirtual = false) => {
   if (entryLoading.value || registering.value) return
-  if (!(await ensureEntry(startVirtual))) return
-  const target = problemId || problems.value[0]?.problemId
-  router.push({
-    name: 'ContestAnswer',
-    params: { id: contestId.value },
-    query: target ? { q: `coding-${target}` } : {}
-  })
+  // 赛后的虚拟参赛/复盘卷在独立标签页打开：先同步占住标签页，
+  // 避免等待报名或 startVp 的网络往返后被浏览器当成非用户手势而拦截。
+  const isVpPaper = startVirtual || realStatus.value === 'Ended'
+  const pendingTab = isVpPaper ? window.open('', '_blank') : null
+  let handedOff = false
+  try {
+    if (!(await ensureEntry(startVirtual))) return
+    const target = problemId || problems.value[0]?.problemId
+    const location = {
+      name: isVpPaper ? 'ContestVpAnswer' : 'ContestAnswer',
+      params: { id: contestId.value },
+      query: target ? { q: `coding-${target}` } : {}
+    }
+    if (pendingTab) {
+      pendingTab.location.href = router.resolve(location).href
+      handedOff = true
+    } else {
+      // 弹窗被拦截时退回当前标签页，保证仍能进入答题。
+      router.push(location)
+    }
+  } finally {
+    if (pendingTab && !handedOff) pendingTab.close()
+  }
 }
 
 const handleEntry = () => entryError.value ? fetchEntryState() : enterAnswer()

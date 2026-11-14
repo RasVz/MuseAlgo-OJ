@@ -23,6 +23,8 @@ const studyRoutes = [
 const standaloneRoutes = [
   // 整卷练习在独立标签页打开，不继承全站顶部栏和侧边导航。
   { path: '/training/:id/answer', name: 'ExamPaperAnswer', component: () => import('@/views/training/ExamPaperAnswerView.vue'), meta: { title: '整卷答题', requiresAuth: true } },
+  // 虚拟参赛试卷：独立标签页打开，不继承全站顶部栏和侧边导航；题面默认只读，可手动打开 IDE。
+  { path: '/contest/:id/vp', name: 'ContestVpAnswer', component: () => import('@/views/contest/ContestAnswerView.vue'), meta: { title: '虚拟参赛答题', requiresAuth: true } },
   {
     path: '/admin/courseware/create',
     name: 'AdminCoursewareCreate',

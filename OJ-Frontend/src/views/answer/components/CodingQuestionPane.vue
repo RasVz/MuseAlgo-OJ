@@ -15,8 +15,22 @@
     </div>
     <pre v-if="resultVisibility !== 'SUBMITTED_ONLY' && lastResult?.errorMessage" class="error-output">{{ lastResult.errorMessage }}</pre>
 
+    <div v-if="readMode && !ideOpen && workspaceProblem" class="statement-view">
+      <el-scrollbar>
+        <article class="statement-card">
+          <ProblemDescription
+            :problem="workspaceProblem"
+            :samples="officialSamples"
+            :ai-enabled="false"
+            :is-ide-mode="false"
+            :show-ide-toggle="true"
+            @toggle-ide="ideOpen = true"
+          />
+        </article>
+      </el-scrollbar>
+    </div>
     <ProblemIdeWorkspace
-      v-if="workspaceProblem"
+      v-else-if="workspaceProblem"
       ref="workspaceRef"
       :key="workspaceProblem.id"
       :problem="workspaceProblem"
@@ -30,12 +44,13 @@
       :draft-adapter="draftAdapter"
       :draft-save-delay="2000"
       :ai-enabled="false"
-      :show-ide-toggle="false"
+      :show-ide-toggle="readMode"
       layout-storage-key="musealgo:problem-ide-layout:exam"
       @snapshot="snapshot = $event"
       @submit="handleSubmit"
       @run="runSelectedCase"
       @stop="stopCases"
+      @toggle-ide="ideOpen = false"
     />
     <el-empty v-else description="正在加载题面" :image-size="72" />
   </section>
@@ -45,6 +60,7 @@
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import ProblemIdeWorkspace from '@/views/problem/components/ProblemIdeWorkspace.vue'
+import ProblemDescription from '@/views/problem/components/ProblemDescription.vue'
 import { useProblemWorkbench } from '@/views/problem/composables/useProblemWorkbench'
 
 const props = defineProps({
@@ -55,6 +71,9 @@ const props = defineProps({
   pending: { type: Boolean, default: false },
   canSubmit: { type: Boolean, default: false },
   loading: { type: Boolean, default: false },
+  // 虚拟参赛试卷默认只读题面，用户点「进入 IDE 模式」后才挂载编辑器。
+  // 正式比赛与训练继续沿用原有「直接进入 IDE」的行为。
+  readMode: { type: Boolean, default: false },
   // FULL：完整结果；VERDICT_TIME_MEMORY：ACM 赛中只看结论/耗时/内存；SUBMITTED_ONLY：OI 赛中等赛后公布。
   resultVisibility: { type: String, default: 'FULL' }
 })
@@ -63,6 +82,7 @@ const emit = defineEmits(['submit'])
 
 const workspaceRef = ref(null)
 const snapshot = ref(null)
+const ideOpen = ref(!props.readMode)
 
 const workspaceProblem = computed(() => props.problem
   ? { ...props.problem, id: props.problem.problemId }
@@ -85,6 +105,11 @@ watch(workspaceProblem, problem => {
   stopCases()
   if (problem) initializeCases(problem)
 }, { immediate: true })
+
+// readMode 对应的路由切换时，恢复「默认只读题面」。
+watch(() => props.readMode, value => {
+  ideOpen.value = !value
+})
 
 const STATUS_LABELS = {
   0: '判题中',
@@ -122,6 +147,26 @@ const handleSubmit = () => {
   min-height: 0;
 }
 .coding-pane > :deep(.ide-layout) { flex: 1; min-height: 0; }
+
+.statement-view {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-app);
+}
+.statement-view :deep(.el-scrollbar) { height: 100%; }
+.statement-card {
+  max-width: 960px;
+  margin: 20px auto;
+  padding: 24px 28px 48px;
+  box-sizing: border-box;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-card);
+}
+@media (max-width: 900px) {
+  .statement-card { margin: 12px; padding: 18px 18px 36px; }
+}
 .result-strip {
   display: flex;
   align-items: center;
