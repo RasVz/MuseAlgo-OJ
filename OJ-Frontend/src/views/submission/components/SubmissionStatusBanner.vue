@@ -1,31 +1,33 @@
 <template>
   <div class="status-banner" :class="getStatusClass(detail.status)">
-    <div class="status-left">
-      <el-icon class="status-icon" :size="24">
-        <component :is="getStatusIcon(detail.status)" />
-      </el-icon>
-      <span class="status-text">{{ getStatusText(detail.status) }}</span>
-    </div>
+    <div class="status-inner">
+      <div class="status-left">
+        <el-icon class="status-icon" :size="24">
+          <component :is="getStatusIcon(detail.status)" />
+        </el-icon>
+        <span class="status-text">{{ getStatusText(detail.status) }}</span>
+      </div>
 
-    <div class="status-metrics">
-      <div class="metric-item">
-        <span class="label">分数</span>
-        <span class="value score">{{ detail.score }}</span>
-      </div>
-      <div class="divider"></div>
-      <div class="metric-item">
-        <span class="label">耗时</span>
-        <span class="value">{{ detail.runTime }} ms</span>
-      </div>
-      <div class="divider"></div>
-      <div class="metric-item">
-        <span class="label">内存</span>
-        <span class="value">{{ (detail.runMemory / 1024).toFixed(2) }} MB</span>
-      </div>
-      <div class="divider"></div>
-      <div class="metric-item">
-        <span class="label">语言</span>
-        <span class="value">{{ detail.language }}</span>
+      <div class="status-metrics">
+        <div class="metric-item">
+          <span class="label">分数</span>
+          <span class="value score">{{ detail.score }}</span>
+        </div>
+        <div class="divider"></div>
+        <div class="metric-item">
+          <span class="label">耗时</span>
+          <span class="value">{{ detail.runTime }} ms</span>
+        </div>
+        <div class="divider"></div>
+        <div class="metric-item">
+          <span class="label">内存</span>
+          <span class="value">{{ (detail.runMemory / 1024).toFixed(2) }} MB</span>
+        </div>
+        <div class="divider"></div>
+        <div class="metric-item">
+          <span class="label">语言</span>
+          <span class="value">{{ detail.language }}</span>
+        </div>
       </div>
     </div>
   </div>
@@ -73,14 +75,23 @@ const getStatusIcon = (s) => ({
 <style scoped>
 .status-banner {
   display: flex;
-  flex-wrap: wrap;
   justify-content: center;
-  align-items: center;
-  gap: 12px 32px;
-  padding: 14px 24px;
+  padding: 14px 0;
   border-radius: 0;
   border-bottom: 1px solid var(--border-light);
   background: var(--bg-app);
+}
+
+/* 与下方 detail-container 同宽同内边距：状态文字对齐内容左缘，指标对齐内容右缘。 */
+.status-inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 24px;
+  width: 100%;
+  max-width: 1000px;
+  padding: 0 24px;
+  box-sizing: border-box;
 }
 
 .status-left {
@@ -102,7 +113,8 @@ const getStatusIcon = (s) => ({
 .status-metrics {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 44px;
+  margin-left: auto;
 }
 
 .metric-item {
