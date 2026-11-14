@@ -124,7 +124,7 @@ public class ContestAnswerApplicationService {
         vo.setTimeLimit(statement.timeLimit());
         vo.setMemoryLimit(statement.memoryLimit());
         vo.setScore(relation.getScore());
-        vo.setMyStatus(myStatus(contest, context, latestStatus(contestId, problemId, userId)));
+        vo.setMyStatus(myStatus(context, latestStatus(contestId, problemId, userId)));
         vo.setCanSubmit(context.canSubmit());
         return vo;
     }
@@ -147,14 +147,14 @@ public class ContestAnswerApplicationService {
             item.setOrder(++order);
             item.setTitle(row.getTitle());
             item.setScore(row.getScore());
-            item.setMyStatus(myStatus(context.contest(), context, row.getStatus()));
+            item.setMyStatus(myStatus(context, row.getStatus()));
             item.setPending("0".equals(row.getStatus()));
             items.add(item);
         }
         return items;
     }
 
-    private String myStatus(Contest contest, AnswerContext context, String rawStatus) {
+    private String myStatus(AnswerContext context, String rawStatus) {
         if (rawStatus == null || rawStatus.isBlank()) {
             return "UNTOUCHED";
         }
