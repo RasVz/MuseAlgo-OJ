@@ -74,12 +74,12 @@ const trainingRoutes = [
 
 // 2.3 社区与文章模块
 const communityRoutes = [
-  { path: 'post', name: 'Post', component: () => import('@/views/post/PostView.vue'), meta: { title: '动态' } },
+  { path: 'post', name: 'Post', component: () => import('@/views/post/PostView.vue'), meta: { title: '社区' } },
   { path: 'discussion', name: 'Discussion', component: () => import('@/views/post/DiscussionView.vue'), meta: { title: '讨论广场' } },
   { path: 'discussion/create', name: 'DiscussionCreate', redirect: () => ({ path: '/editor', query: { channel: 'discussion' } }) },
-  { path: 'post/:id', name: 'PostDetail', component: () => import('@/views/post/PostDetailView.vue'), meta: { title: '动态详情', breadcrumb: [{ label: '动态', path: '/post' }] } },
-  { path: 'post/editor', name: 'PostCreate', component: () => import('@/views/post/PostEditorView.vue'), meta: { title: '写文章', breadcrumb: [{ label: '动态', path: '/post' }], requiresAuth: true } },
-  { path: 'post/editor/:id', name: 'PostEdit', component: () => import('@/views/post/PostEditorView.vue'), meta: { title: '编辑文章', breadcrumb: [{ label: '动态', path: '/post' }], requiresAuth: true } },
+  { path: 'post/:id', name: 'PostDetail', component: () => import('@/views/post/PostDetailView.vue'), meta: { title: '社区详情', breadcrumb: [{ label: '社区', path: '/post' }] } },
+  { path: 'post/editor', name: 'PostCreate', component: () => import('@/views/post/PostEditorView.vue'), meta: { title: '写文章', breadcrumb: [{ label: '社区', path: '/post' }], requiresAuth: true } },
+  { path: 'post/editor/:id', name: 'PostEdit', component: () => import('@/views/post/PostEditorView.vue'), meta: { title: '编辑文章', breadcrumb: [{ label: '社区', path: '/post' }], requiresAuth: true } },
   { path: 'announcement', name: 'Announcement', component: () => import('@/views/post/AnnouncementView.vue'), meta: { title: '系统公告' } },
 ]
 

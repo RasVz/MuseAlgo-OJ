@@ -3,8 +3,8 @@
     
     <NavbarContext>
       <div class="navbar-title">
-        <el-icon class="mr-2"><Reading /></el-icon>
-        文章广场
+        <el-icon class="mr-2"><ChatDotRound /></el-icon>
+        社区
       </div>
     </NavbarContext>
 
@@ -165,7 +165,7 @@
 </template>
 
 <script setup>
-// 文章广场：分类 / 排序 / 关键词 / 标签四类筛选的组合。
+// 社区：分类 / 排序 / 关键词 / 标签四类筛选的组合。
 // 所有数据与请求逻辑都在 usePublicPostFeed 里，本页只做展示与交互绑定。
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'

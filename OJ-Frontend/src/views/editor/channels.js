@@ -26,7 +26,7 @@ export const CHANNELS = {
     type: 2,
     defaultCategory: 'algorithm',
     categories: ARTICLE_CATEGORIES,
-    hint: '知识文章：支持标题层级、代码块、公式与表格，发布后可在文章广场检索。',
+    hint: '知识文章：支持标题层级、代码块、公式与表格，发布后可在社区检索。',
     placeholder: '写一篇知识文章…支持 Markdown、LaTeX 与代码块'
   },
   discussion: {
