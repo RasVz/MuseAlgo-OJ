@@ -86,8 +86,9 @@ public class ProblemController {
         return Result.success(appService.create(dto, userId));
     }
 
-    @Operation(summary = "获取比赛题目列表")
+    @Operation(summary = "获取比赛题目列表（仅教师/管理员；学员请从比赛答题页进入）")
     @GetMapping("/contest/{contestId}")
+    @PreAuthorize("hasAuthority('problem:manage')")
     public Result<List<ProblemDetailVO>> getProblemsByContest(@PathVariable Long contestId) {
         return Result.success(problemService.list(
                 new LambdaQueryWrapper<Problem>().eq(Problem::getContestId, contestId).orderByAsc(Problem::getId))

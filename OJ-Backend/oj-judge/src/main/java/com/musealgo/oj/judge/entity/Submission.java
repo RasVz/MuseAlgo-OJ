@@ -26,6 +26,10 @@ public class Submission implements Serializable {
     private Long contestId;
     @TableField("vp_attempt_id")
     private Long vpAttemptId;
+    @TableField("exam_attempt_id")
+    private Long examAttemptId;
+    @TableField("client_request_id")
+    private String clientRequestId;
     @TableField("problem_id")
     private Long problemId;
     @TableField("user_id")

@@ -23,6 +23,30 @@ export function getContestProblemList(contestId) {
   })
 }
 
+// 比赛参赛卷上下文（整卷答题页）
+export function getContestAnswerPaper(contestId) {
+  return request({
+    url: `/contest/${contestId}/answer/paper`,
+    method: 'get'
+  })
+}
+
+// 比赛参赛卷白名单题面
+export function getContestAnswerProblem(contestId, problemId) {
+  return request({
+    url: `/contest/${contestId}/answer/problem/${problemId}`,
+    method: 'get'
+  })
+}
+
+// 我的报名状态（比赛详情页「参赛」按钮）
+export function getMyContestRegistration(contestId) {
+  return request({
+    url: `/contest/${contestId}/registration/mine`,
+    method: 'get'
+  })
+}
+
 // 创建比赛
 export function createContest(data) {
   return request({

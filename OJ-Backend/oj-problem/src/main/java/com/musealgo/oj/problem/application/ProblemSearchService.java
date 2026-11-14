@@ -75,7 +75,8 @@ public class ProblemSearchService {
                 empty.setRecords(List.of());
                 return empty;
             }
-            var visibleIds = new HashSet<>(problemMapper.selectVisibleSearchIds(hits.ids(), difficulty, minDifficulty, maxDifficulty));
+            var visibleIds = new HashSet<>(problemMapper.selectVisibleSearchIds(
+                    hits.ids(), difficulty, minDifficulty, maxDifficulty, problemService.hiddenContestProblemIds()));
             List<Long> orderedIds = hits.ids().stream().filter(visibleIds::contains).distinct().toList();
             int from = (int) Math.min((long) (safePage - 1) * safeSize, orderedIds.size());
             int to = (int) Math.min((long) from + safeSize, orderedIds.size());

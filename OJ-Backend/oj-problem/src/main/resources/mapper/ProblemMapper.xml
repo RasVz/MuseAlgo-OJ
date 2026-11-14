@@ -13,6 +13,10 @@
             </when>
             <otherwise>AND 1 = 0</otherwise>
         </choose>
+        <if test="excludeProblemIds != null and excludeProblemIds.size() > 0">
+            AND id NOT IN
+            <foreach collection="excludeProblemIds" item="excludedId" open="(" separator="," close=")">#{excludedId}</foreach>
+        </if>
         <choose>
             <when test="difficulty != null">AND difficulty = #{difficulty}</when>
             <otherwise>
@@ -154,6 +158,11 @@
                     WHERE s.problem_id = p.id AND s.user_id = #{userId} AND s.status = 1
                 )
             </if>
+            <!-- 比赛进行期：公开题库列表不展示比赛题，避免绕过参赛卷直接看题 -->
+            <if test="excludeProblemIds != null and excludeProblemIds.size() > 0">
+                AND p.id NOT IN
+                <foreach collection="excludeProblemIds" item="excludedId" open="(" separator="," close=")">#{excludedId}</foreach>
+            </if>
         </where>
         ORDER BY p.id ASC
     </select>
@@ -242,6 +251,10 @@
               WHERE s.problem_id = p.id
                 AND s.user_id = #{userId}
           )
+        <if test="excludeProblemIds != null and excludeProblemIds.size() > 0">
+            AND p.id NOT IN
+            <foreach collection="excludeProblemIds" item="excludedId" open="(" separator="," close=")">#{excludedId}</foreach>
+        </if>
         ORDER BY RAND()
         LIMIT #{limit}
     </select>

@@ -59,6 +59,18 @@ class ProblemReadAccessServiceTest {
         problem(true).setIsDeleted(1); login(8L, "ADMIN");
         assertThrows(com.musealgo.oj.common.exception.BusinessException.class, () -> access.requireReadable(1L));
     }
+
+    @Test void runningContestProblemIsClosedToGenericDetailEvenWhenPublic() {
+        problem(true); when(contests.hasRunningFormalContestProblem(1L)).thenReturn(true);
+        login(10L, "STUDENT");
+        assertThrows(ForbiddenException.class, () -> access.requireReadable(1L));
+    }
+
+    @Test void adminCanPreviewRunningContestProblem() {
+        problem(true); when(contests.hasRunningFormalContestProblem(1L)).thenReturn(true);
+        login(8L, "ADMIN");
+        assertDoesNotThrow(() -> access.requireReadable(1L));
+    }
     @Test void publicListSerializationNeverIncludesStandardAnswer() throws Exception {
         var p = new com.musealgo.oj.problem.entity.vo.ProblemVO(); p.setStdAnswer("SECRET-CODE"); p.setStdExplanation("SECRET-EXPLANATION");
         String json = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(p);

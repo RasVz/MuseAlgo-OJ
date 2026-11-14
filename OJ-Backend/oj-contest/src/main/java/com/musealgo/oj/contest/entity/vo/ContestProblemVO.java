@@ -21,4 +21,5 @@ public class ContestProblemVO {
     private Integer problemOrder;
     private Integer score;
     private String status;           // 当前用户是否已通过（需要联表查询）
+    private Long lastSubmissionId;   // 当前用户在该题的最新提交，供复盘恢复判题结果
 }

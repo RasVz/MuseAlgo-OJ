@@ -118,6 +118,39 @@ public interface SubmissionMapper extends BaseMapper<Submission> {
             @Param("from") LocalDateTime from,
             @Param("to") LocalDateTime to);
 
+    /** 成套试卷会话用：按 exam_attempt_id 绑定每题最好成绩 */
+    @Select("<script>SELECT problem_id AS problemId, " +
+            "MAX(CASE WHEN status BETWEEN 1 AND 5 THEN score ELSE 0 END) AS bestScore FROM submission " +
+            "WHERE exam_attempt_id = #{attemptId} " +
+            "AND problem_id IN <foreach collection='problemIds' item='pid' open='(' separator=',' close=')'>#{pid}</foreach> " +
+            "GROUP BY problem_id</script>")
+    List<Map<String, Object>> selectBestScoresByAttempt(
+            @Param("attemptId") Long attemptId,
+            @Param("problemIds") java.util.Collection<Long> problemIds);
+
+    /** 成套试卷会话交卷前检查仍有未终态判题的绑定提交 */
+    @Select("<script>SELECT COUNT(*) FROM submission " +
+            "WHERE exam_attempt_id = #{attemptId} " +
+            "AND problem_id IN <foreach collection='problemIds' item='pid' open='(' separator=',' close=')'>#{pid}</foreach> " +
+            "AND ((COALESCE(status,0)=0 AND COALESCE(judge_phase,'') NOT IN ('FAILED','FINISHED')) " +
+            "OR judge_phase IN ('QUEUED','COMPILING','JUDGING'))</script>")
+    long countPendingExamAttemptScores(
+            @Param("attemptId") Long attemptId,
+            @Param("problemIds") java.util.Collection<Long> problemIds);
+
+    /** 整卷页恢复状态：每题最佳分、提交次数与判题中数量 */
+    @Select("<script>SELECT problem_id AS problemId, " +
+            "MAX(CASE WHEN status BETWEEN 1 AND 5 THEN score ELSE 0 END) AS bestScore, " +
+            "COUNT(*) AS attemptCount, " +
+            "SUM(CASE WHEN ((COALESCE(status,0)=0 AND COALESCE(judge_phase,'') NOT IN ('FAILED','FINISHED')) " +
+            "OR judge_phase IN ('QUEUED','COMPILING','JUDGING')) THEN 1 ELSE 0 END) AS pendingCount " +
+            "FROM submission WHERE exam_attempt_id = #{attemptId} " +
+            "AND problem_id IN <foreach collection='problemIds' item='pid' open='(' separator=',' close=')'>#{pid}</foreach> " +
+            "GROUP BY problem_id</script>")
+    List<Map<String, Object>> selectAttemptSummary(
+            @Param("attemptId") Long attemptId,
+            @Param("problemIds") java.util.Collection<Long> problemIds);
+
     @Update("UPDATE submission SET judge_phase = #{phase}, update_time = NOW() WHERE id = #{submissionId}")
     int updateJudgePhase(@Param("submissionId") Long submissionId, @Param("phase") String phase);
     Page<Submission> selectContestSubmissionPage(

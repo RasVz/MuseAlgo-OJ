@@ -68,6 +68,7 @@ const problemRoutes = [
 const trainingRoutes = [
   { path: 'training', name: 'Training', component: () => import('@/views/training/TrainingView.vue'), meta: { title: '训练' } },
   { path: 'training/:id', name: 'TrainingDetail', component: () => import('@/views/training/ExamPaperDetailView.vue'), meta: { title: '试卷详情', breadcrumb: [{ label: '训练', path: '/training' }] } },
+  { path: 'training/:id/answer', name: 'ExamPaperAnswer', component: () => import('@/views/training/ExamPaperAnswerView.vue'), meta: { title: '整卷答题', requiresAuth: true, immersive: true } },
 ]
 
 // 2.3 社区与文章模块
@@ -84,6 +85,8 @@ const communityRoutes = [
 // 2.4 比赛模块
 const contestRoutes = [
   { path: 'contest', name: 'Contest', component: () => import('@/views/contest/ContestView.vue'), meta: { title: '比赛大厅' } },
+  // 比赛参赛卷：整卷答题页，脱离比赛布局以保证作答期只保留答题必需入口。
+  { path: 'contest/:id/answer', name: 'ContestAnswer', component: () => import('@/views/contest/ContestAnswerView.vue'), meta: { title: '比赛答题', requiresAuth: true, immersive: true } },
   {
     path: 'contest/:id', component: () => import('@/layout/ContestLayout.vue'), meta: { title: '比赛详情', breadcrumb: [{ label: '比赛大厅', path: '/contest' }] },
     children: [

@@ -36,14 +36,14 @@ public class ReviewApplicationService {
         if (userId == null || !userId.equals(data.userId())) throw new BusinessException(CommonErrorCode.ACCESS_DENIED);
         if (data.code() == null || data.code().isBlank()) throw new BusinessException(AiErrorCode.AI_STATE_CONFLICT, "该提交没有可复盘的代码");
         if (data.status() == null || data.status() == 0) throw new BusinessException(AiErrorCode.AI_STATE_CONFLICT, "评测尚未完成，请稍后复盘");
-        boolean blocked = contest.shouldBlock(data.contestId()) || contest.shouldBlock(request.getContestId());
+        boolean blocked = contest.shouldBlock(data.contestId(), data.problemId()) || contest.shouldBlock(request.getContestId());
         return new PreparedReview(data, blocked ? null : problems.load(data.problemId()));
     }
 
     public AiAskOutcome stream(Long userId, AiReviewRequest request, PreparedReview prepared,
                                boolean privileged, Consumer<String> onChunk) {
         var data = prepared.data();
-        if (contest.shouldBlock(data.contestId()) || contest.shouldBlock(request.getContestId()))
+        if (contest.shouldBlock(data.contestId(), data.problemId()) || contest.shouldBlock(request.getContestId()))
             return AiAskOutcome.blocked(AiUsage.STATUS_CONTEST_BLOCKED, AiService.CONTEST_BLOCKED_NOTICE).withProblemId(data.problemId());
         if (!quota.tryAcquire(userId, privileged))
             return AiAskOutcome.blocked(AiUsage.STATUS_QUOTA_REJECTED, AiService.QUOTA_EXCEEDED_NOTICE).withProblemId(data.problemId());

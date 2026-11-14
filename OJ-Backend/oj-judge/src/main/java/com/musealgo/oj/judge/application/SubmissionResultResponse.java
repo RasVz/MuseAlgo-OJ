@@ -13,6 +13,7 @@ public class SubmissionResultResponse {
     private final Long id;
     private final Long problemId;
     private final Long contestId;
+    private final Long examAttemptId;
     private final Byte status;
     private final String judgePhase;
     private final Integer score;
@@ -26,6 +27,7 @@ public class SubmissionResultResponse {
                 submission.getId(),
                 submission.getProblemId(),
                 submission.getContestId(),
+                submission.getExamAttemptId(),
                 submission.getStatus(),
                 submission.getJudgePhase(),
                 submission.getScore(),

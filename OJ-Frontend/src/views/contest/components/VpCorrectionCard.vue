@@ -3,7 +3,10 @@
     <template #header>
       <div class="card-header">
         <span>虚拟参赛 & 赛后订正</span>
-        <el-button v-if="vpAttempt && vpAttempt.status === 'RUNNING'" size="small" type="primary" :loading="vpBusy" @click="doFinishVp">交卷</el-button>
+        <div v-if="vpAttempt && vpAttempt.status === 'RUNNING'" class="vp-actions">
+          <el-button size="small" type="primary" @click="enterVp">进入答题</el-button>
+          <el-button size="small" :loading="vpBusy" @click="doFinishVp">交卷</el-button>
+        </div>
         <el-button v-else-if="vpAttempt?.status !== 'SETTLING'" size="small" type="primary" :loading="vpBusy" @click="doStartVp">开始虚拟参赛</el-button>
       </div>
     </template>
@@ -47,8 +50,11 @@
 // 倒计时在前端本地递减，真正的时间边界由服务端裁定——
 // 前端只负责显示，超时也会主动调 finishVp 兜底交卷。
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { useRouter } from 'vue-router'
 import { getVp, startVp, finishVp, getCorrection } from '@/api/contest'
 import { unwrapResultData } from '@/api/contestRank'
+
+const router = useRouter()
 
 const props = defineProps({
   contestId: { type: [Number, String], default: null },
@@ -122,12 +128,17 @@ const doStartVp = async () => {
     if (vpAttempt.value?.status === 'RUNNING') {
       vpRemaining.value = vpAttempt.value.remainingSeconds ?? 0
       startVpTimer()
+      enterVp()
     } else if (vpAttempt.value?.status === 'SETTLING') {
       startSettlementPolling()
     } else {
       stopVpTimer()
     }
   } finally { vpBusy.value = false }
+}
+
+const enterVp = () => {
+  router.push({ name: 'ContestAnswer', params: { id: props.contestId } })
 }
 
 // 交卷不可撤销（VP 记录会写入并影响排名），用原生 confirm 二次确认
@@ -222,6 +233,7 @@ watch(
 }
 
 .vp-card { margin-top: 16px; }
+.vp-actions { display: flex; gap: 8px; }
 .vp-running { font-size: 14px; color: #409eff; }
 .vp-running b { font-size: 18px; }
 .vp-result { font-size: 14px; }

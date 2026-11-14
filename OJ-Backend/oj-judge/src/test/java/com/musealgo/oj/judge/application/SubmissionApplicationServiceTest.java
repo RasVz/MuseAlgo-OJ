@@ -9,6 +9,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import com.musealgo.oj.api.contest.ContestSubmissionContextResolver;
+import com.musealgo.oj.api.problem.ExamAttemptAccessQuery;
 import com.musealgo.oj.judge.entity.Submission;
 import com.musealgo.oj.judge.service.SubmissionService;
 import com.musealgo.oj.system.entity.User;
@@ -26,6 +27,7 @@ class SubmissionApplicationServiceTest {
     @Mock SubmissionService submissionService;
     @Mock com.musealgo.oj.api.problem.ProblemAccessQuery problemAccess;
     @Mock ContestSubmissionContextResolver contextResolver;
+    @Mock ExamAttemptAccessQuery examAttemptAccess;
 
     @AfterEach
     void clearSecurityContext() {
@@ -48,7 +50,7 @@ class SubmissionApplicationServiceTest {
             return submission;
         });
 
-        new SubmissionApplicationService(problemAccess, submissionService, contextResolver).submit(command);
+        new SubmissionApplicationService(problemAccess, submissionService, contextResolver, examAttemptAccess).submit(command);
 
         ArgumentCaptor<Submission> captor = ArgumentCaptor.forClass(Submission.class);
         verify(submissionService).submitCode(captor.capture());
@@ -58,13 +60,38 @@ class SubmissionApplicationServiceTest {
     }
 
     @Test
+    void attemptSubmissionBindsExamAttemptAndSkipsPracticePolicy() {
+        login(10L);
+        SubmitSolutionCommand command = new SubmitSolutionCommand();
+        command.setProblemId(100L);
+        command.setAttemptId(7L);
+        command.setLanguage("cpp");
+        command.setCode("int main(){}");
+        when(examAttemptAccess.requireActiveAttempt(7L, 100L, 10L))
+                .thenReturn(new ExamAttemptAccessQuery.AttemptAccess(7L, 3L, 10L, null, null));
+        when(submissionService.submitCode(any())).thenAnswer(invocation -> {
+            Submission submission = invocation.getArgument(0);
+            submission.setId(6L);
+            return submission;
+        });
+
+        new SubmissionApplicationService(problemAccess, submissionService, contextResolver, examAttemptAccess).submit(command);
+
+        ArgumentCaptor<Submission> captor = ArgumentCaptor.forClass(Submission.class);
+        verify(submissionService).submitCode(captor.capture());
+        assertEquals(7L, captor.getValue().getExamAttemptId());
+        org.junit.jupiter.api.Assertions.assertNull(captor.getValue().getContestId());
+        org.mockito.Mockito.verifyNoInteractions(problemAccess);
+    }
+
+    @Test
     void ordinarySubmissionCannotSkipProblemAccessPolicy() {
         login(10L);
         var command = new SubmitSolutionCommand(); command.setProblemId(100L); command.setLanguage("cpp"); command.setCode("x");
         org.mockito.Mockito.doThrow(new com.musealgo.oj.common.exception.ForbiddenException("private"))
                 .when(problemAccess).requirePracticeSubmission(100L);
         org.junit.jupiter.api.Assertions.assertThrows(com.musealgo.oj.common.exception.ForbiddenException.class,
-                () -> new SubmissionApplicationService(problemAccess, submissionService, contextResolver).submit(command));
+                () -> new SubmissionApplicationService(problemAccess, submissionService, contextResolver, examAttemptAccess).submit(command));
         org.mockito.Mockito.verifyNoInteractions(submissionService);
     }
 
@@ -77,7 +104,7 @@ class SubmissionApplicationServiceTest {
         command.setLanguage("go");
         command.setCode("package main");
         org.junit.jupiter.api.Assertions.assertThrows(com.musealgo.oj.common.exception.BusinessException.class,
-                () -> new SubmissionApplicationService(problemAccess, submissionService, contextResolver).submit(command));
+                () -> new SubmissionApplicationService(problemAccess, submissionService, contextResolver, examAttemptAccess).submit(command));
         org.mockito.Mockito.verifyNoInteractions(submissionService);
     }
 

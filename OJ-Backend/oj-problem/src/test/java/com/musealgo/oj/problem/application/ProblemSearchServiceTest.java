@@ -54,7 +54,7 @@ class ProblemSearchServiceTest {
         Problem p1 = problem(1L, "二分答案");
         when(searchIndexer.searchIds(eq("二分"), anyInt(), anyInt(), isNull(), isNull(), isNull()))
                 .thenReturn(new SearchHits(List.of(2L, 1L), 2L));
-        when(problemMapper.selectVisibleSearchIds(List.of(2L, 1L), null, null, null)).thenReturn(List.of(1L, 2L));
+        when(problemMapper.selectVisibleSearchIds(List.of(2L, 1L), null, null, null, List.of())).thenReturn(List.of(1L, 2L));
         when(problemService.listByIds(List.of(2L, 1L))).thenReturn(List.of(p2, p1));
         when(problemMapper.selectUserStatusByProblemIds(100L, List.of(2L, 1L)))
                 .thenReturn(List.of(Map.of("problemId", 2L, "userStatus", 1)));
@@ -103,7 +103,7 @@ class ProblemSearchServiceTest {
         Problem p = problem(3L, "数字三角形");
         when(searchIndexer.searchIds(eq("三角形"), anyInt(), anyInt(), isNull(), eq(800), eq(1200)))
                 .thenReturn(new SearchHits(List.of(3L), 1L));
-        when(problemMapper.selectVisibleSearchIds(List.of(3L), null, 800, 1200)).thenReturn(List.of(3L));
+        when(problemMapper.selectVisibleSearchIds(List.of(3L), null, 800, 1200, List.of())).thenReturn(List.of(3L));
         when(problemService.listByIds(List.of(3L))).thenReturn(List.of(p));
 
         Page<ProblemVO> result = service.search("三角形", 1, 10, null, 800, 1200, null);
@@ -119,7 +119,7 @@ class ProblemSearchServiceTest {
         hidden.setIsPublic(false);
         when(searchIndexer.searchIds(eq("私有"), anyInt(), anyInt(), isNull(), isNull(), isNull()))
                 .thenReturn(new SearchHits(List.of(4L), 1L));
-        when(problemMapper.selectVisibleSearchIds(List.of(4L), null, null, null)).thenReturn(List.of());
+        when(problemMapper.selectVisibleSearchIds(List.of(4L), null, null, null, List.of())).thenReturn(List.of());
 
         Page<ProblemVO> result = service.search("私有", 1, 20, null, null, null, null);
 
@@ -132,7 +132,7 @@ class ProblemSearchServiceTest {
         List<Long> ids = List.of(1L, 2L, 3L, 4L, 5L, 6L, 7L);
         when(searchIndexer.searchIds(eq("sum"), anyInt(), anyInt(), isNull(), isNull(), isNull()))
                 .thenReturn(new SearchHits(ids, 7L));
-        when(problemMapper.selectVisibleSearchIds(ids, null, null, null)).thenReturn(ids);
+        when(problemMapper.selectVisibleSearchIds(ids, null, null, null, List.of())).thenReturn(ids);
         Page<ProblemVO> result = service.search("sum", 99, 20, null, null, null, null);
         assertThat(result.getRecords()).isEmpty();
         assertThat(result.getTotal()).isEqualTo(7);
@@ -143,7 +143,7 @@ class ProblemSearchServiceTest {
         List<Long> candidates = List.of(9L, 2L, 99L, 4L, 8L);
         when(searchIndexer.searchIds(eq("stale"), anyInt(), anyInt(), isNull(), isNull(), isNull()))
                 .thenReturn(new SearchHits(candidates, 5));
-        when(problemMapper.selectVisibleSearchIds(candidates, null, null, null)).thenReturn(List.of(4L, 2L));
+        when(problemMapper.selectVisibleSearchIds(candidates, null, null, null, List.of())).thenReturn(List.of(4L, 2L));
         when(problemService.listByIds(List.of(2L))).thenReturn(List.of(problem(2L, "First")));
         when(problemService.listByIds(List.of(4L))).thenReturn(List.of(problem(4L, "Second")));
 
@@ -162,7 +162,7 @@ class ProblemSearchServiceTest {
     void currentDatabaseDifficultyCanExcludeAnOutdatedIndexHit() {
         when(searchIndexer.searchIds(eq("stale"), anyInt(), anyInt(), eq(800), eq(700), eq(900)))
                 .thenReturn(new SearchHits(List.of(2L), 1));
-        when(problemMapper.selectVisibleSearchIds(List.of(2L), 800, 700, 900)).thenReturn(List.of());
+        when(problemMapper.selectVisibleSearchIds(List.of(2L), 800, 700, 900, List.of())).thenReturn(List.of());
         Page<ProblemVO> result = service.search("stale", 1, 10, 800, 700, 900, null);
         assertThat(result.getTotal()).isZero();
         assertThat(result.getRecords()).isEmpty();

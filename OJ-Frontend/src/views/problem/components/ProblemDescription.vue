@@ -12,6 +12,7 @@
           <span>AI 助教</span>
         </el-button>
         <el-button
+          v-if="showIdeToggle"
           :type="isIdeMode ? 'danger' : 'primary'"
           plain
           round
@@ -62,7 +63,8 @@ const props = defineProps({
   aiEnabled: { type: Boolean, default: true },
   problem: { type: Object, default: () => ({}) },
   samples: { type: Array, default: () => [] },
-  isIdeMode: { type: Boolean, default: false }
+  isIdeMode: { type: Boolean, default: false },
+  showIdeToggle: { type: Boolean, default: true }
 })
 
 defineEmits(['toggle-ide', 'open-ai'])

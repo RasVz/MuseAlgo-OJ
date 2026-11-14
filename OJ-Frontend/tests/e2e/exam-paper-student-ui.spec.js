@@ -207,7 +207,9 @@ test('training library keeps search, category and server pagination in the URL',
   expect(api.listRequests.at(-1)).toMatchObject({ page: 1, category: 'CSP_J', keyword: '目标' })
 })
 
-test('answer draft wins on refresh, server answers resume without a draft, and a new attempt starts clean', async ({ page }) => {
+// 进行中的作答已统一跳到整卷答题页（ExamPaperAnswerView）；以下旧内联作答用例不再适用。
+// 整卷页的跳转、客观题、编程题与提交覆盖见 exam-paper-answer-page.spec.js。
+test.skip('answer draft wins on refresh, server answers resume without a draft, and a new attempt starts clean', async ({ page }) => {
   const serverAnswers = [{ questionId: QUESTION_ONE, answer: 'T' }]
   const state = await installSyntheticApi(page, {
     attempt: makeAttempt({
@@ -238,7 +240,7 @@ test('answer draft wins on refresh, server answers resume without a draft, and a
   expect(state.currentAttempt.answers).toEqual([])
 })
 
-test('manual finish submits current choices before finishing and does not finish after submit failure', async ({ page }) => {
+test.skip('manual finish submits current choices before finishing and does not finish after submit failure', async ({ page }) => {
   const state = await installSyntheticApi(page)
   await page.goto(`${WEB_BASE}/training/${PAPER_ID}`, { waitUntil: 'networkidle' })
   await page.getByRole('button', { name: '开始作答', exact: true }).click()
@@ -258,7 +260,7 @@ test('manual finish submits current choices before finishing and does not finish
   expect(state.currentAttempt.status).toBe('RUNNING')
 })
 
-test('timeout preserves local edits and explains they were not counted', async ({ page }) => {
+test.skip('timeout preserves local edits and explains they were not counted', async ({ page }) => {
   const savedAnswers = [{ questionId: QUESTION_ONE, answer: 'T' }]
   const state = await installSyntheticApi(page, {
     attempt: makeAttempt({ id: 901, remainingSeconds: 60, answers: savedAnswers, results: objectiveResults(savedAnswers), objectiveScore: 5, totalScore: 5 })
@@ -281,7 +283,7 @@ test('timeout preserves local edits and explains they were not counted', async (
 })
 
 for (const width of [1024, 1366, 1440, 1920]) {
-test(`desktop workbench ${width} remains readable in light and dark themes`, async ({ page }, testInfo) => {
+test.skip(`desktop workbench ${width} remains readable in light and dark themes`, async ({ page }, testInfo) => {
   await page.setViewportSize({ width, height: 900 })
   await installSyntheticApi(page, { attempt: makeAttempt({ id: 1001 }) })
   await page.goto(`${WEB_BASE}/training/${PAPER_ID}`, { waitUntil: 'networkidle' })
@@ -301,7 +303,7 @@ test(`desktop workbench ${width} remains readable in light and dark themes`, asy
 })
 }
 
-test('expired attempt waits for pending coding judgement without permitting answer edits', async ({ page }) => {
+test.skip('expired attempt waits for pending coding judgement without permitting answer edits', async ({ page }) => {
   const state = await installSyntheticApi(page, { attempt: makeAttempt({ id: 1101, remainingSeconds: 0, gradingPending: true }) })
   await page.goto(`${WEB_BASE}/training/${PAPER_ID}`, { waitUntil: 'networkidle' })
   await expect(page.getByText('编程题仍在判题，正在等待判题完成后自动交卷。作答时间已结束，不能继续修改答案。')).toBeVisible()
@@ -310,7 +312,7 @@ test('expired attempt waits for pending coding judgement without permitting answ
   await expect(page.getByText('时间到，已自动交卷', { exact: true }).first()).toBeVisible({ timeout: 10000 })
 })
 
-test('early finish with pending judgement explains how to retry and keeps the attempt open', async ({ page }) => {
+test.skip('early finish with pending judgement explains how to retry and keeps the attempt open', async ({ page }) => {
   const state = await installSyntheticApi(page, { attempt: makeAttempt() })
   state.pendingFinish = true
   await page.goto(`${WEB_BASE}/training/${PAPER_ID}`, { waitUntil: 'networkidle' })

@@ -50,7 +50,8 @@ public interface ProblemMapper extends BaseMapper<Problem> {
                                       @Param("tagNames") List<String> tagNames,
                                       @Param("source") String source,
                                       @Param("userStatus") Integer userStatus,
-                                      @Param("userId") Long userId);
+                                      @Param("userId") Long userId,
+                                      @Param("excludeProblemIds") List<Long> excludeProblemIds);
 
     List<ProblemTagOptionVO> selectPublicKnowledgeTags();
 
@@ -62,10 +63,12 @@ public interface ProblemMapper extends BaseMapper<Problem> {
     List<Long> selectVisibleSearchIds(@Param("problemIds") List<Long> problemIds,
                                     @Param("difficulty") Integer difficulty,
                                     @Param("minDifficulty") Integer minDifficulty,
-                                    @Param("maxDifficulty") Integer maxDifficulty);
+                                    @Param("maxDifficulty") Integer maxDifficulty,
+                                    @Param("excludeProblemIds") List<Long> excludeProblemIds);
 
     java.util.List<Problem> selectRandomUnsolvedPublicProblems(@Param("userId") Long userId,
-                                                               @Param("limit") Integer limit);
+                                                               @Param("limit") Integer limit,
+                                                               @Param("excludeProblemIds") List<Long> excludeProblemIds);
 
     /**
      * 批量查询用户做题状态（全文搜索回查用）：

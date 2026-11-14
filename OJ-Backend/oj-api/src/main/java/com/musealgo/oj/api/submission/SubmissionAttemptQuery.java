@@ -27,7 +27,23 @@ public interface SubmissionAttemptQuery {
             Long userId, Collection<Long> problemIds,
             LocalDateTime from, LocalDateTime to);
 
+    /** 按作答会话绑定查询每题最好成绩，不依赖时间窗。 */
+    List<SubmissionAttemptScore> findBestScoresByAttempt(
+            Long attemptId, Collection<Long> problemIds);
+
+    /** 按作答会话绑定查询仍在判题的提交数。 */
+    long countPendingByAttempt(Long attemptId, Collection<Long> problemIds);
+
+    /** 按作答会话绑定查询每题提交摘要，用于整卷页恢复状态。 */
+    List<SubmissionAttemptSummary> summarizeByAttempt(
+            Long attemptId, Collection<Long> problemIds);
+
     /** 某题的本次最好成绩。 */
     record SubmissionAttemptScore(Long problemId, int bestScore) {
+    }
+
+    /** 某题在本次会话中的提交摘要。 */
+    record SubmissionAttemptSummary(
+            Long problemId, int bestScore, int attemptCount, int pendingCount) {
     }
 }

@@ -34,4 +34,29 @@ public class SubmissionAttemptQueryAdapter implements SubmissionAttemptQuery {
                              LocalDateTime from, LocalDateTime to) {
         return submissionMapper.countPendingExamScores(userId, problemIds, from, to);
     }
+
+    @Override
+    public List<SubmissionAttemptScore> findBestScoresByAttempt(Long attemptId, Collection<Long> problemIds) {
+        return submissionMapper.selectBestScoresByAttempt(attemptId, problemIds).stream()
+                .map(row -> new SubmissionAttemptScore(
+                        ((Number) row.get("problemId")).longValue(),
+                        row.get("bestScore") == null ? 0 : ((Number) row.get("bestScore")).intValue()))
+                .toList();
+    }
+
+    @Override
+    public long countPendingByAttempt(Long attemptId, Collection<Long> problemIds) {
+        return submissionMapper.countPendingExamAttemptScores(attemptId, problemIds);
+    }
+
+    @Override
+    public List<SubmissionAttemptSummary> summarizeByAttempt(Long attemptId, Collection<Long> problemIds) {
+        return submissionMapper.selectAttemptSummary(attemptId, problemIds).stream()
+                .map(row -> new SubmissionAttemptSummary(
+                        ((Number) row.get("problemId")).longValue(),
+                        row.get("bestScore") == null ? 0 : ((Number) row.get("bestScore")).intValue(),
+                        row.get("attemptCount") == null ? 0 : ((Number) row.get("attemptCount")).intValue(),
+                        row.get("pendingCount") == null ? 0 : ((Number) row.get("pendingCount")).intValue()))
+                .toList();
+    }
 }

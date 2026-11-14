@@ -170,7 +170,7 @@ public class AiService implements AiAssistant {
     public AiAskOutcome streamChatGuarded(Long userId, com.musealgo.oj.ai.dto.AiAskRequest request,
             com.musealgo.oj.api.problem.ProblemTutoringQuery.Context problem, boolean privileged,
             Consumer<String> onChunk) {
-        if (contestGuard.shouldBlock(request.getContestId()))
+        if (contestGuard.shouldBlock(request.getContestId(), request.getProblemId()))
             return AiAskOutcome.blocked(AiUsage.STATUS_CONTEST_BLOCKED, CONTEST_BLOCKED_NOTICE);
         if (!quotaService.tryAcquire(userId, privileged))
             return AiAskOutcome.blocked(AiUsage.STATUS_QUOTA_REJECTED, QUOTA_EXCEEDED_NOTICE);

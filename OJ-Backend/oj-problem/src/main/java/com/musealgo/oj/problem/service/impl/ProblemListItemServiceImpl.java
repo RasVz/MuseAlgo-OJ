@@ -1,5 +1,7 @@
 package com.musealgo.oj.problem.service.impl;
 
+import com.musealgo.oj.api.contest.ContestProblemAccessQuery;
+import com.musealgo.oj.common.utils.SecurityUtils;
 import com.musealgo.oj.problem.entity.ProblemListItem;
 import com.musealgo.oj.problem.entity.vo.ProblemVO;
 import com.musealgo.oj.problem.mapper.ProblemListItemMapper;
@@ -8,6 +10,7 @@ import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Set;
 
 /**
  * <p>
@@ -23,11 +26,19 @@ public class ProblemListItemServiceImpl extends ServiceImpl<ProblemListItemMappe
     @org.springframework.beans.factory.annotation.Autowired
     private com.musealgo.oj.problem.application.ProblemReadAccessService readAccess;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private ContestProblemAccessQuery contestAccess;
+
     @Override
     public List<ProblemVO> selectProblemsWithStatus(Long listId, Long userId) {
+        // 比赛进行期：公开题单也不展示比赛题，避免从题单标题/难度旁路获得赛题信息。
+        Set<Long> hiddenContestProblems = SecurityUtils.isTeacherOrAdmin() || contestAccess == null
+                ? Set.of()
+                : contestAccess.findRunningFormalContestProblemIds();
         return baseMapper.selectProblemsWithStatus(listId, userId).stream().map(problem -> {
             if (problem.getId() == null) return problem; // 保留原 LEFT JOIN 的缺失题目占位。
             if (Integer.valueOf(1).equals(problem.getIsDeleted())) return new ProblemVO();
+            if (hiddenContestProblems.contains(problem.getId())) return null;
             if (Boolean.TRUE.equals(problem.getIsPublic())) return problem;
             try { readAccess.requireReadable(problem.getId()); return problem; }
             catch (com.musealgo.oj.common.exception.BusinessException error) {
