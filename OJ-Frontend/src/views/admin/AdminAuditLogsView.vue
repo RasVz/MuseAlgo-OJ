@@ -44,16 +44,21 @@
 <script setup>
 // 操作审计日志（仅管理员）：只读查询页，按操作人 / 模块 / 动作过滤。
 // 审计数据不可修改，页面因此不提供任何写操作，也不做前端二次确认。
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { getAuditLogs } from '@/api/adminAuditLog'
 import { unwrapResultData } from '@/utils/response'
 
+const route = useRoute()
+const initialUserId = typeof route.query.userId === 'string' && /^\d+$/.test(route.query.userId)
+  ? route.query.userId
+  : ''
 const logs = ref([])
 const loading = ref(false)
 const page = ref(1)
 const size = ref(20)
 const total = ref(0)
-const filters = reactive({ userId: '', module: '', action: '' })
+const filters = reactive({ userId: initialUserId, module: '', action: '' })
 
 const fetchList = async () => {
   loading.value = true
@@ -73,6 +78,18 @@ const fetchList = async () => {
 }
 
 onMounted(fetchList)
+
+// 用户管理详情抽屉通过 ?userId= 跳转过来；保持地址栏与筛选框同步。
+watch(
+  () => route.query.userId,
+  (value) => {
+    const next = typeof value === 'string' && /^\d+$/.test(value) ? value : ''
+    if (next === filters.userId) return
+    filters.userId = next
+    page.value = 1
+    fetchList()
+  },
+)
 </script>
 
 <style scoped>

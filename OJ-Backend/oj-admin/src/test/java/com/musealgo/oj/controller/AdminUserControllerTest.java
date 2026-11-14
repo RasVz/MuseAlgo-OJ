@@ -7,7 +7,6 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.util.ReflectionTestUtils;
 import com.musealgo.oj.api.ai.UserAiUsageQuery;
-import com.musealgo.oj.api.submission.UserSubmissionMetricsQuery;
 import com.musealgo.oj.system.entity.User;
 import com.musealgo.oj.system.service.UserService;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -35,7 +34,7 @@ class AdminUserControllerTest {
         when(userService.lockEnabledAdminIds()).thenReturn(List.of(1L, 2L));
         passwordEncoder = mock(PasswordEncoder.class);
         controller = new AdminUserController(userService,
-                mock(UserSubmissionMetricsQuery.class), mock(UserAiUsageQuery.class), passwordEncoder);
+                mock(UserAiUsageQuery.class), passwordEncoder);
         User current = new User();
         current.setId(1L);
         SecurityContextHolder.getContext().setAuthentication(
@@ -127,7 +126,7 @@ class AdminUserControllerTest {
     @Test
     void failedBanWriteCannotReportSuccess() {
         when(userService.getById(2L)).thenReturn(teacher(2L));
-        when(userService.updateById(any(User.class))).thenReturn(false);
+        when(userService.update(any(com.baomidou.mybatisplus.core.conditions.Wrapper.class))).thenReturn(false);
         AdminUserController.BanRequest request = new AdminUserController.BanRequest(); request.setBanned(true);
         assertThrows(IllegalStateException.class,()->controller.setBanned(2L,request));
     }
@@ -206,6 +205,56 @@ class AdminUserControllerTest {
         assertEquals(200, result.getCode());
         assertEquals("账号创建成功", result.getData());
         verify(userService).syncNormalizedRole(99L, (byte) 2);
+    }
+
+    @Test
+    void createAccountRejectsUsernameThatWouldNeverBeAbleToLogIn() {
+        AdminUserController.CreateAccountRequest request = createRequest("bad name!", 1);
+
+        var result = controller.createAccount(request);
+
+        assertEquals("用户名需为 3–32 位字母、数字或下划线", result.getMessage());
+        verify(userService, never()).save(any());
+    }
+
+    @Test
+    void banRejectsExpiryInThePast() {
+        when(userService.getById(2L)).thenReturn(teacher(2L));
+        AdminUserController.BanRequest request = new AdminUserController.BanRequest();
+        request.setBanned(true);
+        request.setExpireTime(java.time.LocalDateTime.now().minusMinutes(1));
+
+        var result = controller.setBanned(2L, request);
+
+        assertEquals("封禁到期时间必须晚于当前时间", result.getMessage());
+        verify(userService, never()).update(any(com.baomidou.mybatisplus.core.conditions.Wrapper.class));
+    }
+
+    @Test
+    void batchBanRejectsOwnAccountBeforeWriting() {
+        when(userService.listByIds(List.of(1L, 2L))).thenReturn(List.of(admin(1L), teacher(2L)));
+        AdminUserController.BatchBanRequest request = new AdminUserController.BatchBanRequest();
+        request.setIds(List.of(1L, 2L));
+        request.setBanned(true);
+
+        var result = controller.batchSetBanned(request);
+
+        assertEquals("不能禁用自己的账号", result.getMessage());
+        verify(userService, never()).update(any(com.baomidou.mybatisplus.core.conditions.Wrapper.class));
+    }
+
+    @Test
+    void batchRoleCannotRemoveLastEnabledAdmin() {
+        when(userService.lockEnabledAdminIds()).thenReturn(List.of(2L));
+        when(userService.listByIds(List.of(2L))).thenReturn(List.of(admin(2L)));
+        AdminUserController.BatchRoleRequest request = new AdminUserController.BatchRoleRequest();
+        request.setIds(List.of(2L));
+        request.setRole((byte) 2);
+
+        var result = controller.batchUpdateRole(request);
+
+        assertEquals("系统必须保留至少一个管理员", result.getMessage());
+        verify(userService, never()).updateById(any(User.class));
     }
 
     private void setNormalized(boolean enabled) {

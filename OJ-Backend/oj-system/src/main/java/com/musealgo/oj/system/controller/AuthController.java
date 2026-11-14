@@ -127,7 +127,7 @@ public class AuthController {
             return ErrorResponses.failure(CommonErrorCode.AUTH_TOKEN_REVOKED);
         }
         User currentUser = userService.getOne(new LambdaQueryWrapper<User>().eq(User::getUsername, username));
-        if (currentUser == null || (currentUser.getIsBanned() != null && currentUser.getIsBanned() == 1)
+        if (currentUser == null || currentUser.isBanActive(java.time.LocalDateTime.now())
                 || !jwtUtils.hasCurrentCredentialVersion(refreshToken, currentUser.getCredentialVersion())) {
             return ErrorResponses.failure(CommonErrorCode.AUTH_REFRESH_INVALID);
         }
@@ -220,7 +220,7 @@ public class AuthController {
 
         // 封禁判断放在密码校验之后：只有持正确密码的人才会看到明确原因，
         // 错误密码在 Provider 内已抛 BadCredentials，无法借此枚举账号状态。
-        if (authenticatedUser.getIsBanned() != null && authenticatedUser.getIsBanned() == 1) {
+        if (authenticatedUser.isBanActive(java.time.LocalDateTime.now())) {
             log.info("封禁账号登录被拒: {}", authenticatedUser.getUsername());
             return ErrorResponses.failure(CommonErrorCode.AUTH_ACCOUNT_DISABLED);
         }
