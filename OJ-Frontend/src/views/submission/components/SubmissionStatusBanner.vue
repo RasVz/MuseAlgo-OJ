@@ -124,6 +124,10 @@ const getStatusIcon = (s) => ({
   border-left: 1px solid var(--border-light);
 }
 
+.metric-item:last-child {
+  border-right: 1px solid var(--border-light);
+}
+
 .metric-item .label {
   font-size: 12px;
   color: var(--text-regular);
