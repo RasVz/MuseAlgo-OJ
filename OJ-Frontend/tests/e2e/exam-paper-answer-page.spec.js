@@ -45,13 +45,16 @@ async function installApi(page, options = {}) {
     saveFails: false,
     paperReads: 0,
     saveCalls: [],
-    releaseSave: null
+    releaseSave: null,
+    startCalls: 0,
+    detailFails: false
   }
-  await page.route('**/monaco-editor@*/min/vs/**', route => {
+  await page.context().route('**/monaco-editor@*/min/vs/**', route => {
     const asset = new URL(route.request().url()).pathname.split('/min/vs/')[1]
     return route.fulfill({ path: join(process.cwd(), 'node_modules/monaco-editor/min/vs', asset) })
   })
-  await page.addInitScript(id => {
+  await page.context().addInitScript(({ id, guest }) => {
+    if (guest) return
     localStorage.setItem('accessToken', 'synthetic-answer-token')
     localStorage.setItem('user', JSON.stringify({ id: 41, username: 'student', nickname: '合成学生', role: 0 }))
     localStorage.setItem(`musealgo:scoped-draft:user:41:paper:${id}:${2001}:cpp`, JSON.stringify({
@@ -59,8 +62,8 @@ async function installApi(page, options = {}) {
       language: 'cpp',
       updatedAt: Date.now()
     }))
-  }, ATTEMPT_ID)
-  await page.route('**/api/**', async route => {
+  }, { id: ATTEMPT_ID, guest: options.guest ?? false })
+  await page.context().route('**/api/**', async route => {
     const request = route.request()
     const url = new URL(request.url())
     if (!url.pathname.startsWith('/api/')) return route.continue()
@@ -70,10 +73,22 @@ async function installApi(page, options = {}) {
       body: JSON.stringify({ code: 200, data, message: '成功' })
     })
 
-    if (path === `/exam-paper/${PAPER_ID}` && request.method() === 'GET') return json(paper)
+    if (path === `/exam-paper/${PAPER_ID}` && request.method() === 'GET') {
+      if (state.detailFails) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ code: 503, message: '详情刷新失败' }) })
+      return json({ ...paper, questions: options.detailQuestions ? [{ id: OBJECTIVE_ID, questionType: 'JUDGE', statement: '详情复盘客观题', options: [], score: 5, questionOrder: 1 }] : paper.questions })
+    }
+    if (path === `/exam-paper/${PAPER_ID}/attempt/start` && request.method() === 'POST') {
+      state.startCalls += 1
+      state.attemptStatus = 'RUNNING'
+      state.remainingSeconds = 600
+      return json(attempt)
+    }
     if (path === `/exam-paper/${PAPER_ID}/attempt` && request.method() === 'GET') {
+      if (state.attemptStatus === 'NONE') return json(null)
       return json({
         ...attempt,
+        answers: options.attemptAnswers || [],
+        results: options.attemptResults || [],
         status: state.attemptStatus,
         remainingSeconds: state.remainingSeconds,
         gradingPending: state.gradingPending,
@@ -206,10 +221,15 @@ async function installApi(page, options = {}) {
   return state
 }
 
-test('running paper redirects to the whole-paper answer page and submits objective and coding answers', async ({ page }) => {
+test('continue practice opens a new answer tab and submits objective and coding answers', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   const state = await installApi(page)
   await page.goto(`/training/${PAPER_ID}`, { waitUntil: 'networkidle' })
+  const detail = page
+  const popupPromise = page.waitForEvent('popup')
+  await page.getByRole('link', { name: '继续练习', exact: true }).click()
+  page = await popupPromise
+  await expect(detail).toHaveURL(new RegExp(`/training/${PAPER_ID}$`))
 
   await expect(page).toHaveURL(new RegExp(`/training/${PAPER_ID}/answer\\?attemptId=${ATTEMPT_ID}`))
   await expect(page.getByText('合成整卷答题')).toBeVisible()
@@ -237,7 +257,7 @@ test('objective draft restores and manual finish returns to the result page', as
       savedAt: Date.now()
     }))
   })
-  await page.goto(`/training/${PAPER_ID}`, { waitUntil: 'networkidle' })
+  await page.goto(`/training/${PAPER_ID}/answer?attemptId=${ATTEMPT_ID}`, { waitUntil: 'networkidle' })
 
   await expect(page).toHaveURL(new RegExp(`/training/${PAPER_ID}/answer\\?attemptId=${ATTEMPT_ID}`))
   await expect(page.locator('.option-group .el-radio').filter({ hasText: '对' })).toHaveClass(/is-checked/)
@@ -252,7 +272,7 @@ test('objective draft restores and manual finish returns to the result page', as
 
 test('pending judgement keeps the attempt open until judging finishes', async ({ page }) => {
   const state = await installApi(page, { finishPending: true })
-  await page.goto(`/training/${PAPER_ID}`, { waitUntil: 'networkidle' })
+  await page.goto(`/training/${PAPER_ID}/answer?attemptId=${ATTEMPT_ID}`, { waitUntil: 'networkidle' })
   await expect(page).toHaveURL(new RegExp(`/training/${PAPER_ID}/answer\\?attemptId=${ATTEMPT_ID}`))
 
   await page.getByRole('button', { name: '交卷', exact: true }).click()
@@ -269,7 +289,7 @@ test('pending judgement keeps the attempt open until judging finishes', async ({
 
 test('expired attempt finishes automatically and returns to the timeout result', async ({ page }) => {
   const state = await installApi(page, { remainingSeconds: 0 })
-  await page.goto(`/training/${PAPER_ID}`, { waitUntil: 'networkidle' })
+  await page.goto(`/training/${PAPER_ID}/answer?attemptId=${ATTEMPT_ID}`, { waitUntil: 'networkidle' })
 
   await expect(page).toHaveURL(new RegExp(`/training/${PAPER_ID}$`), { timeout: 15000 })
   await expect(page.locator('.el-tag__content').filter({ hasText: '时间到，已自动交卷' })).toBeVisible()
@@ -279,14 +299,14 @@ test('expired attempt finishes automatically and returns to the timeout result',
 
 test('selecting an objective answer saves it without a separate submit click', async ({ page }) => {
   const state = await installApi(page)
-  await page.goto(`/training/${PAPER_ID}`, { waitUntil: 'networkidle' })
+  await page.goto(`/training/${PAPER_ID}/answer?attemptId=${ATTEMPT_ID}`, { waitUntil: 'networkidle' })
   await page.locator('.option-group .el-radio').filter({ hasText: '对' }).click()
   await expect.poll(() => state.objectiveAnswer).toBe('T')
 })
 
 test('manual finish stops when the latest objective answer cannot be saved', async ({ page }) => {
   const state = await installApi(page)
-  await page.goto(`/training/${PAPER_ID}`, { waitUntil: 'networkidle' })
+  await page.goto(`/training/${PAPER_ID}/answer?attemptId=${ATTEMPT_ID}`, { waitUntil: 'networkidle' })
   state.saveFails = true
   await page.locator('.option-group .el-radio').filter({ hasText: '对' }).click()
   await page.getByRole('button', { name: '交卷', exact: true }).click()
@@ -298,7 +318,7 @@ test('manual finish stops when the latest objective answer cannot be saved', asy
 
 test('deadline with pending judging keeps refreshing and eventually finishes', async ({ page }) => {
   const state = await installApi(page, { remainingSeconds: 0, gradingPending: true, finishPending: true })
-  await page.goto(`/training/${PAPER_ID}`, { waitUntil: 'networkidle' })
+  await page.goto(`/training/${PAPER_ID}/answer?attemptId=${ATTEMPT_ID}`, { waitUntil: 'networkidle' })
   await expect(page).toHaveURL(new RegExp(`/training/${PAPER_ID}/answer`))
   const reads = state.paperReads
   state.gradingPending = false
@@ -311,7 +331,7 @@ test('deadline with pending judging keeps refreshing and eventually finishes', a
 
 test('finish waits for an in-flight save and then saves the latest changed answer', async ({ page }) => {
   const state = await installApi(page, { holdFirstSave: true })
-  await page.goto(`/training/${PAPER_ID}`, { waitUntil: 'networkidle' })
+  await page.goto(`/training/${PAPER_ID}/answer?attemptId=${ATTEMPT_ID}`, { waitUntil: 'networkidle' })
   await page.locator('.option-group .el-radio').filter({ hasText: '对' }).click()
   await expect.poll(() => state.saveCalls.length).toBe(1)
   try {
@@ -353,7 +373,7 @@ test('effective TIMEOUT while judging is pending stays on the answer page and la
 
 test('autosaving one answer keeps blank questions untouched', async ({ page }) => {
   const state = await installApi(page, { twoObjective: true })
-  await page.goto(`/training/${PAPER_ID}`, { waitUntil: 'networkidle' })
+  await page.goto(`/training/${PAPER_ID}/answer?attemptId=${ATTEMPT_ID}`, { waitUntil: 'networkidle' })
   await page.locator('.option-group .el-radio').filter({ hasText: '对' }).click()
   await expect.poll(() => state.objectiveAnswer).toBe('T')
   await expect(page.getByRole('button', { name: /客观题 2，未作答/ }).first()).toBeVisible()
@@ -364,7 +384,7 @@ test('autosaving one answer keeps blank questions untouched', async ({ page }) =
 
 test('a failed autosave retries the latest answer after connectivity recovers', async ({ page }) => {
   const state = await installApi(page)
-  await page.goto(`/training/${PAPER_ID}`, { waitUntil: 'networkidle' })
+  await page.goto(`/training/${PAPER_ID}/answer?attemptId=${ATTEMPT_ID}`, { waitUntil: 'networkidle' })
   state.saveFails = true
   await page.locator('.option-group .el-radio').filter({ hasText: '对' }).click()
   await expect(page.getByRole('status').filter({ hasText: '答案保存失败' })).toBeVisible()
@@ -382,4 +402,105 @@ test('an already submitted attempt redirects a direct answer URL to its result p
   await expect(page.getByText('本次作答已交卷')).toBeVisible()
   expect(state.answerAtFinish).toBeNull()
   expect(state.saveCalls).toEqual([])
+})
+
+
+for (const [status, label] of [['NONE', '开始练习'], ['RUNNING', '继续练习'], ['SUBMITTED', '再次练习'], ['TIMEOUT', '再次练习']]) {
+  test(`detail page stays on basic information with ${status} session`, async ({ page }) => {
+    const state = await installApi(page, { attemptStatus: status })
+    await page.goto(`/training/${PAPER_ID}`, { waitUntil: 'networkidle' })
+    await expect(page.getByRole('link', { name: label, exact: true })).toBeVisible()
+    await expect(page.getByRole('link', { name: label, exact: true })).toHaveAttribute('target', '_blank')
+    await expect(page).toHaveURL(new RegExp(`/training/${PAPER_ID}$`))
+    await expect(page.locator('.paper-info')).toContainText('用于验证整卷答题页。')
+    await expect(page.locator('.app-navbar')).toBeVisible()
+    await expect(page.locator('.icon-sidebar')).toBeVisible()
+    expect(state.startCalls).toBe(0)
+  })
+}
+
+test('standalone answer page fills the viewport without global navigation', async ({ page }) => {
+  await installApi(page)
+  await page.goto(`/training/${PAPER_ID}/answer?attemptId=${ATTEMPT_ID}`, { waitUntil: 'networkidle' })
+  await expect(page.locator('.workspace-topbar')).toBeVisible()
+  await expect(page.locator('.app-navbar, .icon-sidebar')).toHaveCount(0)
+  const size = await page.locator('.exam-paper-answer').boundingBox()
+  expect(size.y).toBe(0)
+  expect(Math.abs(size.height - page.viewportSize().height)).toBeLessThanOrEqual(1)
+})
+
+test('answer return stays on the paper detail even while the session is running', async ({ page }) => {
+  await installApi(page)
+  await page.goto(`/training/${PAPER_ID}/answer?attemptId=${ATTEMPT_ID}`, { waitUntil: 'networkidle' })
+  await page.getByRole('button', { name: '返回', exact: true }).click()
+  await page.getByRole('button', { name: '确定离开', exact: true }).click()
+  await expect(page.getByRole('link', { name: '继续练习', exact: true })).toBeVisible()
+  await expect(page).toHaveURL(new RegExp(`/training/${PAPER_ID}$`))
+  await expect(page.locator('.workspace-topbar')).toHaveCount(0)
+})
+
+test('starts practice in a new tab and keeps the original detail page', async ({ page }) => {
+  const state = await installApi(page, { attemptStatus: 'NONE' })
+  await page.goto(`/training/${PAPER_ID}`, { waitUntil: 'networkidle' })
+  expect(state.startCalls).toBe(0)
+  const popupPromise = page.waitForEvent('popup')
+  await page.getByRole('link', { name: '开始练习', exact: true }).click()
+  const answer = await popupPromise
+  await expect(answer.getByText('合成判断题：本题答案为对。')).toBeVisible()
+  await expect(answer.locator('.app-navbar, .icon-sidebar')).toHaveCount(0)
+  await expect(page).toHaveURL(new RegExp(`/training/${PAPER_ID}$`))
+  expect(state.startCalls).toBe(1)
+})
+
+
+test('submitted detail keeps results read-only and does not save or start an attempt', async ({ page }) => {
+  const state = await installApi(page, {
+    attemptStatus: 'SUBMITTED', detailQuestions: true,
+    attemptAnswers: [{ questionId: OBJECTIVE_ID, answer: 'T' }],
+    attemptResults: [{ questionId: OBJECTIVE_ID, myAnswer: 'T', correct: true, correctAnswer: 'T', score: 5 }]
+  })
+  await page.goto(`/training/${PAPER_ID}`, { waitUntil: 'networkidle' })
+  await expect(page.getByText('你的答案：T', { exact: false })).toBeVisible()
+  await expect(page.locator('.question-item .el-radio').first()).toHaveClass(/is-disabled/)
+  await expect(page.getByRole('button', { name: '提交客观题', exact: true })).toHaveCount(0)
+  expect(state.startCalls).toBe(0)
+  expect(state.saveCalls).toEqual([])
+})
+
+test('timeout detail keeps the unsubmitted local draft read-only for comparison', async ({ page }) => {
+  const state = await installApi(page, {
+    attemptStatus: 'TIMEOUT', detailQuestions: true,
+    attemptAnswers: [{ questionId: OBJECTIVE_ID, answer: 'T' }],
+    attemptResults: [{ questionId: OBJECTIVE_ID, myAnswer: 'T', correct: true, correctAnswer: 'T', score: 5 }]
+  })
+  await page.addInitScript(() => localStorage.setItem('exam-draft:41:501:700', JSON.stringify({ answers: [{ questionId: 1001, answer: 'F' }], savedAt: Date.now() })))
+  await page.goto(`/training/${PAPER_ID}`, { waitUntil: 'networkidle' })
+  await expect(page.getByText('时间已到，设备上暂存的未提交修改未计入本次成绩。')).toBeVisible()
+  await expect(page.locator('.question-item .el-radio').filter({ hasText: '错' })).toHaveClass(/is-checked/)
+  await expect(page.locator('.question-item .el-radio').first()).toHaveClass(/is-disabled/)
+  expect(state.saveCalls).toEqual([])
+})
+
+
+test('returning to the detail tab keeps basic information if its refresh fails', async ({ page }) => {
+  const state = await installApi(page)
+  await page.goto(`/training/${PAPER_ID}`, { waitUntil: 'networkidle' })
+  await expect(page.getByRole('link', { name: '继续练习', exact: true })).toBeVisible()
+  state.detailFails = true
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+  await expect(page.getByText('试卷加载失败，请稍后重试')).toBeVisible()
+  await expect(page.locator('.paper-info')).toContainText('合成整卷答题')
+  await expect(page.getByRole('link', { name: '继续练习', exact: true })).toBeVisible()
+})
+
+test('guest practice opens the login prompt in the new tab without starting an attempt', async ({ page }) => {
+  const state = await installApi(page, { guest: true, attemptStatus: 'NONE' })
+  await page.goto(`/training/${PAPER_ID}`, { waitUntil: 'networkidle' })
+  const popupPromise = page.waitForEvent('popup')
+  await page.getByRole('link', { name: '开始练习', exact: true }).click()
+  const answer = await popupPromise
+  await answer.getByRole('button', { name: '去登录', exact: true }).click()
+  await expect(answer).toHaveURL(new RegExp('/login\\?redirect='))
+  expect(state.startCalls).toBe(0)
+  await expect(page).toHaveURL(new RegExp(`/training/${PAPER_ID}$`))
 })

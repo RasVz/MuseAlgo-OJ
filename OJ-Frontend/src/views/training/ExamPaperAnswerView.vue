@@ -499,7 +499,7 @@ onBeforeUnmount(() => {
 onBeforeRouteLeave(async () => {
   if (finished || paper.value?.status !== 'RUNNING') return true
   try {
-    await ElMessageBox.confirm('离开后计时继续，确定返回答题卡？', '离开答题页', {
+    await ElMessageBox.confirm('离开后计时继续，确定返回试卷详情？', '离开答题页', {
       type: 'warning',
       confirmButtonText: '确定离开',
       cancelButtonText: '继续作答'
@@ -513,7 +513,7 @@ onBeforeRouteLeave(async () => {
 
 <style scoped>
 .exam-paper-answer {
-  height: 100%;
+  height: 100dvh;
   min-height: 0;
   overflow: hidden;
 }

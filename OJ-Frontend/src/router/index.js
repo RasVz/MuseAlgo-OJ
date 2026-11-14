@@ -21,6 +21,8 @@ const studyRoutes = [
 ]
 
 const standaloneRoutes = [
+  // 整卷练习在独立标签页打开，不继承全站顶部栏和侧边导航。
+  { path: '/training/:id/answer', name: 'ExamPaperAnswer', component: () => import('@/views/training/ExamPaperAnswerView.vue'), meta: { title: '整卷答题', requiresAuth: true } },
   {
     path: '/admin/courseware/create',
     name: 'AdminCoursewareCreate',
@@ -68,7 +70,6 @@ const problemRoutes = [
 const trainingRoutes = [
   { path: 'training', name: 'Training', component: () => import('@/views/training/TrainingView.vue'), meta: { title: '训练' } },
   { path: 'training/:id', name: 'TrainingDetail', component: () => import('@/views/training/ExamPaperDetailView.vue'), meta: { title: '试卷详情', breadcrumb: [{ label: '训练', path: '/training' }] } },
-  { path: 'training/:id/answer', name: 'ExamPaperAnswer', component: () => import('@/views/training/ExamPaperAnswerView.vue'), meta: { title: '整卷答题', requiresAuth: true, immersive: true } },
 ]
 
 // 2.3 社区与文章模块
