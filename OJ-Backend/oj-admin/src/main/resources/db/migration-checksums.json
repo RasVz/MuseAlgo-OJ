@@ -73,5 +73,6 @@
   "V72__user_profile_presentation.sql": "1dc98991ff2669b84c139682a0784aa7af86c010ebadd7aaf62af31c20bd000e",
   "V73__problem_format_job.sql": "e7e517dddf1e93bf9f4558adf4944914c59cefdbcd5f9e8cebb448c7e0c4bb70",
   "V74__problem_statement_version.sql": "404ef0faf4fcf0bb073eca236b177feda2a05969137888196924c4eb9075be09",
-  "V75__problem_draft.sql": "0f2299926a7e73d1ee35fe2448e04970b13b5d925fbfe1ea325492cc88579c7a"
+  "V75__problem_draft.sql": "0f2299926a7e73d1ee35fe2448e04970b13b5d925fbfe1ea325492cc88579c7a",
+  "V76__exam_attempt_submission_binding.sql": "c6b96dd4e7861aaec6a49bf98217358ca251e0fa1bcfb9e4ee97a8e2a855d89c"
 }
