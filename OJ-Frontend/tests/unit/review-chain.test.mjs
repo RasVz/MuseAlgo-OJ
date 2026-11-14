@@ -58,6 +58,7 @@ test('late submission detail response cannot overwrite a newer route', async () 
   const pending = new Map()
   const context = { route: { params: { id: '1' } }, loading: { value: false }, detail: { value: null },
     isInProgress: { value: false }, reviewDialogVisible: { value: false }, loadGeneration: 0,
+    loadReviewCount() {}, showApiError() {},
     codeBlock: { value: null }, nextTick: callback => callback(), ElMessage: { error() {} },
     console: { error() {} }, ApiError, getSubmissionDetail: id => new Promise(resolve => pending.set(id, resolve)) }
   vm.runInNewContext(source.slice(start, end) + '\nglobalThis.run = loadData', context)

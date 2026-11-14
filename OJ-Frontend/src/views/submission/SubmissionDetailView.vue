@@ -15,8 +15,11 @@
         <SubmissionStatusBanner
           :detail="detail"
           :can-review="canReview"
+          :can-view-reviews="canViewReviewHistory"
+          :review-count="reviewCount"
           :reviewing="reviewing"
           @review="reviewDialogVisible = true"
+          @review-history="openReviewHistory"
         />
 
         <div class="detail-container">
@@ -92,10 +95,11 @@
       </div>
     </div>
 
-    <AiReviewDialog v-if="canReview"
+    <AiReviewConfirmDialog v-if="canReview"
       v-model:visible="reviewDialogVisible"
-      :submission-id="route.params.id"
-      :contest-id="route.query.contestId ?? detail?.contestId ?? null"
+      :detail="detail"
+      :loading="reviewing"
+      @confirm="startReview"
     />
   </div>
 </template>
@@ -111,6 +115,7 @@ import { showApiError } from '@/utils/errorFeedback'
 import { computed, ref, watch, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getSubmissionDetail } from '@/api/submission' 
+import { createAiReview, getAiReviewList } from '@/api/aiReview'
 import { ElMessage } from 'element-plus'
 import { 
   InfoFilled, Warning, Document, CopyDocument
@@ -118,24 +123,79 @@ import {
 import NavbarContext from '@/components/NavbarContext.vue'
 import SubmissionStatusBanner from './components/SubmissionStatusBanner.vue'
 import { canReviewSubmission } from '@/utils/tutorModes'
-import AiReviewDialog from './components/AiReviewDialog.vue'
+import AiReviewConfirmDialog from '@/views/ai-review/AiReviewConfirmDialog.vue'
+import { useUserStore } from '@/stores/userStore'
+import { aiReviewRequestKey } from '@/utils/aiReview'
 import hljs from '@/utils/highlight'
 import 'highlight.js/styles/atom-one-light.css'
 
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
 const loading = ref(false)
 const detail = ref(null)
 const codeBlock = ref(null)
 let pollTimer
 let loadGeneration = 0
+let reviewCountGeneration = 0
 
-// AI 复盘弹窗（逻辑已迁入 AiReviewDialog）
+// AI 复盘确认弹窗与任务创建状态
 const reviewDialogVisible = ref(false)
 const reviewing = ref(false)
+const reviewCount = ref(0)
+let pendingReviewRequest = null
 
-const canReview = computed(() => canReviewSubmission(detail.value, route.query.contestId))
+const isOwnSubmission = computed(() => detail.value && Number(detail.value.userId) === Number(userStore.userId))
+const canViewReviewHistory = computed(() => isOwnSubmission.value && !detail.value?.contestId &&
+  !detail.value?.examAttemptId && !route.query.contestId)
+const canReview = computed(() => isOwnSubmission.value && !detail.value?.examAttemptId &&
+  canReviewSubmission(detail.value, route.query.contestId))
 watch(canReview, value => { if (!value) reviewDialogVisible.value = false })
+
+const loadReviewCount = async id => {
+  const current = ++reviewCountGeneration
+  reviewCount.value = 0
+  if (!id || !isOwnSubmission.value || detail.value?.contestId || detail.value?.examAttemptId) return
+  try {
+    const response = await getAiReviewList({ submissionId: id, currentPage: 1, pageSize: 1 })
+    if (current === reviewCountGeneration && String(route.params.id) === String(id) && response.code === 200) {
+      reviewCount.value = Number(response.data?.total) || 0
+    }
+  } catch { /* 复盘历史不可用时不阻断提交详情 */ }
+}
+const openReviewHistory = () => router.push({ name: 'AiReviewRecords', query: { submissionId: String(detail.value.id) } })
+
+const startReview = async options => {
+  if (!canReview.value || !detail.value) return
+  const payload = {
+    submissionId: Number(detail.value.id),
+    helpMode: options.helpMode || 'AUTO',
+    studentQuestion: options.studentQuestion || undefined,
+    relationType: 'INITIAL'
+  }
+  const signature = JSON.stringify(payload)
+  if (!pendingReviewRequest || pendingReviewRequest.signature !== signature) {
+    pendingReviewRequest = { signature, requestId: aiReviewRequestKey() }
+  }
+  reviewing.value = true
+  try {
+    const response = await createAiReview({ ...payload, requestId: pendingReviewRequest.requestId })
+    if (response.code !== 200 || !response.data?.id) throw new Error(response.message || '复盘任务创建失败')
+    pendingReviewRequest = null
+    reviewDialogVisible.value = false
+    router.push({ name: 'AiReviewDetail', params: { id: response.data.id } })
+  } catch (error) {
+    if (error?.response?.status === 409 || error?.response?.data?.code === 409) {
+      ElMessage.info('该提交已有复盘任务，请先查看复盘记录。')
+      reviewDialogVisible.value = false
+      openReviewHistory()
+    } else {
+      showApiError(error, error.message || '复盘任务创建失败，请重试')
+    }
+  } finally {
+    reviewing.value = false
+  }
+}
 
 const loadData = async () => {
   const id = route.params.id
@@ -147,6 +207,7 @@ const loadData = async () => {
     if (generation !== loadGeneration || id !== route.params.id) return
     if (res.code === 200) {
       detail.value = res.data
+      loadReviewCount(id)
       if (isInProgress.value) schedulePoll()
       // 必须等 DOM 渲染出 code 元素再高亮：nextTick 前 codeBlock 还是 null，
 // 直接调用 hljs 会静默失败，页面只剩一段无颜色的代码。

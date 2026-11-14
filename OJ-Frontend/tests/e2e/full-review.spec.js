@@ -8,34 +8,64 @@ const evidence = process.env.OJ_TEST_OUTPUT_DIR
 const session = () => JSON.parse(readFileSync(join(evidence, 'sessions.json'), 'utf8')).student01
 const detail = id => ({ id, problemId: 1, problemTitle: `synthetic ${id}`, userId: 3, status: 2,
   code: `// synthetic submission ${id}`, language: 'cpp', score: 0, runTime: 1, runMemory: 1024, judgePhase: 'FINISHED' })
-async function openReview(page, context, contentType, body, status = 200) {
+async function openReview(page, context, { status = 200, answer = 'completed synthetic review', reviewStatus = 'SUCCEEDED', message = '' } = {}) {
   await injectSession(context, session())
   await page.route('**/api/submission/detail?*', route => route.fulfill({ json: { code: 200, data: detail(91001) } }))
-  await page.route('**/api/ai/review', route => route.fulfill({ status, contentType, body }))
+  const record = {
+    id: 91002, submissionId: 91001, problemId: 1, problemTitle: 'synthetic 91001',
+    userId: 3, language: 'cpp', submissionStatus: 2, score: 0, runTime: 1, runMemory: 1024,
+    relationType: 'INITIAL', helpMode: 'AUTO', status: reviewStatus, message,
+    createTime: '2026-11-15T12:00:00', answer, code: '// synthetic submission 91001', codeHash: 'synthetic-hash'
+  }
+  await page.route('**/api/ai/reviews**', async route => {
+    const request = route.request()
+    if (request.method() === 'POST') {
+      if (status !== 200) return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ code: status, errorCode: 'AI_UPSTREAM_FAILED', message: '复盘任务受理失败' }) })
+      return route.fulfill({ json: { code: 200, data: { ...record, answer: undefined, code: undefined, codeHash: undefined } } })
+    }
+    if (request.url().endsWith('/status')) return route.fulfill({ json: { code: 200, data: record } })
+    if (request.url().includes('/91002')) return route.fulfill({ json: { code: 200, data: record } })
+    return route.fulfill({ json: { code: 200, data: { items: [record], total: 1, currentPage: 1, pageSize: 15 } } })
+  })
   await page.goto('/submission/91001')
   await page.getByRole('button', { name: '🤖 AI 复盘' }).click()
+  await page.getByRole('button', { name: '确认并开始' }).click()
 }
 
 test.describe('full repository review regressions', () => {
   test.skip(!enabled, 'Requires the isolated full-review runtime')
-  for (const [name, contentType, body, expected] of [
-    ['JSON handshake', 'application/json', '{"code":403,"errorCode":"ACCESS_DENIED","message":"无权复盘合成提交"}', '无权复盘合成提交'],
-    ['app-error', 'text/event-stream', 'data: partial synthetic review\n\nevent: app-error\ndata: {"code":503,"errorCode":"AI_UPSTREAM_FAILED","message":"合成复盘中断"}\n\n', '合成复盘中断'],
-    ['early EOF', 'text/event-stream', 'data: partial synthetic review\n\n', 'AI 回复中断，请重试']
-  ]) {
-    test(`review ${name} preserves failure and incomplete state`, async ({ page, context }) => {
-      await openReview(page, context, contentType, body)
-      await expect(page.getByText('回复未完成，请重试')).toBeVisible()
-      await expect(page.locator('.el-message--error')).toHaveCount(1)
-      await expect(page.locator('.el-message--error')).toContainText(expected)
-      await expect(page.locator('.review-content')).not.toContainText('"errorCode"')
-    })
-  }
-  test('review done retains whitespace and completes successfully', async ({ page, context }) => {
-    await openReview(page, context, 'text/event-stream', 'data:   completed synthetic review\n\nevent: done\ndata: \n\n')
-    await expect(page.locator('.review-content')).toContainText('completed synthetic review')
-    await expect(page.getByText('回复未完成，请重试')).toHaveCount(0)
+  test('review acceptance returns a durable result that survives page reload', async ({ page, context }) => {
+    await openReview(page, context)
+    await expect(page.locator('.review-answer')).toContainText('completed synthetic review')
+    await page.reload()
+    await expect(page.locator('.review-answer')).toContainText('completed synthetic review')
     await expect(page.locator('.el-message--error')).toHaveCount(0)
+  })
+  test('failed review record keeps its failure and partial answer', async ({ page, context }) => {
+    await openReview(page, context, { reviewStatus: 'FAILED', answer: 'partial synthetic review', message: '合成复盘中断' })
+    await expect(page.getByText('本次复盘未完成')).toBeVisible()
+    await expect(page.getByText('合成复盘中断')).toBeVisible()
+    await expect(page.locator('.review-answer')).toContainText('partial synthetic review')
+    await expect(page.getByRole('button', { name: '重试' })).toBeVisible()
+  })
+  test('failed acceptance stays in confirmation and can retry the same request', async ({ page, context }) => {
+    await injectSession(context, session())
+    await page.route('**/api/submission/detail?*', route => route.fulfill({ json: { code: 200, data: detail(91001) } }))
+    let creates = 0
+    await page.route('**/api/ai/reviews', route => {
+      if (route.request().method() === 'POST') {
+        creates++
+        return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ code: 503, message: '受理暂时失败' }) })
+      }
+      return route.fulfill({ json: { code: 200, data: { items: [], total: 0 } } })
+    })
+    await page.goto('/submission/91001')
+    await page.getByRole('button', { name: '🤖 AI 复盘' }).click()
+    await page.getByRole('button', { name: '确认并开始' }).click()
+    await expect(page.locator('.el-message--error')).toContainText('受理暂时失败')
+    await expect(page.getByText('确认生成 AI 代码复盘')).toBeVisible()
+    await expect(page).toHaveURL(/\/submission\/91001$/)
+    expect(creates).toBe(1)
   })
   test('failed contest submission request never falls back to all submissions', async ({ page, context }) => {
     await injectSession(context, session())
