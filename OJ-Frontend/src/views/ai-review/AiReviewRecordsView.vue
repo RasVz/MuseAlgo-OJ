@@ -135,7 +135,7 @@ const loadData = async ({ silent = false } = {}) => {
     if (currentGeneration !== generation) return
     errorMessage.value = error.message || '暂时无法读取复盘记录'
   } finally {
-    if (currentGeneration === generation && !silent) loading.value = false
+    if (currentGeneration === generation) loading.value = false
   }
 }
 
@@ -159,7 +159,7 @@ const reset = () => {
 }
 const changePage = value => { page.value = value; buildQuery() }
 const changeSize = value => { pageSize.value = value; page.value = 1; buildQuery(true) }
-const openReview = row => router.push({ name: 'AiReviewDetail', params: { id: row.id } })
+const openReview = row => router.push({ name: 'AiReviewDetail', params: { id: row.id }, query: { from: route.fullPath } })
 const openSubmission = row => router.push({ name: 'SubmissionDetail', params: { id: row.submissionId } })
 const formatTime = value => value ? String(value).replace('T', ' ').slice(0, 19) : '—'
 const formatDuration = value => Number(value) > 0 ? `${(Number(value) / 1000).toFixed(1)} 秒` : '—'

@@ -22,3 +22,20 @@ export const aiReviewRequestKey = () => {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID()
   return `review-${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
+
+// 仅恢复记录列表的站内筛选，不把来源参数当作任意跳转地址。
+export const aiReviewListLocation = (from, submissionId) => {
+  if (typeof from === 'string') {
+    try {
+      const source = new URL(from, 'https://review.invalid')
+      if (source.origin === 'https://review.invalid' && source.pathname === '/my/ai-reviews') {
+        const query = {}
+        for (const key of ['keyword', 'submissionId', 'status', 'page', 'pageSize']) {
+          if (source.searchParams.has(key)) query[key] = source.searchParams.get(key)
+        }
+        return { name: 'AiReviewRecords', query }
+      }
+    } catch { /* 无效来源回到当前提交历史 */ }
+  }
+  return { name: 'AiReviewRecords', query: submissionId ? { submissionId: String(submissionId) } : {} }
+}

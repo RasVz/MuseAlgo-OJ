@@ -91,7 +91,7 @@
 
       <section v-if="review.parentReviewId" class="parent-link">
         此记录来自
-        <el-link type="primary" @click="router.push({ name: 'AiReviewDetail', params: { id: review.parentReviewId } })">
+        <el-link type="primary" @click="router.push({ name: 'AiReviewDetail', params: { id: review.parentReviewId }, query: route.query.from ? { from: route.query.from } : {} })">
           {{ aiReviewRelation(review.relationType) }} #{{ review.parentReviewId }}
         </el-link>
       </section>
@@ -112,7 +112,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { getAiReviewDetail, getAiReviewStatus, createAiReview, cancelAiReview } from '@/api/aiReview'
 import AiReviewConfirmDialog from './AiReviewConfirmDialog.vue'
 import { createMarkdown } from '@/utils/markdown'
-import { aiReviewRelation, aiReviewRequestKey, aiReviewStatus, isAiReviewActive } from '@/utils/aiReview'
+import { aiReviewListLocation, aiReviewRelation, aiReviewRequestKey, aiReviewStatus, isAiReviewActive } from '@/utils/aiReview'
 import { showApiError } from '@/utils/errorFeedback'
 
 const route = useRoute()
@@ -196,7 +196,7 @@ const onVisibilityChange = () => {
 }
 const backToRecords = () => {
   const submissionId = review.value?.submissionId || route.query.submissionId
-  router.push({ name: 'AiReviewRecords', query: submissionId ? { submissionId: String(submissionId) } : {} })
+  router.push(aiReviewListLocation(route.query.from, submissionId))
 }
 const openConfirm = relation => {
   nextRelation.value = relation
@@ -216,7 +216,7 @@ const createReview = async payload => {
     pendingCreate = null
     confirmVisible.value = false
     followupQuestion.value = ''
-    await router.push({ name: 'AiReviewDetail', params: { id } })
+    await router.push({ name: 'AiReviewDetail', params: { id }, query: route.query.from ? { from: route.query.from } : {} })
   } catch (error) {
     showApiError(error, error.message || '复盘任务创建失败')
     if (error?.response?.status === 409 || error?.response?.data?.code === 409) {

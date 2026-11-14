@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { aiReviewRelation, aiReviewRequestKey, aiReviewStatus, isAiReviewActive } from '../../src/utils/aiReview.js'
+import { aiReviewListLocation, aiReviewRelation, aiReviewRequestKey, aiReviewStatus, isAiReviewActive } from '../../src/utils/aiReview.js'
 
 test('review status metadata distinguishes active and terminal records', () => {
   assert.equal(isAiReviewActive('QUEUED'), true)
@@ -22,4 +22,14 @@ test('each explicit creation gets a unique idempotency key', () => {
   const second = aiReviewRequestKey()
   assert.ok(first.length > 8)
   assert.notEqual(first, second)
+})
+
+test('returning to the records restores filters and pagination from its own route', () => {
+  assert.deepEqual(aiReviewListLocation('/my/ai-reviews?keyword=P100&status=SUCCEEDED&page=2&pageSize=20', 10), {
+    name: 'AiReviewRecords', query: { keyword: 'P100', status: 'SUCCEEDED', page: '2', pageSize: '20' }
+  })
+  assert.deepEqual(aiReviewListLocation('/my/ai-reviews', 10), { name: 'AiReviewRecords', query: {} })
+  assert.deepEqual(aiReviewListLocation('https://external.example/my/ai-reviews?page=2', 10), {
+    name: 'AiReviewRecords', query: { submissionId: '10' }
+  })
 })
