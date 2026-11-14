@@ -1,5 +1,5 @@
 <template>
-  <el-card shadow="hover" class="home-card contest-card">
+  <el-card shadow="never" class="home-card contest-card">
     <template #header>
       <div class="card-header">
         <span class="header-title"><el-icon><Trophy /></el-icon> 近期比赛</span>
@@ -167,7 +167,7 @@ onMounted(fetchData)
 </script>
 
 <style scoped>
-.home-card { border-radius: 12px; border: none; height: 100%; }
+.home-card { border-radius: var(--radius-card); border: 1px solid var(--border-light); height: 100%; }
 .card-header { display: flex; justify-content: space-between; align-items: center; }
 .header-title { font-weight: bold; font-size: 16px; display: flex; align-items: center; gap: 6px; }
 

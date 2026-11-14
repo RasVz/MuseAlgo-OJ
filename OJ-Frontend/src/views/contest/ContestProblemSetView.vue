@@ -1,25 +1,23 @@
 <template>
   <div class="contest-workspace">
-    <div class="left-panel">
-      <el-card shadow="never" class="table-card">
-        <template #header>
-          <div class="panel-header">
-            <div class="header-title">
-              <el-icon><Tickets /></el-icon>
-              <span>比赛题目</span>
-            </div>
-            <el-tag type="info" effect="plain">共 {{ problems.length }} 题</el-tag>
-          </div>
-        </template>
+    <section class="problem-section">
+      <div class="section-toolbar">
+        <div class="header-title">
+          <el-icon><Tickets /></el-icon>
+          <span>比赛题目</span>
+        </div>
+        <el-tag type="info" effect="plain">共 {{ problems.length }} 题</el-tag>
+      </div>
 
-        <el-table
-          v-loading="loading"
-          :data="problems"
-          style="width: 100%"
-          :header-cell-style="{ background: 'var(--bg-input)', color: 'var(--text-regular)', fontWeight: '600' }"
-          :row-class-name="tableRowClassName"
-          @row-click="handleRowClick"
-        >
+      <el-table
+        v-loading="loading"
+        :data="problems"
+        style="width: 100%"
+        :header-cell-style="{ background: 'var(--bg-app)', color: 'var(--text-regular)', fontWeight: '600' }"
+        :row-class-name="tableRowClassName"
+        class="problem-table"
+        @row-click="handleRowClick"
+      >
           <el-table-column width="60" align="center">
             <template #default="{ row }">
               <el-icon v-if="row.userStatus === 1" color="var(--accent-success)"><Check /></el-icon>
@@ -72,11 +70,9 @@
             </template>
           </el-table-column>
         </el-table>
-      </el-card>
-    </div>
+    </section>
 
-    <div class="right-panel">
-      <el-card shadow="never" class="info-card">
+    <aside class="info-sidebar">
         <div class="contest-title">{{ contest.title || '比赛信息' }}</div>
         <div class="contest-time">
           <el-icon><Calendar /></el-icon>
@@ -133,8 +129,7 @@
           @click="enterAnswer(null, true)"
         >{{ vpAttempt ? '重新虚拟参赛' : '开始虚拟参赛' }}</el-button>
         <p v-if="entryHint" class="entry-hint">{{ entryHint }}</p>
-      </el-card>
-    </div>
+    </aside>
   </div>
 </template>
 
@@ -420,39 +415,49 @@ watch(() => [contestId.value, realStatus.value, userStore.userId], () => {
 </script>
 
 <style scoped>
-.vp-entry-button { width: 100%; margin: 10px 0 0; }
+.vp-entry-button { width: 100%; margin: 10px 0 0; border-radius: var(--radius-control); }
 
 .contest-workspace {
   display: grid;
-  grid-template-columns: 3fr 1fr;
-  gap: 16px;
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 16px 8px 0;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 0;
+  max-width: none;
+  margin: 0;
+  padding: 0;
 }
 
-.left-panel,
-.right-panel {
+.problem-section {
   min-width: 0;
+  background: var(--bg-surface);
 }
 
-.table-card {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 10px;
-}
-
-.panel-header {
+.section-toolbar {
+  height: 52px;
+  padding: 0 24px;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  border-bottom: 1px solid var(--border-light);
 }
+
 .header-title {
   display: flex;
   align-items: center;
   gap: 6px;
   font-weight: 700;
+  font-size: 14px;
   color: var(--text-primary);
 }
+
+.problem-table { --el-table-border-color: var(--border-light); }
+.problem-table :deep(th.el-table__cell) { height: var(--table-header-height); padding: 0; }
+.problem-table :deep(td.el-table__cell) { height: var(--table-row-height); padding: 0; }
+.problem-table :deep(.el-table__cell .cell) { padding: 0 12px; }
+.problem-table :deep(th:first-child .cell),
+.problem-table :deep(td:first-child .cell) { padding-left: 24px; }
+.problem-table :deep(th:last-child .cell),
+.problem-table :deep(td:last-child .cell) { padding-right: 24px; }
+.problem-table :deep(.el-table__row) { cursor: pointer; }
 
 .problem-index {
   font-weight: bold;
@@ -462,6 +467,7 @@ watch(() => [contestId.value, realStatus.value, userStore.userId], () => {
 
 .problem-title {
   font-weight: 500;
+  font-size: 14px;
   color: var(--text-primary);
   cursor: pointer;
   transition: color 0.2s;
@@ -498,20 +504,14 @@ watch(() => [contestId.value, realStatus.value, userStore.userId], () => {
   background-color: var(--el-border-color);
 }
 
-:deep(.el-table__row) {
-  cursor: pointer;
-  height: 64px;
-}
-:deep(.el-table__cell) {
-  padding-top: 16px !important;
-  padding-bottom: 16px !important;
-}
-
-.info-card {
-  border-radius: 10px;
-  border: 1px solid var(--el-border-color-lighter);
+.info-sidebar {
+  min-width: 0;
+  padding: 20px 24px;
+  border-left: 1px solid var(--border-light);
+  background: var(--bg-surface);
   position: sticky;
-  top: 14px;
+  top: 0;
+  align-self: start;
 }
 
 .contest-title {
@@ -568,6 +568,7 @@ watch(() => [contestId.value, realStatus.value, userStore.userId], () => {
 
 .entry-button {
   width: 100%;
+  border-radius: var(--radius-control);
 }
 .entry-hint {
   margin: 8px 0 0;

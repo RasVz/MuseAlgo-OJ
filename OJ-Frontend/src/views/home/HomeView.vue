@@ -44,6 +44,9 @@ import RecentColumnCard from '@/components/RecentColumnCard.vue'
   height: calc(100vh - var(--app-header-height));
   overflow-y: auto;
   overflow-x: hidden;
+  background: var(--bg-surface);
+  padding: 16px;
+  box-sizing: border-box;
 }
 
 .home-nav-title { 
@@ -65,7 +68,7 @@ import RecentColumnCard from '@/components/RecentColumnCard.vue'
 .left-col, .right-col {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
 }
 
 /* 高度分配，或者由内容撑开 */

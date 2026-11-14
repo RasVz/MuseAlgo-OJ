@@ -34,7 +34,7 @@
       </div>
     </transition>
 
-    <el-card shadow="never" class="table-card-wrapper">
+    <div class="table-surface">
       <ProblemTable 
         :data="list" 
         :loading="loading"
@@ -43,7 +43,7 @@
         v-model:page-size="pageSize"
         @change="fetchData"
       />
-    </el-card>
+    </div>
   </div>
 </template>
 
@@ -237,44 +237,33 @@ onMounted(() => fetchData())
 }
 
 .selected-tags-panel {
-  background: var(--bg-surface);
-  box-shadow: var(--shadow-md); 
-  border-radius: 8px;
-  margin-bottom: 15px; 
-  padding: 12px 20px;
-  flex-shrink: 0; 
-  border: 1px solid var(--border-light);
+  background: var(--bg-filter-strip);
+  border-bottom: 1px solid var(--border-light);
+  border-radius: 0;
+  margin-bottom: 0;
+  padding: 10px 24px;
+  flex-shrink: 0;
   z-index: 10;
 }
-.panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-.panel-title { font-size: 14px; color: var(--text-secondary); }
-.panel-content { display: flex; flex-wrap: wrap; gap: 10px; }
+.panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.panel-title { font-size: 12px; color: var(--text-secondary); }
+.panel-content { display: flex; flex-wrap: wrap; gap: 8px; }
 .custom-tag-blue {
-  background-color: var(--accent-primary-dark) !important;
-  border-color: var(--accent-primary-dark) !important;
-  color: var(--text-on-accent) !important;
-  font-size: 13px;
-  padding: 0 12px;
-  height: 32px;
-  line-height: 30px;
-  border-radius: 4px;
+  background-color: var(--bg-surface) !important;
+  border-color: var(--border-filter-strip) !important;
+  color: var(--text-filter-strip) !important;
+  font-size: 12px;
+  padding: 0 10px;
+  height: 28px;
+  line-height: 26px;
+  border-radius: var(--radius-tag);
 }
-.custom-tag-blue :deep(.el-tag__close) { color: var(--text-on-accent); }
+.custom-tag-blue :deep(.el-tag__close) { color: var(--text-filter-strip); }
 
-.table-card-wrapper {
+.table-surface {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  border-radius: 12px;
-  border: none;
-  min-height: 0;
-}
-/* 这里修改了 padding，因为 toolbar 移进去了，wrapper 本身不需要 padding */
-.table-card-wrapper :deep(.el-card__body) {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  padding: 0; 
-  min-height: 0;
 }
 </style>
