@@ -81,7 +81,6 @@
                   type="danger"
                   icon="Delete"
                   class="action-btn"
-                  round
                   @click="$emit('delete')"
                   :disabled="saving"
                 >
@@ -93,7 +92,6 @@
                   @click="saveInfo" 
                   :loading="saving" 
                   class="action-btn"
-                  round
                 >
                   保存修改
                 </el-button>
@@ -187,14 +185,21 @@ onMounted(() => {
 .auth-option-item { display: flex; justify-content: space-between; align-items: center; width: 100%; }
 .item-main { display: flex; align-items: center; font-weight: 500; gap: 5px; }
 .item-sub { font-size: 12px; color: var(--text-secondary); }
-.side-panel { background: var(--bg-surface-hover); padding: 20px; border-radius: 8px; border: 1px solid var(--border-light); height: 100%; box-sizing: border-box; display: flex; flex-direction: column; }
+.side-panel {
+  background: var(--bg-app);
+  padding: 20px;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border-light);
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+}
 .panel-header { margin-bottom: 15px; }
 .panel-title { font-weight: 600; color: var(--text-primary); font-size: 15px; }
 .panel-content { flex: 1; display: flex; flex-direction: column; }
 .panel-desc { font-size: 13px; color: var(--text-regular); line-height: 1.6; margin: 0; }
 .status-item { display: flex; justify-content: space-between; align-items: center; font-size: 14px; }
 .action-area { display: flex; flex-direction: column; align-items: center; gap: 12px; margin-top: auto; padding-top: 30px; }
-.action-btn { width: 80%; height: 40px; font-weight: 600; margin-left: 0; }
-.action-btn.el-button--primary { box-shadow: 0 4px 12px var(--el-color-primary-light-7); }
-.action-btn.el-button--danger { box-shadow: 0 4px 12px var(--el-color-danger-light-7); }
+.action-btn { width: 80%; height: 36px; font-weight: 500; margin-left: 0; border-radius: var(--radius-control); }
 </style>

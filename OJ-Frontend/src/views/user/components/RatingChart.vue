@@ -224,7 +224,7 @@ const goToContestDetail = (item) => {
 <style scoped>
 /* 样式部分保持一致 */
 .chart-card {
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   overflow: hidden;
   border: 1px solid var(--border-light);
   margin-bottom: 0;

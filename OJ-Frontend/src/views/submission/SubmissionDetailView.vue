@@ -11,8 +11,7 @@
     </NavbarContext>
 
     <div class="main-content" v-loading="loading">
-      <div class="detail-container" v-if="detail">
-        
+      <template v-if="detail">
         <SubmissionStatusBanner
           :detail="detail"
           :can-review="canReview"
@@ -20,72 +19,73 @@
           @review="reviewDialogVisible = true"
         />
 
-        <div v-if="isInProgress" class="judge-progress mb-4">
-          <div class="judge-progress-title">系统正在处理本次提交</div>
-          <el-steps :active="judgeStep" align-center finish-status="success" process-status="process">
-            <el-step title="排队中" description="等待判题机" />
-            <el-step title="编译中" description="检查代码能否运行" />
-            <el-step title="判题中" description="运行测试数据" />
-          </el-steps>
-        </div>
+        <div class="detail-container">
+          <div v-if="isInProgress" class="judge-progress mb-4">
+            <div class="judge-progress-title">系统正在处理本次提交</div>
+            <el-steps :active="judgeStep" align-center finish-status="success" process-status="process">
+              <el-step title="排队中" description="等待判题机" />
+              <el-step title="编译中" description="检查代码能否运行" />
+              <el-step title="判题中" description="运行测试数据" />
+            </el-steps>
+          </div>
 
-        <div class="info-row mb-4">
-          <el-descriptions :column="3" border class="info-desc">
-            <el-descriptions-item label="题目">
-              <el-link type="primary" :underline="false" @click="router.push({ path: `/problem/${detail.problemId}`, query: (route.query.contestId || detail.contestId) ? { contestId: route.query.contestId || detail.contestId } : {} })">
-                P{{ detail.problemId }} {{ detail.problemTitle || '' }}
-              </el-link>
-            </el-descriptions-item>
-            <el-descriptions-item label="提交者">
-              <el-link type="primary" :underline="false" @click="router.push({ path: `/user/${detail.userId}` })">
-                {{ detail.username || detail.userId }}
-              </el-link>
-            </el-descriptions-item>
-            <el-descriptions-item label="提交时间">
-              {{ formatTime(detail.createTime) }}
-            </el-descriptions-item>
-          </el-descriptions>
-        </div>
+          <div class="info-row mb-4">
+            <el-descriptions :column="3" border class="info-desc">
+              <el-descriptions-item label="题目">
+                <el-link type="primary" :underline="false" @click="router.push({ path: `/problem/${detail.problemId}`, query: (route.query.contestId || detail.contestId) ? { contestId: route.query.contestId || detail.contestId } : {} })">
+                  P{{ detail.problemId }} {{ detail.problemTitle || '' }}
+                </el-link>
+              </el-descriptions-item>
+              <el-descriptions-item label="提交者">
+                <el-link type="primary" :underline="false" @click="router.push({ path: `/user/${detail.userId}` })">
+                  {{ detail.username || detail.userId }}
+                </el-link>
+              </el-descriptions-item>
+              <el-descriptions-item label="提交时间">
+                {{ formatTime(detail.createTime) }}
+              </el-descriptions-item>
+            </el-descriptions>
+          </div>
 
-        <div v-if="detail.status !== 1 && detail.errorMessage" class="section-block mb-4">
-          <div class="error-panel">
-            <div class="panel-header error">
-              <div class="header-left">
-                <el-icon><Warning /></el-icon>
-                <span>错误详情 / 编译器输出</span>
+          <div v-if="detail.status !== 1 && detail.errorMessage" class="section-block mb-4">
+            <div class="error-panel">
+              <div class="panel-header error">
+                <div class="header-left">
+                  <el-icon><Warning /></el-icon>
+                  <span>错误详情 / 编译器输出</span>
+                </div>
+              </div>
+              <div class="error-code-block">
+                <pre>{{ detail.errorMessage }}</pre>
               </div>
             </div>
-            <div class="error-code-block">
-              <pre>{{ detail.errorMessage }}</pre>
+          </div>
+
+          <div v-if="failureAdvice" class="failure-advice section-block mb-4">
+            <el-icon><InfoFilled /></el-icon><div><strong>下一步建议</strong><p>{{ failureAdvice }}</p></div>
+          </div>
+
+          <div class="section-block">
+            <div class="code-panel">
+              <div class="panel-header">
+                <div class="header-left">
+                  <el-icon><Document /></el-icon>
+                  <span>源代码</span>
+                  <el-tag size="small" effect="plain" class="ml-2">{{ detail.language }}</el-tag>
+                </div>
+                <el-button v-if="detail.code" size="small" type="primary" link @click="copyCode">
+                  <el-icon class="mr-1"><CopyDocument /></el-icon> 复制代码
+                </el-button>
+              </div>
+
+              <div class="code-content">
+                <pre v-if="detail.code"><code :class="`language-${getLanguageClass(detail.language)}`" ref="codeBlock">{{ detail.code }}</code></pre>
+                <div v-else class="code-empty">暂无代码或无权限查看</div>
+              </div>
             </div>
           </div>
         </div>
-
-        <div v-if="failureAdvice" class="failure-advice section-block mb-4">
-          <el-icon><InfoFilled /></el-icon><div><strong>下一步建议</strong><p>{{ failureAdvice }}</p></div>
-        </div>
-
-        <div class="section-block">
-          <div class="code-panel">
-            <div class="panel-header">
-              <div class="header-left">
-                <el-icon><Document /></el-icon>
-                <span>源代码</span>
-                <el-tag size="small" effect="plain" class="ml-2">{{ detail.language }}</el-tag>
-              </div>
-              <el-button v-if="detail.code" size="small" type="primary" link @click="copyCode">
-                <el-icon class="mr-1"><CopyDocument /></el-icon> 复制代码
-              </el-button>
-            </div>
-            
-            <div class="code-content">
-              <pre v-if="detail.code"><code :class="`language-${getLanguageClass(detail.language)}`" ref="codeBlock">{{ detail.code }}</code></pre>
-              <div v-else style="padding: 20px; color: var(--text-secondary); text-align: center;">暂无代码或无权限查看</div>
-            </div>
-          </div>
-        </div>
-
-      </div>
+      </template>
 
       <div v-else-if="!loading" class="empty-state">
         <el-empty description="未找到记录或加载失败" />
@@ -234,8 +234,9 @@ onUnmounted(() => { loadGeneration++; clearTimeout(pollTimer) })
 .submission-detail-view {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 60px);
+  height: calc(100vh - var(--app-header-height));
   overflow: hidden;
+  background: var(--bg-surface);
 }
 .nav-header {
   display: flex;
@@ -249,34 +250,38 @@ onUnmounted(() => { loadGeneration++; clearTimeout(pollTimer) })
 }
 .main-content {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: 20px;
-  background-color: var(--bg-app);
+  padding: 0;
+  background-color: var(--bg-surface);
 }
 .detail-container {
+  width: 100%;
   max-width: 1000px;
   margin: 0 auto;
+  padding: 24px;
+  box-sizing: border-box;
 }
+.empty-state { padding: 48px 24px; }
 .mb-4 { margin-bottom: 20px; }
 .ml-2 { margin-left: 8px; }
 .mr-1 { margin-right: 4px; }
-.judge-progress { padding: 20px; border: 1px solid var(--el-color-primary-light-7); border-radius: 8px; background: var(--accent-primary-light); }
-.judge-progress-title { margin-bottom: 16px; color: var(--accent-primary-dark); font-weight: 650; }
-.failure-advice { display:flex; gap:10px; padding:15px 18px; border:1px solid var(--el-color-warning-light-7); border-radius:8px; background:var(--accent-warning-light); color:var(--el-color-warning-dark-2); }
+.judge-progress { padding: 20px; border: 1px solid var(--border-filter-strip); border-radius: var(--radius-card); background: var(--bg-filter-strip); }
+.judge-progress-title { margin-bottom: 16px; color: var(--text-filter-strip); font-weight: 650; }
+.failure-advice { display:flex; gap:10px; padding:15px 18px; border:1px solid var(--border-light); border-left:3px solid var(--accent-warning); border-radius: var(--radius-card); background:var(--bg-app); color:var(--text-primary); }
+.failure-advice > .el-icon { color: var(--accent-warning); }
 .failure-advice p { margin:6px 0 0; line-height:1.65; font-size:14px; }
 .info-desc {
-  background: var(--bg-surface);
-  padding: 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-card);
+  overflow: hidden;
 }
 .panel-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 12px 20px;
-  background-color: var(--bg-surface);
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px 8px 0 0;
+  background-color: var(--bg-app);
+  border-bottom: 1px solid var(--border-light);
 }
 .header-left {
   display: flex;
@@ -286,30 +291,30 @@ onUnmounted(() => { loadGeneration++; clearTimeout(pollTimer) })
   color: var(--text-primary);
 }
 .error-panel {
-  border: 1px solid var(--el-color-danger-light-7);
-  border-radius: 8px;
+  border: 1px solid var(--border-light);
+  border-left: 3px solid var(--accent-danger);
+  border-radius: var(--radius-card);
   overflow: hidden;
 }
 .error-panel .panel-header.error {
-  background-color: var(--accent-danger-light);
+  background-color: var(--bg-app);
   color: var(--accent-danger);
-  border-bottom-color: var(--el-color-danger-light-7);
+  border-bottom-color: var(--border-light);
 }
 .error-code-block {
   padding: 15px;
   background-color: var(--bg-surface);
-  color: var(--accent-danger);
+  color: var(--text-primary);
   font-family: Consolas, monospace;
   font-size: 13px;
   white-space: pre-wrap;
   word-break: break-all;
 }
 .code-panel {
-  border: 1px solid var(--el-border-color);
-  border-radius: 8px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-card);
   overflow: hidden;
   background: var(--bg-surface);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
 }
 .code-content {
   margin: 0;
@@ -317,10 +322,15 @@ onUnmounted(() => { loadGeneration++; clearTimeout(pollTimer) })
   background-color: var(--bg-surface-hover);
   overflow-x: auto;
 }
+.code-empty {
+  padding: 20px;
+  color: var(--text-secondary);
+  text-align: center;
+}
 .code-content pre {
   margin: 0;
   padding: 15px;
-  font-family: 'Fira Code', Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 14px;
   line-height: 1.5;
 }

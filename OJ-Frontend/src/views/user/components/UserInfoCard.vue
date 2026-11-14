@@ -152,7 +152,7 @@ const formatNumber = (num) => {
   padding: 24px 20px 22px;
   background: var(--bg-surface);
   border: 1px solid var(--border-light);
-  border-radius: 16px;
+  border-radius: var(--radius-card);
   text-align: center;
   position: relative;
 }
@@ -231,7 +231,7 @@ const formatNumber = (num) => {
 }
 .profile-action {
   width: 100%;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   min-height: 36px;
 }
 @media (max-width: 680px) {

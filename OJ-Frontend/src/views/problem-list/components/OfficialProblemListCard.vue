@@ -24,13 +24,13 @@ defineProps(['data', 'gradient'])
 </script>
 
 <style scoped>
-.list-card { border: 1px solid var(--border-light); border-radius: 12px; overflow: hidden; cursor: pointer; transition: 0.3s; margin-bottom: 20px; background: var(--bg-surface); }
-.list-card:hover { transform: translateY(-5px); box-shadow: var(--shadow-lg); }
+.list-card { border: 1px solid var(--border-light); border-radius: var(--radius-card); overflow: hidden; cursor: pointer; transition: border-color 0.2s; margin-bottom: 20px; background: var(--bg-surface); }
+.list-card:hover { border-color: var(--border-hover); }
 .card-cover { height: 110px; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-on-accent); }
 .cover-icon { font-size: 32px; margin-bottom: 5px; }
-.cover-type { font-size: 13px; font-weight: bold; letter-spacing: 2px; }
-.card-body { padding-left: 15px; }
-.card-title { font-size: 18px; font-weight: bold; height: 30px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--text-primary); }
-.card-meta { display: flex; gap: 10px; color: var(--text-secondary); font-size: 14px; margin: 10px 0; }
-.card-footer { border-top: 1px solid var(--border-light); padding-top: 8px; padding-bottom: 8px; }
+.cover-type { font-size: 13px; font-weight: 600; letter-spacing: 2px; }
+.card-body { padding: 16px; }
+.card-title { margin: 0; font-size: 16px; font-weight: 600; height: 30px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--text-primary); }
+.card-meta { display: flex; gap: 10px; color: var(--text-secondary); font-size: 13px; margin: 8px 0 12px; }
+.card-footer { border-top: 1px solid var(--border-light); padding-top: 12px; }
 </style>

@@ -168,6 +168,9 @@ function handlePrefSave(payload) {
 .settings-page {
   padding-bottom: 40px;
   min-width: 0;
+  min-height: calc(100vh - var(--app-header-height));
+  box-sizing: border-box;
+  background: var(--bg-surface);
   font-family: var(--font-family);
 }
 .settings-hero {
@@ -231,7 +234,7 @@ function handlePrefSave(payload) {
 .settings-body {
   max-width: 1240px;
   margin: 0 auto;
-  padding: 24px 28px 0;
+  padding: 20px 24px 0;
   box-sizing: border-box;
 }
 .settings-page-title {
@@ -264,11 +267,10 @@ function handlePrefSave(payload) {
   font-size: 15px;
   text-align: left;
   padding: 0 16px !important;
-  border-radius: var(--radius-sm);
 }
 .settings-tabs :deep(.el-tabs__item.is-active) {
-  background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
-  color: var(--text-primary);
+  background: transparent;
+  color: var(--accent-primary);
   font-weight: 600;
 }
 .settings-tabs :deep(.el-tabs__active-bar) {
@@ -286,9 +288,8 @@ function handlePrefSave(payload) {
 .settings-panel {
   background: var(--bg-surface);
   border: 1px solid var(--border-light);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-card);
   padding: 20px 24px 24px;
-  box-shadow: var(--shadow-sm);
 }
 :global(.settings-panel .el-button) {
   min-height: 44px;

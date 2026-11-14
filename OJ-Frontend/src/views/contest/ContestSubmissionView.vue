@@ -1,23 +1,21 @@
 <template>
   <div class="contest-submission-page">
     <div class="main-area">
-      <el-card shadow="never" class="table-card">
-        <template #header>
-          <div class="header-row">
-            <div class="title-wrap">
-              <el-icon><Document /></el-icon>
-              <span>比赛测评记录</span>
-              <el-tag size="small" type="info" effect="plain">共 {{ total }} 条</el-tag>
-            </div>
+      <div class="table-toolbar">
+        <div class="title-wrap">
+          <el-icon><Document /></el-icon>
+          <span>比赛测评记录</span>
+          <el-tag size="small" type="info" effect="plain">共 {{ total }} 条</el-tag>
+        </div>
 
-            <div class="toolbar-wrap">
-              <el-checkbox v-model="mineOnly" @change="onMineOnlyChange">只看自己</el-checkbox>
-              <el-button text @click="resetFilters">重置筛选</el-button>
-              <el-button type="primary" @click="fetchData">刷新</el-button>
-            </div>
-          </div>
-        </template>
+        <div class="toolbar-actions">
+          <el-checkbox v-model="mineOnly" @change="onMineOnlyChange">只看自己</el-checkbox>
+          <el-button text @click="resetFilters">重置筛选</el-button>
+          <el-button type="primary" @click="fetchData">刷新</el-button>
+        </div>
+      </div>
 
+      <div class="table-body">
         <ContestSubmissionTable
           :list="list"
           :loading="loading"
@@ -27,21 +25,21 @@
           @view-problem="goToProblem"
           @view-detail="goDetail"
         />
+      </div>
 
-        <div class="pagination-box">
-          <el-pagination
-            background
-            layout="total, prev, pager, next"
-            :total="total"
-            v-model:current-page="currentPage"
-            :page-size="pageSize"
-            @current-change="fetchData"
-          />
-        </div>
-      </el-card>
+      <div class="pagination-footer">
+        <el-pagination
+          background
+          layout="total, prev, pager, next"
+          :total="total"
+          v-model:current-page="currentPage"
+          :page-size="pageSize"
+          @current-change="fetchData"
+        />
+      </div>
     </div>
 
-    <div class="side-area">
+    <aside class="side-area">
       <SubmissionFilterPanel
         :filters="filters"
         :problem-options="problemOptions"
@@ -49,7 +47,7 @@
         @update:filters="Object.assign(filters, $event)"
         @apply="onApplyFilter"
       />
-    </div>
+    </aside>
   </div>
 </template>
 
@@ -269,71 +267,74 @@ watch(contestId, () => {
 </script>
 
 <style scoped>
+/* 白底贴边数据页：52px 顶栏 + 内部滚动表格 + 56px 居中分页；48px 为 ContestLayout 页签栏高度 */
 .contest-submission-page {
   display: flex;
-  gap: 16px;
-  padding: 20px;
-  max-width: 1200px;
-  margin: 0 auto;
+  height: calc(100vh - var(--app-header-height) - 48px);
+  overflow: hidden;
+  background: var(--bg-surface);
 }
 
 .main-area {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .side-area {
   width: 260px;
   flex-shrink: 0;
+  padding: 20px 24px;
+  overflow-y: auto;
+  border-left: 1px solid var(--border-light);
+  background: var(--bg-surface);
 }
 
-.table-card {
-  border-radius: 12px;
-  border: none;
-  box-shadow: var(--shadow-md);
-}
-
-.header-row {
+.table-toolbar {
+  height: 52px;
+  flex: none;
+  padding: 0 24px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border-light);
 }
 
 .title-wrap {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
 }
 
-.toolbar-wrap {
+.toolbar-actions {
   display: flex;
   align-items: center;
   gap: 8px;
 }
+.toolbar-actions :deep(.el-button) { border-radius: var(--radius-control); }
 
-.pagination-box {
+.table-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.pagination-footer {
+  height: 56px;
+  flex: none;
   display: flex;
-  justify-content: flex-end;
-  padding-top: 16px;
+  justify-content: center;
+  align-items: center;
+  border-top: 1px solid var(--border-light);
 }
-
-.filter-card {
-  border-radius: 12px;
-  border: none;
-  box-shadow: var(--shadow-md);
-}
-
-@media (max-width: 900px) {
-  .contest-submission-page {
-    flex-direction: column;
-  }
-  .side-area {
-    width: 100%;
-  }
+.pagination-footer :deep(.el-pagination.is-background .btn-prev),
+.pagination-footer :deep(.el-pagination.is-background .btn-next),
+.pagination-footer :deep(.el-pagination.is-background .el-pager li) {
+  border-radius: var(--radius-control);
 }
 </style>

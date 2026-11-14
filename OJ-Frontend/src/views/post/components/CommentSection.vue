@@ -148,17 +148,18 @@ const submit = async () => {
 .count { font-size: 14px; color: var(--text-secondary); font-weight: 400; }
 
 .input-area {
-  display: flex; gap: 14px; margin-bottom: 36px;
-  background: var(--bg-app); border-radius: var(--radius-md);
+  display: flex; gap: 14px; margin-bottom: 32px;
+  background: var(--bg-surface); border-radius: var(--radius-card);
   padding: 18px; border: 1px solid var(--border-light);
 }
 .input-box { flex: 1; display: flex; flex-direction: column; }
 .input-box :deep(.el-textarea__inner) {
-  border-radius: var(--radius-sm); border-color: var(--border-light);
+  border-radius: var(--radius-control); border-color: var(--border-light);
   background: var(--bg-surface); resize: none; font-size: 14px;
 }
 .input-box :deep(.el-textarea__inner):focus { border-color: var(--accent-primary); }
 .input-footer { margin-top: 10px; display: flex; justify-content: flex-end; align-items: center; gap: 14px; }
+.input-footer :deep(.el-button) { border-radius: var(--radius-control); }
 .cancel-reply { font-size: 13px; color: var(--text-secondary); cursor: pointer; }
 .cancel-reply:hover { color: var(--accent-danger); }
 </style>

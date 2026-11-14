@@ -10,7 +10,7 @@
           <span class="count-label">动态总数</span>
           <span class="count-value">{{ postCount }}</span>
         </div>
-        <el-button type="primary" :icon="Edit" @click="publishDialogVisible = true" round size="large" class="publish-btn">
+        <el-button type="primary" :icon="Edit" @click="publishDialogVisible = true" size="large" class="publish-btn">
           发布新动态
         </el-button>
       </div>
@@ -93,9 +93,12 @@ onMounted(() => {
 
 <style scoped>
 .class-post-container {
-  padding: 16px 20px 24px;
+  height: 100%;
+  padding: 20px 24px 24px;
   max-width: 920px;
   margin: 0 auto;
+  box-sizing: border-box;
+  overflow-y: auto;
 }
 
 /* 顶部头图 */
@@ -104,10 +107,10 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   gap: 16px;
-  margin-bottom: 22px;
-  padding: 20px 22px;
-  border-radius: 16px;
-  background: linear-gradient(135deg, #f5f9ff 0%, #eef6ff 55%, #f4f8ff 100%);
+  margin-bottom: 16px;
+  padding: 16px 20px;
+  border-radius: var(--radius-card);
+  background: var(--bg-app);
   border: 1px solid var(--border-light);
 }
 
@@ -116,16 +119,16 @@ onMounted(() => {
 }
 
 .page-title {
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 700;
   color: var(--text-primary);
-  margin: 0 0 6px;
+  margin: 0 0 4px;
   letter-spacing: 0.2px;
 }
 
 .page-subtitle {
   margin: 0;
-  font-size: 14px;
+  font-size: 13px;
   color: var(--text-regular);
 }
 
@@ -141,7 +144,7 @@ onMounted(() => {
   gap: 8px;
   background: var(--bg-surface);
   border: 1px solid var(--border-light);
-  border-radius: 999px;
+  border-radius: var(--radius-tag);
   padding: 8px 14px;
 }
 
@@ -153,26 +156,26 @@ onMounted(() => {
 .count-value {
   font-size: 18px;
   font-weight: 700;
-  color: var(--el-color-primary);
+  color: var(--accent-primary);
   line-height: 1;
 }
 
 .publish-btn {
-  box-shadow: 0 8px 18px rgba(64, 158, 255, 0.2);
+  border-radius: var(--radius-control);
 }
 
 /* 列表 */
 .post-feed {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
   min-height: 180px;
 }
 
 .empty-wrap {
   background: var(--bg-surface);
   border: 1px dashed var(--border-light);
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   padding: 14px;
 }
 

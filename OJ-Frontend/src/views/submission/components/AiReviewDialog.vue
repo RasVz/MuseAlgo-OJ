@@ -89,6 +89,13 @@ const startReview = async () => {
 .review-scope { font-size: 13px; color: var(--text-secondary); }
 .review-content { min-height: 120px; max-height: 40vh; overflow-y: auto; margin-bottom: 16px; }
 .review-thinking { color: var(--text-secondary); padding: 32px 0; text-align: center; }
-.review-incomplete { color: var(--el-color-warning-dark-2); }
-label { display: block; margin: 12px 0 8px; font-size: 13px; }
+.review-incomplete { color: var(--accent-warning); }
+label { display: block; margin: 12px 0 8px; font-size: 13px; color: var(--text-primary); }
+
+/* 弹窗挂在 body 上，scoped 深度选择器匹配不到，用本弹窗专属类名统一圆角。 */
+:global(.review-dialog) { border-radius: var(--radius-card); }
+:global(.review-dialog .el-button) { border-radius: var(--radius-control); }
+:global(.review-dialog .el-input__wrapper),
+:global(.review-dialog .el-textarea__inner) { border-radius: var(--radius-control); }
+:global(.review-dialog .el-tag) { border-radius: var(--radius-tag); }
 </style>

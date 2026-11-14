@@ -11,7 +11,7 @@
       <div class="af-bio">{{ author.motto || '这个人很神秘，什么都没写。' }}</div>
     </div>
     <div class="af-right" v-if="!isSelf">
-      <el-button :type="isFollowed ? 'default' : 'primary'" size="small" round @click="$emit('toggle-follow')">
+      <el-button :type="isFollowed ? 'default' : 'primary'" size="small" @click="$emit('toggle-follow')">
         {{ isFollowed ? '已关注' : '+ 关注' }}
       </el-button>
     </div>
@@ -37,9 +37,9 @@ const goUser = (id) => router.push({ name: 'UserProfile', params: { id } })
 
 <style scoped>
 .author-footer {
-  background: var(--bg-app); border-radius: var(--radius-md); padding: 24px 28px;
+  background: var(--bg-surface); border-radius: var(--radius-card); padding: 20px 24px;
   display: flex; align-items: center; gap: 18px;
-  margin-bottom: 36px; border: 1px solid var(--border-light);
+  margin-bottom: 32px; border: 1px solid var(--border-light);
 }
 
 .af-left { flex-shrink: 0; }

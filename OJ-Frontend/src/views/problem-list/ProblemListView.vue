@@ -135,23 +135,29 @@ onMounted(fetchData)
   flex-direction: column;
   height: calc(100vh - var(--app-header-height));
   background: var(--bg-surface);
-  border-radius: 12px;
+  border-radius: 0;
   overflow: hidden; 
 }
 
 .list-content-wrapper {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 20px;
 }
 
 .pagination-footer {
   flex-shrink: 0;
-  height: 64px;
+  height: 56px;
   display: flex;
   justify-content: center;
   align-items: center;
   border-top: 1px solid var(--border-light);
   background: var(--bg-surface);
+}
+.pagination-footer :deep(.el-pagination.is-background .btn-prev),
+.pagination-footer :deep(.el-pagination.is-background .btn-next),
+.pagination-footer :deep(.el-pagination.is-background .el-pager li) {
+  border-radius: var(--radius-control);
 }
 </style>

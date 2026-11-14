@@ -3,9 +3,9 @@
     :data="list"
     style="width: 100%"
     height="100%"
-    stripe
     v-loading="loading"
-    :header-cell-style="{ background: 'var(--el-fill-color-light)', color: 'var(--text-regular)', fontWeight: 'bold' }"
+    class="contest-table"
+    :header-cell-style="{ background: 'var(--bg-app)', color: 'var(--text-regular)', fontWeight: '600' }"
   >
     <el-table-column label="赛事名称" min-width="260">
       <template #default="{ row }">
@@ -84,7 +84,6 @@
               v-if="getContestStatus(row) === 'NotStarted' && !row.registered"
               type="primary"
               size="small"
-              round
               @click="$emit('register', row)"
             >
               立即报名
@@ -189,8 +188,24 @@ const toContestRank = (id) => router.push({ name: 'ContestRanking', params: { id
 </script>
 
 <style scoped>
+/* 工作台表格：表头 40px / 行 48px，首尾列 24px，其余单元格 12px */
+.contest-table { --el-table-border-color: var(--border-light); }
+.contest-table :deep(th.el-table__cell) {
+  height: var(--table-header-height);
+  padding: 0;
+}
+.contest-table :deep(td.el-table__cell) {
+  height: var(--table-row-height);
+  padding: 0;
+}
+.contest-table :deep(.el-table__cell .cell) { padding: 0 12px; }
+.contest-table :deep(th:first-child .cell),
+.contest-table :deep(td:first-child .cell) { padding-left: 24px; }
+.contest-table :deep(th:last-child .cell),
+.contest-table :deep(td:last-child .cell) { padding-right: 24px; }
+
 .contest-title-wrapper { display: flex; align-items: center; }
-.contest-link { font-weight: 600; font-size: 15px; }
+.contest-link { font-weight: 600; font-size: 14px; }
 .ml-2 { margin-left: 8px; }
 .mr-2 { margin-right: 8px; }
 .mb-1 { margin-bottom: 4px; }
@@ -205,7 +220,6 @@ const toContestRank = (id) => router.push({ name: 'ContestRanking', params: { id
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 53.7px;
   line-height: 1.4;
 }
 
@@ -217,7 +231,6 @@ const toContestRank = (id) => router.push({ name: 'ContestRanking', params: { id
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 53.7px;
   gap: 4px;
 }
 
@@ -226,6 +239,7 @@ const toContestRank = (id) => router.push({ name: 'ContestRanking', params: { id
   display: flex;
   align-items: center;
 }
+.action-btn-wrapper :deep(.el-button) { border-radius: var(--radius-control); }
 
 .participant-count { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-secondary); }
 

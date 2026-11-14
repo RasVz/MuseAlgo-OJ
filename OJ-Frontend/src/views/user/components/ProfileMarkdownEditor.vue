@@ -122,7 +122,7 @@ async function upload(event) {
   box-sizing: border-box;
   overflow: auto;
   border: 1px solid var(--border-base);
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   padding: 20px;
 }
 textarea {
@@ -136,7 +136,7 @@ textarea {
     Consolas,
     monospace;
   border: 1px solid var(--border-base);
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   color: var(--text-primary);
   background: var(--bg-app);
 }

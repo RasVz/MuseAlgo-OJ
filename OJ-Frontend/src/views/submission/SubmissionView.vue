@@ -6,7 +6,11 @@
       @reset="resetFilters"
     />
 
-    <el-card shadow="never" class="main-table-card">
+    <div class="table-surface">
+      <div class="table-toolbar">
+        <span class="total-text">共 {{ total }} 条提交记录</span>
+      </div>
+
       <SubmissionTable 
         :data="list" 
         :loading="loading"
@@ -17,16 +21,17 @@
 
       <div class="pagination-container">
         <el-pagination
+          background
           v-model:current-page="currentPage"
           v-model:page-size="pageSize"     
           :page-sizes="[10, 15, 20, 50]"   
           :total="total"
-          layout="total, prev, pager, next, jumper"
+          layout="prev, pager, next, sizes, jumper"
           @size-change="handleSizeChange"
           @current-change="handlePageChange"
         />
       </div>
-    </el-card>
+    </div>
   </div>
 </template>
 
@@ -195,31 +200,43 @@ watch(() => route.query, () => {
   display: flex;
   flex-direction: column;
   height: calc(100vh - var(--app-header-height));
-  padding: 0px;
-  background-color: var(--bg-app);
+  overflow: hidden;
+  background-color: var(--bg-surface);
 }
 
-.main-table-card {
+.table-surface {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  border-radius: 8px;
-  overflow: hidden;
+  background-color: var(--bg-surface);
 }
 
-.main-table-card :deep(.el-card__body) {
-  height: 100%;
+.table-toolbar {
+  height: 52px;
+  flex: none;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--border-light);
   display: flex;
-  flex-direction: column;
-  padding: 0;
-  overflow: hidden;
+  justify-content: space-between;
+  align-items: center;
 }
+.total-text { font-size: 13px; color: var(--text-secondary); }
 
 .pagination-container {
-  padding: 10px 15px;
+  height: 56px;
+  flex: none;
+  padding: 0;
   border-top: 1px solid var(--border-light);
   display: flex;
   justify-content: center;
+  align-items: center;
   background-color: var(--bg-surface);
+}
+
+.pagination-container :deep(.el-pagination.is-background .btn-prev),
+.pagination-container :deep(.el-pagination.is-background .btn-next),
+.pagination-container :deep(.el-pagination.is-background .el-pager li) {
+  border-radius: var(--radius-control);
 }
 </style>

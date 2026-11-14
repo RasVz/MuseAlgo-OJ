@@ -4,10 +4,10 @@
       :data="homeworkList" 
       style="width: 100%" 
       v-loading="loading" 
-      stripe 
       row-key="id" 
+      class="homework-table"
       :header-cell-style="{ 
-        background: 'var(--bg-surface-hover)', color: 'var(--text-regular)', fontWeight: 'bold', height: '55px'
+        background: 'var(--bg-app)', color: 'var(--text-regular)', fontWeight: '600'
       }"
     >
       <el-table-column label="作业名称" min-width="150">
@@ -108,9 +108,16 @@ const formatTime = (t) => {
 <style scoped>
 /* 样式保持不变 */
 .table-scroll-area { flex: 1; overflow-y: auto; padding: 0; }
-:deep(.el-table .el-table__cell) { padding: 22px 0; }
-.homework-title-link { font-weight: 600; font-size: 15px; }
+.homework-table { --el-table-border-color: var(--border-light); }
+.homework-table :deep(th.el-table__cell) { height: var(--table-header-height); padding: 0; }
+.homework-table :deep(td.el-table__cell) { height: var(--table-row-height); padding: 0; }
+.homework-table :deep(.el-table__cell .cell) { padding: 0 12px; }
+.homework-table :deep(th:first-child .cell),
+.homework-table :deep(td:first-child .cell) { padding-left: 24px; }
+.homework-table :deep(th:last-child .cell),
+.homework-table :deep(td:last-child .cell) { padding-right: 24px; }
+.homework-title-link { font-weight: 600; font-size: 14px; }
 .homework-title-link:hover { text-decoration: underline; }
-.time-text { font-family: 'Menlo', monospace; color: var(--text-secondary); font-size: 13px; }
+.time-text { font-family: var(--font-mono); color: var(--text-secondary); font-size: 13px; }
 .progress-wrapper { width: 90%; margin: 0 auto; }
 </style>

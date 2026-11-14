@@ -31,7 +31,7 @@ const formatTime = (value) => (value ? dayjs(value).format('MM-DD HH:mm') : '—
 .recent-ac-card {
   padding: 22px 24px;
   border: 1px solid var(--border-light);
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   background: var(--bg-surface);
 }
 .recent-header {

@@ -174,23 +174,25 @@ onMounted(load)
 </script>
 
 <style scoped>
-.review-book { max-width: 980px; margin: 0 auto; padding: 28px 24px 54px; }
+.review-book { min-height: calc(100vh - var(--app-header-height)); box-sizing: border-box; background: var(--bg-surface); padding: 20px 20px 54px; }
+.review-book > .page-header, .review-book > .weakness-panel, .review-book > .scope-tabs, .review-book > .el-alert, .review-book > .review-list, .review-book > .el-empty { max-width: 980px; margin-left: auto; margin-right: auto; }
 .navbar-title { display: flex; align-items: center; gap: 8px; color: var(--text-primary); font-size: 18px; font-weight: 650; }
 .page-header { display: flex; justify-content: space-between; gap: 20px; align-items: flex-start; margin-bottom: 25px; }
 .eyebrow { display: block; margin-bottom: 5px; color: var(--accent-primary); font-size: 10px; font-weight: 750; letter-spacing: .13em; }
 h1 { margin: 0; color: var(--text-primary); font-size: 26px; line-height: 1.35; }
 .page-header p { max-width: 680px; margin: 8px 0 0; color: var(--text-regular); font-size: 14px; line-height: 1.65; }
 .header-badge { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; padding: 8px 10px; border-radius: 9px; background: var(--accent-primary-light); color: var(--accent-primary); font-size: 12px; font-weight: 600; }
-.scope-tabs { display: inline-flex; gap: 3px; padding: 4px; border-radius: 11px; background: var(--bg-app); }
-.scope-tabs button { display: inline-flex; gap: 6px; align-items: center; padding: 8px 13px; border: 0; border-radius: 8px; background: transparent; color: var(--text-regular); cursor: pointer; font-size: 14px; transition: .15s; }
-.scope-tabs button.active { background: var(--bg-surface); color: var(--accent-primary-dark); box-shadow: 0 1px 4px rgb(15 23 42 / 9%); font-weight: 600; }
+.scope-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border-light); }
+.scope-tabs button { display: inline-flex; gap: 6px; align-items: center; min-height: 44px; padding: 0 14px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--text-regular); cursor: pointer; font-size: 14px; transition: color .15s, border-color .15s; }
+.scope-tabs button:hover { color: var(--text-primary); }
+.scope-tabs button.active { background: transparent; border-color: var(--accent-primary); color: var(--accent-primary); font-weight: 600; }
 .review-list { margin-top: 16px; border-top: 1px solid var(--border-light); }
 .review-item { display: flex; gap: 15px; align-items: center; padding: 18px 6px; border-bottom: 1px solid var(--border-light); }
 .review-index { width: 48px; color: var(--text-placeholder); font-size: 13px; font-variant-numeric: tabular-nums; }
 .review-content { min-width: 0; flex: 1; }
 .title-row { display: flex; align-items: center; gap: 9px; min-width: 0; }
 h2 { overflow: hidden; margin: 0; color: var(--text-primary); font-size: 15px; font-weight: 620; text-overflow: ellipsis; white-space: nowrap; }
-.difficulty { flex: 0 0 auto; padding: 3px 7px; border-radius: 5px; font-size: 11px; font-weight: 700; }
+.difficulty { flex: 0 0 auto; padding: 3px 7px; border-radius: var(--radius-tag); font-size: 11px; font-weight: 700; }
 .review-meta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 7px; color: var(--text-secondary); font-size: 12px; }
 .reason { display: inline-flex; align-items: center; gap: 4px; color: var(--accent-warning); }
 .review-actions { display: flex; flex: 0 0 auto; gap: 8px; }
@@ -198,7 +200,7 @@ h2 { overflow: hidden; margin: 0; color: var(--text-primary); font-size: 15px; f
 .weakness-panel {
   background: var(--bg-surface);
   border: 1px solid var(--border-light);
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   padding: 14px 16px;
   margin-bottom: 16px;
 }

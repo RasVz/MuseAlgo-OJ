@@ -86,7 +86,7 @@ const items = computed(() => [
 }
 .stat-card {
   border: 1px solid var(--border-light);
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   min-width: 0;
 }
 .stat-content {

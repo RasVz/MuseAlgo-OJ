@@ -25,7 +25,7 @@
       </article>
       <el-empty v-if="!loading && !posts.length" description="还没有讨论，来发起第一条吧" />
     </main>
-    <el-pagination v-if="total > pageSize" background layout="prev, pager, next" :total="total" :page-size="pageSize" @current-change="loadPosts" />
+    <el-pagination v-if="total > pageSize" background class="discussion-pagination" layout="prev, pager, next" :total="total" :page-size="pageSize" @current-change="loadPosts" />
   </div>
 </template>
 
@@ -70,5 +70,52 @@ onMounted(() => loadPosts())
 </script>
 
 <style scoped>
-.discussion-page { max-width: 1080px; margin: 0 auto; padding: 12px 0 48px; }.navbar-title { display:flex; gap:8px; align-items:center; font-size:18px; font-weight:650; }.discussion-hero { display:flex; justify-content:space-between; align-items:center; padding:30px 32px; border-radius:12px; color:var(--text-on-accent); background:linear-gradient(120deg,#1d4ed8,#4f46e5); }.discussion-hero h1 { margin:0 0 8px; font-size:25px; }.discussion-hero p { margin:0; opacity:.82; }.discussion-toolbar { display:flex; justify-content:space-between; margin:20px 0 10px; }.discussion-list { overflow:hidden; border:1px solid var(--border-light); border-radius:10px; background:var(--bg-surface); }.discussion-row { display:flex; gap:14px; align-items:flex-start; padding:18px 20px; border-bottom:1px solid var(--border-light); cursor:pointer; }.discussion-row:hover { background:var(--bg-surface-hover); }.discussion-main { min-width:0; flex:1; }.discussion-title { display:flex; align-items:center; gap:9px; }.discussion-title h2 { overflow:hidden; margin:0; font-size:16px; text-overflow:ellipsis; white-space:nowrap; }.discussion-main p { overflow:hidden; margin:7px 0; color:var(--text-regular); font-size:13px; text-overflow:ellipsis; white-space:nowrap; }.discussion-main small,.discussion-stats { color:var(--text-secondary); font-size:12px; }.discussion-stats { display:flex; gap:12px; padding-top:5px; white-space:nowrap; }.category-dot { width:8px; height:8px; margin-top:9px; border-radius:50%; background:var(--text-placeholder); }.category-dot.question { background:var(--accent-warning); }.category-dot.experience { background:var(--accent-success); }.category-dot.contest-discussion { background:var(--accent-danger); }@media(max-width:640px){.discussion-page{padding:10px 12px 36px}.discussion-hero{align-items:flex-start;gap:15px;flex-direction:column}.discussion-toolbar{gap:10px;align-items:flex-start;flex-direction:column}.discussion-stats{display:none}}
+.discussion-page {
+  padding: 16px 20px 40px; box-sizing: border-box;
+  min-height: calc(100vh - var(--app-header-height)); background: var(--bg-surface);
+}
+.discussion-hero,
+.discussion-toolbar,
+.discussion-list,
+.discussion-pagination { max-width: 1080px; margin-left: auto; margin-right: auto; }
+.navbar-title { display:flex; gap:8px; align-items:center; font-size:18px; font-weight:650; }
+.discussion-hero {
+  display:flex; justify-content:space-between; align-items:center; padding:28px 32px;
+  border-radius: var(--radius-card); color: var(--text-on-accent);
+  background: linear-gradient(120deg, var(--accent-primary-dark), var(--accent-primary));
+}
+.discussion-hero h1 { margin:0 0 8px; font-size:25px; }
+.discussion-hero p { margin:0; opacity:.82; }
+.discussion-toolbar { display:flex; justify-content:space-between; align-items:center; height:52px; margin:12px 0 8px; }
+.discussion-toolbar :deep(.el-radio-button__inner) {
+  height: 32px; display: inline-flex; align-items: center; padding: 0 12px;
+  border: none; outline: none; border-bottom: 2px solid transparent; border-radius: 0;
+  background: transparent; box-shadow: none !important;
+  color: var(--text-secondary); font-size: 14px;
+}
+.discussion-toolbar :deep(.el-radio-button:first-child .el-radio-button__inner),
+.discussion-toolbar :deep(.el-radio-button:last-child .el-radio-button__inner) { border-radius: 0; }
+.discussion-toolbar :deep(.el-radio-button__inner:hover) { color: var(--text-primary); }
+.discussion-toolbar :deep(.el-radio-button.is-active .el-radio-button__original-radio + .el-radio-button__inner) {
+  color: var(--accent-primary); font-weight: 600;
+  border-bottom-color: var(--accent-primary); background: transparent;
+}
+.discussion-list { overflow:hidden; border:1px solid var(--border-light); border-radius: var(--radius-card); background:var(--bg-surface); }
+.discussion-row { display:flex; gap:14px; align-items:flex-start; padding:18px 24px; border-bottom:1px solid var(--border-light); cursor:pointer; transition: background-color .15s; }
+.discussion-row:last-child { border-bottom:none; }
+.discussion-row:hover { background:var(--bg-surface-hover); }
+.discussion-main { min-width:0; flex:1; }
+.discussion-title { display:flex; align-items:center; gap:9px; }
+.discussion-title h2 { overflow:hidden; margin:0; font-size:16px; text-overflow:ellipsis; white-space:nowrap; }
+.discussion-main p { overflow:hidden; margin:7px 0; color:var(--text-regular); font-size:13px; text-overflow:ellipsis; white-space:nowrap; }
+.discussion-main small,.discussion-stats { color:var(--text-secondary); font-size:12px; }
+.discussion-stats { display:flex; gap:12px; padding-top:5px; white-space:nowrap; }
+.category-dot { width:8px; height:8px; margin-top:9px; border-radius:50%; background:var(--text-placeholder); }
+.category-dot.question { background:var(--accent-warning); }
+.category-dot.experience { background:var(--accent-success); }
+.category-dot.contest-discussion { background:var(--accent-danger); }
+.discussion-pagination { display:flex; justify-content:center; align-items:center; height:56px; }
+.discussion-pagination :deep(.btn-prev),
+.discussion-pagination :deep(.btn-next),
+.discussion-pagination :deep(.el-pager li) { border-radius: var(--radius-control); }
 </style>

@@ -318,7 +318,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   padding: 0 20px;
-  box-shadow: var(--shadow-sm);
+  border-bottom: 1px solid var(--border-light);
   position: sticky;
   top: 0;
   z-index: 100;
@@ -344,13 +344,13 @@ onBeforeUnmount(() => {
 .editor-main {
   flex: 1;
   max-width: 1000px;
-  margin: 20px auto;
+  margin: 16px auto;
   width: 100%;
   box-sizing: border-box;
   background: var(--bg-surface);
   padding: 30px;
-  border-radius: 4px;
-  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-card);
 }
 .editor-toolbar {
   display: flex;
@@ -363,13 +363,13 @@ onBeforeUnmount(() => {
   gap: 4px;
   padding: 3px;
   background: var(--border-light);
-  border-radius: 6px;
+  border-radius: var(--radius-control);
 }
 .editor-mode-switch button {
   padding: 5px 16px;
   border: none;
   background: transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-tag);
   cursor: pointer;
   color: var(--text-secondary);
   font-size: 13px;
@@ -378,7 +378,6 @@ onBeforeUnmount(() => {
 .editor-mode-switch button.active {
   background: var(--bg-surface);
   color: var(--accent-primary);
-  box-shadow: var(--shadow-sm);
   font-weight: 600;
 }
 .editor-tools {
@@ -393,13 +392,13 @@ onBeforeUnmount(() => {
   font-size: 14px;
   line-height: 1.7;
   padding: 16px;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
 }
 .markdown-preview {
   min-height: 500px;
   padding: 20px;
   border: 1px solid var(--border-light);
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   background: var(--bg-surface);
 }
 </style>

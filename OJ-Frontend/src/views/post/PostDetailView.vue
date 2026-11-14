@@ -15,7 +15,7 @@
       <!-- === 头部 === -->
       <header class="article-header">
         <div class="header-top">
-          <el-tag effect="plain" size="small" round class="category-tag">{{ post.category }}</el-tag>
+          <el-tag effect="plain" size="small" class="category-tag">{{ post.category }}</el-tag>
           <span class="header-meta">
             <span class="meta-item">{{ formatTime(post.publishTime) }}</span>
             <span class="meta-divider">·</span>
@@ -33,12 +33,12 @@
           </div>
           <el-button 
             v-if="!isSelf && !isFollowed" 
-            size="small" round 
+            size="small" 
             @click="handleToggleFollow"
           >+ 关注</el-button>
           <el-button 
             v-else-if="!isSelf" 
-            size="small" round plain
+            size="small" plain
             @click="handleToggleFollow"
           >已关注</el-button>
         </div>
@@ -299,16 +299,19 @@ onMounted(() => {
    DETAIL PAGE LAYOUT
    ================================================================ */
 .post-detail-page {
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 24px;
+  min-height: calc(100vh - var(--app-header-height));
+  background: var(--bg-surface);
+  padding-bottom: 32px;
+  box-sizing: border-box;
 }
 
 .loading-wrapper, .empty-wrapper {
   min-height: 400px;
+  max-width: 1100px;
+  margin: 24px auto;
   display: flex; align-items: center; justify-content: center;
   background: var(--bg-surface);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-card);
   border: 1px solid var(--border-light);
 }
 
@@ -316,11 +319,13 @@ onMounted(() => {
    HEADER — 与正文视觉区分
    ================================================================ */
 .article-header {
+  max-width: 1100px;
+  margin: 0 auto;
   background: var(--bg-surface);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-md) var(--radius-md) 0 0;
-  padding: 36px 48px 28px;
-  border-bottom: none;
+  border: none;
+  border-bottom: 1px solid var(--border-light);
+  border-radius: 0;
+  padding: 32px 24px 24px;
 }
 
 .header-top {
@@ -351,15 +356,16 @@ onMounted(() => {
    ================================================================ */
 .article-body-wrapper {
   display: flex; gap: 0;
+  max-width: 1100px;
+  margin: 0 auto;
   background: var(--bg-surface);
-  border: 1px solid var(--border-light);
-  border-top: none;
-  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  border: none;
+  border-radius: 0;
 }
 
 .article-main {
   flex: 1; min-width: 0;
-  padding: 32px 48px 48px;
+  padding: 32px 24px 48px;
 }
 
 .article-content {
@@ -388,13 +394,13 @@ onMounted(() => {
 }
 .act-btn {
   display: inline-flex; align-items: center; gap: 8px;
-  padding: 10px 24px; border-radius: 24px;
+  padding: 8px 20px; border-radius: var(--radius-control);
   border: 1px solid var(--border-light);
   background: var(--bg-surface); color: var(--text-regular);
   cursor: pointer; font-size: 14px; transition: all 0.15s;
 }
 .act-btn:hover { border-color: var(--border-hover); color: var(--text-primary); }
-.act-btn.active { color: var(--accent-primary); border-color: var(--accent-primary); background: var(--accent-primary-light); }
+.act-btn.active { color: var(--text-filter-strip); border-color: var(--border-filter-strip); background: var(--bg-filter-strip); }
 
 /* ================================================================
    COMMENTS

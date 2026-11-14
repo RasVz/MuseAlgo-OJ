@@ -115,7 +115,7 @@ async function save() {
   padding: 22px 24px;
   background: var(--bg-surface);
   border: 1px solid var(--border-light);
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   min-width: 0;
 }
 .section-header {

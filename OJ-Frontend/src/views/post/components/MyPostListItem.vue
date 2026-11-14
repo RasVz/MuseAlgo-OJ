@@ -194,7 +194,7 @@ const formatTime = (t) => {
   width: 140px;
   height: 94px;
   margin-left: 24px;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   overflow: hidden;
   background-color: var(--bg-app);
   border: 1px solid var(--border-light);

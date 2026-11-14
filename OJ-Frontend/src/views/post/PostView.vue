@@ -89,7 +89,7 @@
               <el-card 
                 v-for="article in articleList" 
                 :key="article.id" 
-                shadow="hover" 
+                shadow="never" 
                 class="article-feed-card"
                 :body-style="{ padding: '20px' }"
                 @click="goToPostDetail(article.id)"
@@ -238,12 +238,15 @@ onMounted(async () => {
 
 <style scoped>
 /* ===== PostView ===== */
-.columns-square-container { min-height: 100%; }
+.columns-square-container {
+  min-height: calc(100vh - var(--app-header-height));
+  background: var(--bg-surface);
+}
 .navbar-title { font-size: 18px; font-weight: 600; color: var(--text-primary); display: flex; align-items: center; }
-.main-content-wrapper { max-width: 1280px; margin: 0 auto; padding: 10px; }
+.main-content-wrapper { max-width: 1280px; margin: 0 auto; padding: 16px 20px; box-sizing: border-box; }
 
 /* --- 侧边栏 --- */
-.category-card { border-radius: var(--radius-md); border: 1px solid var(--border-light); box-shadow: none; }
+.category-card { border-radius: var(--radius-card); border: 1px solid var(--border-light); box-shadow: none; }
 .mb-3 { margin-bottom: 20px; }
 .sidebar-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border-light); }
 .title { font-weight: 600; font-size: 15px; color: var(--text-primary); }
@@ -254,7 +257,7 @@ onMounted(async () => {
   transition: background 0.15s; color: var(--text-regular); margin-bottom: 2px; font-size: 14px;
 }
 .category-item:hover { background: var(--bg-app); color: var(--text-primary); }
-.category-item.active { background: var(--accent-primary-light); color: var(--accent-primary); font-weight: 500; }
+.category-item.active { background: var(--bg-filter-strip); color: var(--text-filter-strip); font-weight: 500; }
 .cat-left { display: flex; align-items: center; gap: 10px; }
 .count-badge { font-size: 12px; background: var(--bg-input); color: var(--text-secondary); padding: 2px 8px; border-radius: 10px; }
 
@@ -262,7 +265,7 @@ onMounted(async () => {
 .right-feed { min-width: 0; }
 .feed-filter-bar {
   display: flex; justify-content: space-between; align-items: center;
-  background: var(--bg-surface); padding: 14px 20px; border-radius: var(--radius-md);
+  background: var(--bg-surface); padding: 0 20px; height: 52px; border-radius: var(--radius-card);
   margin-bottom: 16px; border: 1px solid var(--border-light);
 }
 .sort-tabs { display: flex; align-items: center; gap: 16px; font-size: 14px; }
@@ -270,16 +273,26 @@ onMounted(async () => {
 .sort-item:hover { color: var(--text-primary); }
 .sort-item.active { color: var(--accent-primary); font-weight: 600; border-bottom: 2px solid var(--accent-primary); }
 .feed-search { width: 220px; }
-.feed-tag-trigger { display: inline-flex; align-items: center; gap: 5px; height: 32px; padding: 0 10px; border: 1px solid var(--border-light); border-radius: var(--radius-sm); background: var(--bg-surface); color: var(--text-regular); cursor: pointer; font-size: 13px; white-space: nowrap; }
+.feed-tag-trigger { display: inline-flex; align-items: center; gap: 5px; height: 32px; padding: 0 10px; border: 1px solid var(--border-light); border-radius: var(--radius-control); background: var(--bg-surface); color: var(--text-regular); cursor: pointer; font-size: 13px; white-space: nowrap; }
 .feed-tag-trigger:hover { border-color: var(--accent-primary); color: var(--accent-primary); }
-.active-tag-row { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin: -6px 0 12px; padding: 0 4px; color: var(--text-secondary); font-size: 13px; }
+.active-tag-row {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  margin: 0 0 16px; padding: 10px 16px;
+  background: var(--bg-filter-strip); border: 1px solid var(--border-filter-strip);
+  border-radius: var(--radius-control); color: var(--text-filter-strip); font-size: 13px;
+}
+.active-tag-row :deep(.el-tag) {
+  background: var(--bg-surface); border-color: var(--border-filter-strip);
+  color: var(--text-filter-strip); border-radius: var(--radius-tag);
+}
+.active-tag-row :deep(.el-button) { color: var(--text-filter-strip); }
 
 /* --- 文章卡片 --- */
 .article-feed-card {
-  margin-bottom: 14px; border: 1px solid var(--border-light); border-radius: var(--radius-md);
-  cursor: pointer; transition: box-shadow 0.2s; background: var(--bg-surface);
+  margin-bottom: 14px; border: 1px solid var(--border-light); border-radius: var(--radius-card);
+  cursor: pointer; transition: border-color 0.2s; background: var(--bg-surface);
 }
-.article-feed-card:hover { box-shadow: var(--shadow-md); }
+.article-feed-card:hover { border-color: var(--border-base); }
 .article-title {
   font-size: 18px; font-weight: 700; color: var(--text-primary);
   margin: 0 0 10px 0; line-height: 1.45;
@@ -296,12 +309,12 @@ onMounted(async () => {
 .author-name { font-size: 13px; color: var(--text-primary); font-weight: 500; }
 .author-box:hover .author-name { color: var(--accent-primary); }
 .tags-box { display: flex; gap: 6px; }
-.article-tag { border: none; background: var(--bg-app); color: var(--text-secondary); cursor: pointer; }
-.article-tag:hover { color: var(--accent-primary); background: var(--accent-primary-light); }
+.article-tag { border: none; background: var(--bg-app); color: var(--text-secondary); cursor: pointer; border-radius: var(--radius-tag); }
+.article-tag:hover { color: var(--text-filter-strip); background: var(--bg-filter-strip); }
 .footer-right { display: flex; align-items: center; gap: 14px; color: var(--text-secondary); font-size: 13px; }
 .stat-item { display: flex; align-items: center; gap: 4px; }
 .like-item { color: var(--text-secondary); transition: color 0.15s; }
 .like-item:hover { color: var(--accent-danger); }
 .heart-icon { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.pagination-box { display: flex; justify-content: center; margin-top: 28px; margin-bottom: 50px; }
+.pagination-box { display: flex; justify-content: center; align-items: center; height: 56px; margin: 0 0 8px; }
 </style>

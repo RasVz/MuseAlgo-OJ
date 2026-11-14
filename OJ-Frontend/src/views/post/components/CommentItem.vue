@@ -186,9 +186,9 @@ const handleLike = async (item) => {
 
 <style scoped>
 .comment-item {
-  display: flex; gap: 14px; margin-bottom: 24px;
+  display: flex; gap: 14px; margin-bottom: 16px;
   padding: 20px; background: var(--bg-surface);
-  border: 1px solid var(--border-light); border-radius: var(--radius-md);
+  border: 1px solid var(--border-light); border-radius: var(--radius-card);
   transition: border-color 0.15s;
 }
 .comment-item:hover { border-color: var(--border-hover); }
@@ -208,7 +208,7 @@ const handleLike = async (item) => {
 .btn-action.is-liked { color: var(--accent-danger); }
 
 .sub-comments-box {
-  background: var(--bg-app); border-radius: var(--radius-sm); padding: 16px;
+  background: var(--bg-app); border-radius: var(--radius-control); padding: 16px;
   display: flex; flex-direction: column; gap: 14px;
   border: 1px solid var(--border-light); margin-top: 4px;
 }

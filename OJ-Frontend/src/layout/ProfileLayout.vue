@@ -85,7 +85,10 @@ watch(() => route.params.id, loadUser, { immediate: true })
 .profile-page {
   font-family: var(--font-family);
   min-width: 0;
+  min-height: calc(100vh - var(--app-header-height));
+  box-sizing: border-box;
   padding-bottom: 40px;
+  background: var(--bg-surface);
 }
 .user-banner {
   height: 230px;
@@ -124,9 +127,9 @@ watch(() => route.params.id, loadUser, { immediate: true })
 .profile-main {
   display: grid;
   grid-template-columns: 252px minmax(0, 1fr);
-  gap: 24px;
+  gap: 20px;
   max-width: 1240px;
-  padding: 0 28px;
+  padding: 0 20px;
   margin: 24px auto 0;
   box-sizing: border-box;
   align-items: start;

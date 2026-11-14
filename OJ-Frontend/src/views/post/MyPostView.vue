@@ -180,38 +180,33 @@ onMounted(() => fetchData())
 <style scoped>
 /* 整个页面的底色与布局 */
 .my-post-container {
-  min-height: calc(100vh - 60px);
-  background-color: var(--bg-app);
-  padding: 24px 0 60px 0;
+  min-height: calc(100vh - var(--app-header-height));
+  background-color: var(--bg-surface);
+  padding: 16px 20px 40px;
+  box-sizing: border-box;
 }
 
 .main-content {
   width: 100%;
   max-width: 960px;
   margin: 0 auto;
-  padding: 0 20px;
+  padding: 0;
 }
 
-/* 顶部创作中心 Banner（刻意浅蓝渐变设计色，dark 下覆盖为深蓝渐变） */
+/* 顶部创作 Banner：语义色提示带，深浅色主题共用同一组 tokens */
 .creator-banner {
-  background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%);
-  border-radius: 12px;
-  padding: 32px 40px;
-  margin-bottom: 24px;
+  background: var(--bg-filter-strip);
+  border: 1px solid var(--border-filter-strip);
+  border-radius: var(--radius-card);
+  padding: 24px 28px;
+  margin-bottom: 16px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  box-shadow: 0 4px 14px rgba(2, 105, 161, 0.08);
-}
-.dark .creator-banner {
-  background: linear-gradient(135deg, #1e3a5f 0%, #0c4a6e 100%);
 }
 
 .banner-text {
-  color: #0369a1;
-}
-.dark .banner-text {
-  color: #7dd3fc;
+  color: var(--text-filter-strip);
 }
 
 .banner-title {
@@ -228,20 +223,15 @@ onMounted(() => fetchData())
 }
 
 .write-btn {
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   font-weight: 600;
-  box-shadow: 0 4px 10px rgba(64, 158, 255, 0.3);
-  transition: transform 0.2s;
-}
-.write-btn:hover {
-  transform: translateY(-2px);
 }
 
 /* 纯白面板承载文章列表 */
 .article-board {
   background: var(--bg-surface);
-  border-radius: 12px;
-  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-card);
   overflow: hidden;
 }
 
@@ -305,7 +295,14 @@ onMounted(() => fetchData())
 .pagination-wrapper {
   display: flex;
   justify-content: center;
-  padding: 24px 0;
+  align-items: center;
+  height: 56px;
   background: var(--bg-surface);
+  border-top: 1px solid var(--border-light);
+}
+.pagination-wrapper :deep(.btn-prev),
+.pagination-wrapper :deep(.btn-next),
+.pagination-wrapper :deep(.el-pager li) {
+  border-radius: var(--radius-control);
 }
 </style>

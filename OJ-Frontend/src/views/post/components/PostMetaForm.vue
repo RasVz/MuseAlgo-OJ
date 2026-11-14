@@ -153,7 +153,7 @@ defineExpose({ allowedTags, tagsReady })
   gap: 8px;
   padding: 8px 12px;
   border: 1px solid var(--border-base);
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   cursor: pointer;
   transition: border-color 0.2s;
   min-height: 38px;

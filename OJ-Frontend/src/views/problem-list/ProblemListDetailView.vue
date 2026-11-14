@@ -7,7 +7,6 @@
           v-if="isOwner" 
           type="primary" 
           icon="Edit" 
-          round 
           @click="handleGoToEdit"
         >
           编辑题单
@@ -18,7 +17,6 @@
           :type="isFavorite ? 'warning' : 'default'" 
           :icon="isFavorite ? 'StarFilled' : 'Star'" 
           plain 
-          round
           @click="handleFavorite"
         >
           {{ isFavorite ? '已收藏' : '收藏' }} {{ problemListDetail.favoriteCount || 0 }}
@@ -250,8 +248,8 @@ onMounted(() => { fetchDetail() })
 
 <style scoped>
 .problem-list-detail {
-  min-height: calc(100vh - 60px);
-  background-color: var(--bg-app);
+  min-height: calc(100vh - var(--app-header-height));
+  background-color: var(--bg-surface);
   padding-bottom: 40px;
 }
 
@@ -262,6 +260,7 @@ onMounted(() => { fetchDetail() })
 }
 
 .context-buttons { display: flex; align-items: center; gap: 12px; }
+.context-buttons :deep(.el-button) { border-radius: var(--radius-control); }
 
 /* Header & Toggle */
 .page-header {
@@ -272,8 +271,8 @@ onMounted(() => { fetchDetail() })
 }
 
 .list-title {
-  font-size: 28px;
-  font-weight: 700;
+  font-size: 24px;
+  font-weight: 600;
   color: var(--text-primary);
   margin: 0 0 8px 0;
 }
@@ -282,10 +281,34 @@ onMounted(() => { fetchDetail() })
 .update-time { font-size: 13px; color: var(--text-secondary); }
 .mr-1 { margin-right: 4px; }
 
+/* 视图切换按页签处理：只保留文字与下划线激活态，去掉灰色填充 */
+.view-toggle :deep(.el-radio-group) { display: flex; align-items: center; gap: 24px; }
+.view-toggle :deep(.el-radio-button__inner) {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  box-shadow: none !important;
+  padding: 0 2px 8px;
+  color: var(--text-regular);
+  font-size: 14px;
+  font-weight: 500;
+}
+.view-toggle :deep(.el-radio-button__inner:hover) { color: var(--accent-primary); }
+.view-toggle :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
+  background: transparent;
+  border-bottom-color: var(--accent-primary);
+  box-shadow: none !important;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
 /* Problems View Card */
 .table-card {
-  border-radius: 8px;
-  border: none;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border-light);
+  box-shadow: none;
+  overflow: hidden;
 }
 
 .table-card :deep(.el-card__body) {

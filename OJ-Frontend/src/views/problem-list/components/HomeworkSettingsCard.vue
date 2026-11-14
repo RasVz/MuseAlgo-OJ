@@ -1,5 +1,5 @@
 <template>
-  <el-card v-if="isHomeworkMode" shadow="always" class="homework-card">
+  <el-card v-if="isHomeworkMode" shadow="never" class="homework-card">
     <template #header>
       <div class="section-title">作业设置</div>
     </template>
@@ -101,10 +101,12 @@ defineExpose({ getTimeRangeForSubmit, getPrivacy, reset, syncFromDetail })
 <style scoped>
 .homework-card {
   margin-bottom: 20px;
-  border-radius: 12px;
-  border: none;
-  box-shadow: var(--shadow-md) !important;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border-light);
+  box-shadow: none;
 }
+.homework-card :deep(.el-input__wrapper),
+.homework-card :deep(.el-textarea__inner) { border-radius: var(--radius-control); }
 
 .section-title {
   font-size: 15px;

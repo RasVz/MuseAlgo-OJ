@@ -69,13 +69,16 @@ onUnmounted(() => {
 
 <style scoped>
 .article-toc {
-  width: 220px; flex-shrink: 0;
-  padding: 32px 20px 32px 0;
-  border-left: 1px solid var(--border-light);
+  width: 240px; flex-shrink: 0;
+  padding: 32px 24px 32px 0;
 }
 
 .toc-nav {
-  position: sticky; top: 100px;
+  position: sticky; top: 96px;
+  padding: 16px 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-card);
 }
 
 .toc-title {
@@ -89,7 +92,7 @@ onUnmounted(() => {
 .toc-item {
   font-size: 13px; color: var(--text-secondary); cursor: pointer;
   padding: 5px 12px; border-left: 2px solid transparent;
-  transition: all 0.15s; line-height: 1.5;
+  transition: color 0.15s, border-color 0.15s; line-height: 1.5;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
@@ -98,7 +101,6 @@ onUnmounted(() => {
 .toc-item.active {
   color: var(--accent-primary); font-weight: 500;
   border-left-color: var(--accent-primary);
-  background: var(--accent-primary-light);
 }
 
 .toc-lv1 { padding-left: 12px; font-weight: 600; }

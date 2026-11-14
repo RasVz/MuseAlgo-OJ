@@ -1,8 +1,6 @@
 <template>
-  <el-card shadow="never" class="filter-card">
-    <template #header>
-      <div class="side-title">筛选器</div>
-    </template>
+  <div class="filter-panel">
+    <div class="panel-title">筛选器</div>
 
     <el-form label-position="top" class="filter-form">
       <el-form-item label="题目">
@@ -39,7 +37,7 @@
 
       <el-button type="primary" class="w-full" @click="handleApply">应用筛选</el-button>
     </el-form>
-  </el-card>
+  </div>
 </template>
 
 <script setup>
@@ -69,14 +67,28 @@ function handleApply() {
 </script>
 
 <style scoped>
-.side-title {
+/* 侧栏筛选：不贴边内容面板，由页面 side-area 承担留白与分隔线 */
+.filter-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.panel-title {
+  font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
 }
+
 .filter-form :deep(.el-select) {
   width: 100%;
 }
+.filter-form :deep(.el-select__wrapper),
+.filter-form :deep(.el-input__wrapper) {
+  border-radius: var(--radius-control);
+}
 .w-full {
   width: 100%;
+  border-radius: var(--radius-control);
 }
 </style>

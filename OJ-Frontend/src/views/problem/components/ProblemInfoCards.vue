@@ -141,13 +141,14 @@ const getDiffColor = getDifficultyColor
 
 .info-card {
   border: 1px solid var(--border-light);
-  border-radius: 4px;
+  border-radius: var(--radius-card);
+  box-shadow: none;
 }
 /* 调整卡片头部更紧凑 */
 .info-card :deep(.el-card__header) {
   padding: 10px 15px;
   background-color: var(--bg-surface-hover);
-  border-bottom: 1px solid var(--el-border-color-lighter);
+  border-bottom: 1px solid var(--border-light);
 }
 
 .card-header {
@@ -195,7 +196,7 @@ const getDiffColor = getDifficultyColor
 .info-row .value { color: var(--text-primary); font-weight: 500; }
 .badge {
   border: 1px solid currentColor;
-  border-radius: 4px;
+  border-radius: var(--radius-tag);
   background: var(--bg-input);
   padding: 2px 6px;
   font-size: 12px;
@@ -214,6 +215,7 @@ const getDiffColor = getDifficultyColor
   width: 100%;
   justify-content: flex-start; /* 图标文字左对齐 */
   margin-left: 0 !important;
+  border-radius: var(--radius-control);
 }
 .full-btn-wrap {
   display: block;
@@ -226,12 +228,13 @@ const getDiffColor = getDifficultyColor
   flex-wrap: wrap;
   gap: 8px;
 }
+.tag-item { border-radius: var(--radius-tag); }
 .tags-placeholder {
   text-align: center;
   padding: 10px 0;
   color: var(--text-secondary);
   font-size: 12px;
   background: var(--bg-surface-hover);
-  border-radius: 4px;
+  border-radius: var(--radius-tag);
 }
 </style>

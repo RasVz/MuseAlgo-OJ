@@ -28,7 +28,7 @@ const items = computed(() => [
   gap: 8px;
   padding: 20px;
   border: 1px solid var(--border-light);
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   background: var(--bg-surface);
   min-width: 0;
 }

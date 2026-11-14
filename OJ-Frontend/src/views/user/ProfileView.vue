@@ -80,7 +80,7 @@ onMounted(loadRating)
 .section-failure {
   padding: 24px;
   border: 1px solid var(--border-light);
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   color: var(--text-secondary);
   background: var(--bg-surface);
   font-size: 14px;

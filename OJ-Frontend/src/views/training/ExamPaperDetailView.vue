@@ -359,16 +359,24 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.exam-paper-detail { min-height: 100vh; background: var(--bg-surface-hover); }
+.exam-paper-detail { min-height: 100vh; background: var(--bg-surface); }
 .nav-header { padding: 8px 0; }
 .nav-title { max-width: min(62vw, 680px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-.main-content { max-width: 1320px; margin: 0 auto; padding: 18px 24px 48px; display: flex; flex-direction: column; gap: 16px; }
-.paper-info { border-radius: 12px; }
+.main-content { max-width: 1320px; margin: 0 auto; padding: 20px 24px 48px; display: flex; flex-direction: column; gap: 16px; }
+
+/* 不贴边的内容卡片：12px 圆角 + 1px 边框，取消浮层阴影 */
+.exam-paper-detail :deep(.el-card) {
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-card);
+  box-shadow: none;
+}
+/* 控件与标签统一使用工作台圆角 */
+.exam-paper-detail :deep(.el-button) { border-radius: var(--radius-control); }
+.exam-paper-detail :deep(.el-tag) { border-radius: var(--radius-tag); }
 .info-header { display: flex; gap: 8px; }
 .info-title { font-size: 24px; line-height: 1.35; font-weight: 700; margin: 12px 0 0; color: var(--text-primary); }
 .info-meta { display: flex; flex-wrap: wrap; gap: 18px; color: var(--text-secondary); font-size: 13px; margin-top: 11px; }
 .info-desc { color: var(--text-regular); font-size: 14px; line-height: 1.6; margin-top: 12px; white-space: pre-wrap; }
-.session-card { border-radius: 12px; }
 .start-panel { display: flex; justify-content: space-between; align-items: center; gap: 24px; }
 .start-copy { display: flex; align-items: flex-start; gap: 14px; }
 .start-icon { width: 42px; height: 42px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 12px; background: var(--bg-surface-hover); color: var(--accent-primary); font-size: 20px; }
@@ -396,7 +404,6 @@ onBeforeUnmount(() => {
 .result-summary .el-button { margin-left: auto; }
 .answer-layout { display: grid; grid-template-columns: minmax(0, 1fr) 270px; align-items: start; gap: 16px; }
 .question-column { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-.question-card, .problem-card, .navigator-card { border-radius: 12px; }
 .answer-layout-main-only { grid-template-columns: minmax(0, 1fr); }
 .answer-sidebar { position: sticky; top: 8px; display: flex; flex-direction: column; gap: 16px; min-width: 0; max-height: calc(100dvh - var(--app-header-height, 72px) - 48px); overflow-y: auto; scrollbar-width: thin; }
 .navigator-card { flex-shrink: 0; }
@@ -409,40 +416,40 @@ onBeforeUnmount(() => {
 .legend-answered { border-color: var(--accent-primary); background: var(--accent-primary); }
 .legend-unsubmitted { border-color: var(--accent-warning); border-style: dashed; background: var(--accent-warning-light); }
 .question-nav-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 7px; margin-bottom: 16px; }
-.question-nav-button { aspect-ratio: 1; border: 1px solid var(--border-light); border-radius: 8px; background: var(--bg-surface); color: var(--text-regular); cursor: pointer; font: inherit; font-size: 12px; transition: border-color .15s ease, background-color .15s ease; }
+.question-nav-button { aspect-ratio: 1; border: 1px solid var(--border-light); border-radius: var(--radius-control); background: var(--bg-surface); color: var(--text-regular); cursor: pointer; font: inherit; font-size: 12px; transition: border-color .15s ease, background-color .15s ease; }
 .question-nav-button:hover, .question-nav-button:focus-visible { border-color: var(--accent-primary); outline: none; }
-.question-nav-button.nav-answered { border-color: var(--accent-primary); background: var(--accent-primary); color: var(--text-on-accent, #fff); }
-.question-nav-button.nav-correct { border-color: var(--accent-success); background: var(--accent-success); color: #fff; }
-.question-nav-button.nav-incorrect { border-color: var(--accent-danger); background: var(--accent-danger); color: #fff; }
+.question-nav-button.nav-answered { border-color: var(--accent-primary); background: var(--accent-primary); color: var(--text-on-accent); }
+.question-nav-button.nav-correct { border-color: var(--accent-success); background: var(--accent-success); color: var(--text-on-accent); }
+.question-nav-button.nav-incorrect { border-color: var(--accent-danger); background: var(--accent-danger); color: var(--text-on-accent); }
 .question-nav-button.nav-unsubmitted { border-color: var(--accent-warning); border-style: dashed; background: var(--accent-warning-light); color: var(--text-primary); }
 .navigator-footnote { margin-top: 12px; color: var(--text-secondary); font-size: 11px; line-height: 1.5; }
 .card-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .card-header h2 { margin: 0; font-size: 16px; color: var(--text-primary); }
 .card-header > div > span, .card-header > span { color: var(--text-secondary); font-size: 12px; }
 .card-header > div > span { display: block; margin-top: 3px; }
-.question-item { scroll-margin-top: 16px; border: 1px solid var(--border-light); border-radius: 10px; padding: 16px; margin-bottom: 12px; background: var(--bg-surface); }
+.question-item { scroll-margin-top: 16px; border: 1px solid var(--border-light); border-radius: var(--radius-card); padding: 16px; margin-bottom: 12px; background: var(--bg-surface); }
 .question-item:last-child { margin-bottom: 0; }
 .question-item-answered { border-color: color-mix(in srgb, var(--accent-primary) 32%, var(--border-light)); }
 .question-head { display: flex; align-items: center; gap: 10px; }
-.question-no { width: 28px; height: 28px; flex: 0 0 auto; border-radius: 8px; display: grid; place-items: center; background: var(--bg-surface-hover); color: var(--text-primary); font-weight: 700; font-size: 13px; }
+.question-no { width: 28px; height: 28px; flex: 0 0 auto; border-radius: var(--radius-control); display: grid; place-items: center; background: var(--bg-surface-hover); color: var(--text-primary); font-weight: 700; font-size: 13px; }
 .question-head-meta { display: flex; flex-wrap: wrap; gap: 6px; }
 .question-status { margin-left: auto; color: var(--text-secondary); font-size: 11px; }
 .question-statement { font-size: 15px; margin: 12px 0 14px; white-space: pre-wrap; line-height: 1.7; color: var(--text-primary); }
 .option-group { display: flex; flex-direction: column; gap: 5px; }
-.option-row { width: 100%; display: flex; margin-right: 0; height: auto; min-height: 38px; white-space: normal; border: 1px solid transparent; border-radius: 8px; padding: 8px 10px; }
+.option-row { width: 100%; display: flex; margin-right: 0; height: auto; min-height: 38px; white-space: normal; border: 1px solid transparent; border-radius: var(--radius-control); padding: 8px 10px; }
 .option-row:hover { background: var(--bg-surface-hover); }
 .option-markdown { color: var(--text-primary); line-height: 1.55; }
 .boolean-group { flex-direction: row; gap: 10px; }
 .boolean-group .option-row { width: auto; min-width: 96px; }
-.question-result { margin-top: 12px; font-size: 13px; padding: 10px 12px; border-radius: 8px; line-height: 1.5; }
+.question-result { margin-top: 12px; font-size: 13px; padding: 10px 12px; border-radius: var(--radius-control); line-height: 1.5; }
 .option-markdown :deep(p), .question-statement :deep(p), .explanation :deep(p) { margin: 0; }
 .explanation { margin-top: 8px; padding-top: 8px; border-top: 1px solid currentColor; }
 .result-ok { background: var(--accent-success-light); color: var(--accent-success); }
 .result-bad { background: var(--accent-danger-light); color: var(--accent-danger); }
 .problem-list { display: flex; flex-direction: column; }
-.problem-row { display: flex; align-items: center; gap: 12px; padding: 13px 2px; }
+.problem-row { display: flex; align-items: center; gap: 12px; min-height: var(--table-row-height); padding: 0 2px; }
 .problem-row + .problem-row { border-top: 1px solid var(--border-light); }
-.problem-order { width: 30px; height: 30px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 8px; color: var(--text-secondary); background: var(--bg-surface-hover); font-size: 12px; font-weight: 650; }
+.problem-order { width: 30px; height: 30px; flex: 0 0 auto; display: grid; place-items: center; border-radius: var(--radius-control); color: var(--text-secondary); background: var(--bg-surface-hover); font-size: 12px; font-weight: 650; }
 .problem-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .problem-info strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); font-size: 14px; }
 .problem-info span { color: var(--text-secondary); font-size: 12px; }

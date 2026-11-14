@@ -25,7 +25,6 @@
           
           <el-button 
             type="primary" 
-            round
             size="small"
             class="start-btn"
             @click="startLearning(chapter)"
@@ -127,8 +126,9 @@ onMounted(() => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  border-radius: 12px;
+  border-radius: 0;
   border: none;
+  background: var(--bg-surface);
   min-height: 0; /* 关键：防止溢出 */
 }
 
@@ -145,12 +145,13 @@ onMounted(() => {
   display: flex; 
   justify-content: space-between; 
   align-items: center; 
-  padding: 20px 20px 15px; /* 补回 padding */
+  height: 52px;
+  padding: 0 24px;
   border-bottom: 1px solid var(--border-light); 
   flex-shrink: 0; /* 防止被压缩 */
 }
-.header h3 { margin: 0; color: var(--text-primary); }
-.subtitle { color: var(--text-secondary); font-size: 14px; }
+.header h3 { margin: 0; font-size: 14px; font-weight: 700; color: var(--text-primary); }
+.subtitle { color: var(--text-secondary); font-size: 13px; }
 
 /* 4. 滚动区域 */
 .scroll-content {
@@ -163,8 +164,9 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px 20px;
-  border-bottom: 1px solid var(--bg-app);
+  min-height: var(--table-row-height);
+  padding: 8px 24px;
+  border-bottom: 1px solid var(--border-light);
   transition: background-color 0.2s;
 }
 
@@ -172,17 +174,18 @@ onMounted(() => {
   background-color: var(--bg-surface-hover);
 }
 
-.chapter-content { display: flex; align-items: center; gap: 15px; font-size: 16px; flex: 1; }
-.chapter-index { font-weight: bold; color: var(--text-secondary); min-width: 60px; white-space: nowrap; margin-left: 12px;}
+.chapter-content { display: flex; align-items: center; gap: 15px; font-size: 14px; flex: 1; }
+.chapter-index { font-weight: 600; color: var(--text-secondary); min-width: 60px; white-space: nowrap; }
 .divider { width: 1px; height: 16px; background-color: var(--border-base); }
 
 .text-info { display: flex; flex-direction: column; gap: 4px; }
 .chapter-title { font-weight: 500; color: var(--text-primary); }
 .chapter-desc { font-size: 12px; color: var(--text-secondary); }
+.start-btn { border-radius: var(--radius-control); }
 
 /* 5. 分页栏固定底部 */
 .pagination-wrapper { 
-  height: 55px;
+  height: 56px;
   display: flex; 
   justify-content: center; 
   align-items: center;

@@ -32,12 +32,14 @@
         </el-input>
       </section>
 
+      <div v-if="keyword" class="filter-strip" aria-label="已选筛选条件">
+        <span class="filter-strip-text">搜索：{{ keyword }}</span>
+        <el-button link type="info" size="small" @click="clearFilters">清除筛选</el-button>
+      </div>
+
       <div class="result-heading">
-        <div>
-          <h1>试卷库</h1>
-          <span>共 {{ total }} 份试卷</span>
-        </div>
-        <span v-if="keyword" class="active-search">搜索：{{ keyword }}</span>
+        <h1>试卷库</h1>
+        <span>共 {{ total }} 份试卷</span>
       </div>
 
       <el-alert v-if="loadError" class="load-error" type="error" show-icon :closable="false" title="试卷暂时无法加载">
@@ -57,7 +59,7 @@
           class="paper-link"
           :aria-label="`${paper.title}，${paper.problemCount ?? 0} 题，${paper.totalScore ?? 100} 分`"
         >
-          <el-card shadow="hover" class="paper-card">
+          <el-card shadow="never" class="paper-card">
             <div class="paper-card-top">
               <span class="paper-category">{{ categoryLabel(paper.category) }}</span>
               <span v-if="paper.level" class="paper-level">{{ paper.level }}</span>
@@ -184,26 +186,70 @@ watch(
 </script>
 
 <style scoped>
-.training-page { min-height: 100vh; background: var(--bg-surface-hover); }
+/* 数据页：白底贴边，内部只保留 16–20px 留白 */
+.training-page { min-height: 100vh; background: var(--bg-surface); }
 .nav-header { padding: 8px 0; }
 .nav-title { font-size: 20px; font-weight: 600; }
 .nav-desc { color: var(--text-secondary); font-size: 13px; margin-top: 4px; }
-.main-content { max-width: 1180px; margin: 0 auto; padding: 24px; }
-.library-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 26px; }
-.category-filter { max-width: 100%; overflow-x: auto; }
+.main-content { max-width: 1180px; margin: 0 auto; padding: 20px 24px 40px; }
+.library-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; min-height: 52px; margin-bottom: 12px; }
+
+/* 分类页签：只保留文字 + 下划线激活态，去掉灰色填充块 */
+.category-filter { display: flex; max-width: 100%; overflow-x: auto; }
+.category-filter :deep(.el-radio-button) { margin-right: 24px; }
+.category-filter :deep(.el-radio-button:last-child) { margin-right: 0; }
+.category-filter :deep(.el-radio-button__inner) {
+  height: auto;
+  padding: 0 0 10px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.4;
+}
+.category-filter :deep(.el-radio-button__inner:hover) { color: var(--text-primary); }
+.category-filter :deep(.el-radio-button.is-active .el-radio-button__inner) {
+  color: var(--accent-primary);
+  background: transparent;
+  box-shadow: none;
+  border-bottom: 2px solid var(--accent-primary);
+}
+
+/* 输入框与下拉统一 6px 圆角 */
 .search-input { max-width: 320px; }
-.result-heading { display: flex; justify-content: space-between; align-items: end; margin-bottom: 16px; }
-.result-heading h1 { display: inline; margin: 0 10px 0 0; font-size: 20px; color: var(--text-primary); }
+.search-input :deep(.el-input__wrapper) { border-radius: var(--radius-control); }
+.search-input :deep(.el-input-group__append) { border-radius: 0 var(--radius-control) var(--radius-control) 0; }
+.search-input :deep(.el-input-group__append .el-button) { border-radius: 0 var(--radius-control) var(--radius-control) 0; }
+
+/* 已选筛选条件：通栏提示带，不塞进筛选控件右侧 */
+.filter-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 16px;
+  margin-bottom: 16px;
+  background: var(--bg-filter-strip);
+  border: 1px solid var(--border-filter-strip);
+  border-radius: var(--radius-control);
+  color: var(--text-filter-strip);
+  font-size: 13px;
+}
+.filter-strip-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.result-heading { display: flex; align-items: baseline; gap: 10px; margin-bottom: 16px; }
+.result-heading h1 { display: inline; margin: 0; font-size: 20px; color: var(--text-primary); }
 .result-heading span { color: var(--text-secondary); font-size: 13px; }
-.active-search { max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .paper-grid { min-height: 180px; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; align-items: stretch; }
-.paper-link { min-width: 0; color: inherit; text-decoration: none; border-radius: 10px; outline-offset: 3px; }
-.paper-card { height: 100%; transition: transform .16s ease, border-color .16s ease; }
-.paper-link:hover .paper-card { transform: translateY(-2px); border-color: var(--accent-primary); }
+.paper-link { min-width: 0; color: inherit; text-decoration: none; border-radius: var(--radius-card); outline-offset: 3px; }
+.paper-card { height: 100%; border: 1px solid var(--border-light); border-radius: var(--radius-card); box-shadow: none; transition: border-color .16s ease; }
+.paper-link:hover .paper-card { border-color: var(--accent-primary); }
 .paper-link:focus-visible { outline: 2px solid var(--accent-primary); }
 .paper-card :deep(.el-card__body) { height: 100%; min-height: 170px; display: flex; flex-direction: column; padding: 18px; }
 .paper-card-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.paper-category { display: inline-flex; align-items: center; font-size: 12px; color: var(--accent-primary); background: var(--bg-surface-soft); border: 1px solid var(--border-light); border-radius: 999px; padding: 3px 10px; }
+.paper-category { display: inline-flex; align-items: center; font-size: 12px; color: var(--accent-primary); background: var(--bg-surface-soft); border: 1px solid var(--border-light); border-radius: var(--radius-tag); padding: 3px 10px; }
 .paper-title { margin: 13px 0 0; font-size: 16px; line-height: 1.45; font-weight: 650; color: var(--text-primary); }
 .paper-level { font-size: 12px; color: var(--accent-warning); }
 .paper-meta { display: flex; flex-wrap: wrap; gap: 12px; margin: 12px 0 0; font-size: 12px; color: var(--text-secondary); }
@@ -211,7 +257,10 @@ watch(
 .paper-action { margin-top: auto; padding-top: 16px; color: var(--accent-primary); font-size: 13px; font-weight: 600; }
 .load-error { margin-bottom: 16px; }
 .error-content { display: flex; align-items: center; gap: 12px; }
-.paper-pagination { justify-content: center; margin-top: 24px; }
+.paper-pagination { justify-content: center; align-items: center; min-height: 56px; margin-top: 8px; }
+.paper-pagination :deep(.el-pagination.is-background .btn-prev),
+.paper-pagination :deep(.el-pagination.is-background .btn-next),
+.paper-pagination :deep(.el-pagination.is-background .el-pager li) { border-radius: var(--radius-control); }
 @media (max-width: 760px) {
   .main-content { padding: 16px; }
   .library-toolbar { align-items: stretch; flex-direction: column; gap: 12px; margin-bottom: 20px; }

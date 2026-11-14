@@ -218,10 +218,11 @@ onMounted(loadData)
 <style scoped>
 .practice-page {
   font-family: var(--font-family);
-  max-width: 1400px;
   min-width: 0;
-  margin: 0 auto;
-  padding: 4px 4px 28px;
+  min-height: calc(100vh - var(--app-header-height));
+  box-sizing: border-box;
+  background: var(--bg-surface);
+  padding: 20px 20px 28px;
 }
 .practice-page-header {
   display: flex;
@@ -257,9 +258,41 @@ onMounted(loadData)
 .analysis-card {
   padding: 22px 24px;
   border: 1px solid var(--border-light);
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   background: var(--bg-surface);
   min-width: 0;
+}
+/* 时间范围 / 题目记录的分段筛选：只保留文字 + 下划线激活，去掉蓝色实心填充 */
+.practice-page :deep(.el-radio-group) {
+  gap: 4px;
+}
+.practice-page :deep(.el-radio-button__inner) {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--text-secondary);
+  transition: color .15s, border-color .15s;
+}
+.practice-page :deep(.el-radio-button__inner:hover) {
+  background: transparent;
+  color: var(--text-primary);
+}
+.practice-page :deep(.el-radio-button.is-active .el-radio-button__original-radio:not(:disabled) + .el-radio-button__inner) {
+  background: transparent;
+  border-color: transparent;
+  border-bottom-color: var(--accent-primary);
+  box-shadow: none;
+  color: var(--accent-primary);
+}
+.practice-page :deep(.el-radio-button__original-radio:focus-visible + .el-radio-button__inner) {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  box-shadow: none;
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
 }
 .section-heading {
   display: flex;

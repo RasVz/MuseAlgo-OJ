@@ -18,7 +18,7 @@
             :type="index === 0 ? 'primary' : ''" 
             :hollow="index === 0"
           >
-            <el-card shadow="hover" class="post-card" @click="viewDetail(item.id)">
+            <el-card shadow="never" class="post-card" @click="viewDetail(item.id)">
               <h4>{{ item.title }}</h4>
               <p class="summary">{{ item.content ? item.content.substring(0, 100) + '...' : '无内容摘要' }}</p>
               <div class="footer">
@@ -81,28 +81,35 @@ onMounted(() => {
 
 <style scoped>
 .announcement-page {
-  max-width: 900px;
-  margin: 0 auto;
+  min-height: calc(100vh - var(--app-header-height));
+  background: var(--bg-surface);
+  padding: 16px 20px 32px;
+  box-sizing: border-box;
 }
 .list-card {
-  border-radius: 12px;
+  max-width: 960px;
+  margin: 0 auto;
+  border-radius: 0;
   border: none;
+  box-shadow: none;
   min-height: 80vh;
 }
 .page-header h2 { margin: 0 0 10px 0; color: var(--text-primary); }
 .subtitle { color: var(--text-secondary); font-size: 14px; }
 
 .timeline-box {
-  padding: 40px 20px 0;
+  padding: 24px 4px 0;
 }
 
 .post-card {
   cursor: pointer;
-  border-radius: 8px;
-  transition: transform 0.2s;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border-light);
+  box-shadow: none;
+  transition: border-color 0.15s;
 }
 .post-card:hover {
-  transform: translateX(5px);
+  border-color: var(--border-base);
 }
 .post-card h4 { margin: 0 0 10px; font-size: 16px; color: var(--text-primary); }
 .summary { color: var(--text-regular); font-size: 14px; line-height: 1.6; margin-bottom: 15px; }

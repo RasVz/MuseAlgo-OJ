@@ -123,7 +123,7 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.recommend-card { display: flex; flex-direction: column; min-height: 440px; overflow: hidden; border: 1px solid var(--border-light); border-radius: 16px; }
+.recommend-card { display: flex; flex-direction: column; min-height: 440px; overflow: hidden; border: 1px solid var(--border-light); border-radius: var(--radius-card); }
 .recommend-card :deep(.el-card__header) { padding: 14px 16px 12px; border-bottom: 1px solid var(--border-light); }
 .recommend-card :deep(.el-card__body) { display: flex; flex: 1; padding: 8px; }
 
@@ -145,7 +145,7 @@ onMounted(() => {
   place-items: center;
   color: var(--accent-primary);
   background: var(--accent-primary-light);
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   font-size: 16px;
 }
 .header-title {
@@ -177,7 +177,7 @@ onMounted(() => {
   text-align: left;
   cursor: pointer;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   background: transparent;
   transition: background-color 0.16s ease;
 }
@@ -193,7 +193,7 @@ onMounted(() => {
   flex: 0 0 auto;
   min-width: 38px;
   padding: 3px 6px;
-  border-radius: 5px;
+  border-radius: var(--radius-tag);
   font-size: 11px;
   font-weight: 700;
   text-align: center;

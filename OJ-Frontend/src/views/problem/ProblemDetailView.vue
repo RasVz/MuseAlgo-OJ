@@ -264,10 +264,11 @@ watch(() => route.params.id, () => {
 <style scoped>
 .problem-detail-view {
   height: 100%; 
-  background-color: var(--bg-app);
+  background-color: var(--bg-surface);
   overflow: hidden; 
   display: flex;
   flex-direction: column;
+  border-radius: 0;
 }
 
 .navbar-actions-wrapper {
@@ -285,6 +286,8 @@ watch(() => route.params.id, () => {
 .read-layout-wrapper {
   max-width: 1560px;
   margin: 0 auto;
+  padding: 20px 24px;
+  box-sizing: border-box;
   display: flex;
   gap: 20px;
   align-items: flex-start; 
@@ -293,14 +296,21 @@ watch(() => route.params.id, () => {
 .left-column { flex: 1; min-width: 0; }
 .desc-card {
   min-height: 706px;
-  border-radius: 8px;
-  padding: 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-card);
+  box-shadow: none;
+  padding: 0;
 }
 
 .desc-card :deep(.el-card__body) {
   height: auto;
 }
-.related-articles-card { margin-top: 20px; border-radius: 8px; }
+.related-articles-card {
+  margin-top: 20px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-card);
+  box-shadow: none;
+}
 .related-articles-header { display: flex; justify-content: space-between; color: var(--text-primary); font-weight: 650; }
 .related-articles-header span:last-child { color: var(--text-secondary); font-size: 12px; font-weight: 400; }
 .related-article-row { display: flex; width: 100%; align-items: center; gap: 16px; padding: 13px 4px; border: 0; border-bottom: 1px solid var(--border-light); background: transparent; color: inherit; cursor: pointer; text-align: left; }

@@ -56,16 +56,9 @@ const getGridClass = (count) => {
 
 <style scoped>
 .post-card {
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   border: 1px solid var(--border-light);
-  transition: all 0.25s ease;
   background: var(--bg-surface);
-}
-
-.post-card:hover {
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-md);
-  border-color: var(--border-hover);
 }
 
 .post-author-info {
@@ -153,7 +146,7 @@ const getGridClass = (count) => {
 .grid-image {
   width: 100%;
   aspect-ratio: 1 / 1;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   cursor: zoom-in;
   border: 1px solid var(--border-light);
   overflow: hidden;
@@ -166,7 +159,7 @@ const getGridClass = (count) => {
 .post-footer {
   margin-top: 14px;
   padding-top: 12px;
-  border-top: 1px dashed var(--border-light);
+  border-top: 1px solid var(--border-light);
   display: flex;
   justify-content: flex-end;
 }

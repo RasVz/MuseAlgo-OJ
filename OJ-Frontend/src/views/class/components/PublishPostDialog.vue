@@ -52,8 +52,8 @@
 
     <template #footer>
       <span class="dialog-footer">
-        <el-button @click="$emit('update:visible', false)" round>取 消</el-button>
-        <el-button type="primary" :loading="publishing" @click="submit" round>
+        <el-button @click="$emit('update:visible', false)">取 消</el-button>
+        <el-button type="primary" :loading="publishing" @click="submit">
           发 布
         </el-button>
       </span>
@@ -173,7 +173,7 @@ const submit = async () => {
 :deep(.custom-textarea .el-textarea__inner) {
   box-shadow: none;
   background-color: var(--bg-input);
-  border-radius: 10px;
+  border-radius: var(--radius-control);
 }
 
 :deep(.custom-input .el-input__wrapper:hover),
@@ -187,10 +187,12 @@ const submit = async () => {
 .upload-area {
   margin-top: 6px;
   border: 1px dashed var(--border-light);
-  border-radius: 12px;
+  border-radius: var(--radius-control);
   padding: 12px;
   background: var(--bg-surface-hover);
 }
+
+.dialog-footer .el-button { border-radius: var(--radius-control); }
 
 .upload-title {
   font-size: 13px;

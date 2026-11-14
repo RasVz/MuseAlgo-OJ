@@ -33,7 +33,6 @@
               <el-button 
                 :type="user.isFollowed ? 'info' : 'primary'" 
                 :plain="user.isFollowed"
-                round
                 @click="handleToggleFollow(user)"
                 @mouseenter="hoverId = user.id"
                 @mouseleave="hoverId = null"
@@ -193,15 +192,15 @@ watch(() => route.params.id, (newId) => {
 </script>
 
 <style scoped>
-.relation-container { max-width: 900px; margin: 20px auto; padding: 0 10px; }
+.relation-container { max-width: 900px; margin: 0 auto; padding: 0; }
 .relation-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px; }
 .user-hint { font-size: 14px; color: var(--text-regular); }
 .highlight { color: var(--accent-primary); font-weight: 600; }
 
-.list-card { min-height: 500px; }
-.relation-tabs :deep(.el-tabs__nav-wrap::after) { height: 1px; background-color: var(--el-fill-color-light); }
+.list-card { min-height: 500px; border-radius: var(--radius-card); border-color: var(--border-light); }
+.relation-tabs :deep(.el-tabs__nav-wrap::after) { height: 1px; background-color: var(--border-light); }
 
-.user-item { display: flex; justify-content: space-between; align-items: center; padding: 15px 0; border-bottom: 1px solid var(--el-fill-color-light); }
+.user-item { display: flex; justify-content: space-between; align-items: center; padding: 15px 0; border-bottom: 1px solid var(--border-light); }
 .user-item:last-child { border-bottom: none; }
 
 .user-info { display: flex; align-items: center; gap: 15px; cursor: pointer; flex: 1; }
@@ -211,7 +210,10 @@ watch(() => route.params.id, (newId) => {
 .motto { font-size: 12px; color: var(--text-secondary); max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .action-btn .el-button { width: 90px; } /* 固定按钮宽度防止文字变化导致抖动 */
-.pagination-box { margin-top: 20px; display: flex; justify-content: center; }
+.pagination-box { margin-top: 20px; height: 56px; display: flex; align-items: center; justify-content: center; border-top: 1px solid var(--border-light); }
+.pagination-box :deep(.el-pagination.is-background .btn-prev),
+.pagination-box :deep(.el-pagination.is-background .btn-next),
+.pagination-box :deep(.el-pagination.is-background .el-pager li) { border-radius: var(--radius-control); }
 
 /* 鼠标悬停在“已关注”按钮上时，改变样式提示用户这是取消操作 */
 .el-button--info.is-plain:hover {
