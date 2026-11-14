@@ -234,6 +234,7 @@ public class SubmissionController {
 
         SubmissionDetailVO vo = new SubmissionDetailVO();
         vo.setContestId(submission.getContestId());
+        vo.setExamAttemptId(submission.getExamAttemptId());
         BeanUtils.copyProperties(submission, vo);
 
         vo.setProblemTitle(problemTitle);

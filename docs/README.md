@@ -8,6 +8,7 @@
 | [DEVELOPMENT.md](DEVELOPMENT.md) | 开发指南：环境搭建、工程结构、数据库迁移、构建测试、代码与注释约定 |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | 生产部署：Docker Compose / systemd 两种方式、反向代理、密钥管理、安全清单 |
 | [AI-TUTOR.md](AI-TUTOR.md) | 开放式教学、默认诊断、临时样例、题解连通与资源管理 |
+| [AI-REVIEW-RECORDS.md](AI-REVIEW-RECORDS.md) | 提交复盘确认、后台生成、本人历史记录与追问 |
 | [AI-SERVICES.md](AI-SERVICES.md) | 管理中心维护 AI 接口/模型/密钥、运行模式、主密钥挂载与轮换 |
 | [CONTEST-AND-REPORTS.md](CONTEST-AND-REPORTS.md) | 资格快照、正式/全局榜、教师报告操作与边界 |
 | [TRAINING-EXAMS.md](TRAINING-EXAMS.md) | 训练试卷组卷、限时作答、草稿恢复、计分与历史保护 |

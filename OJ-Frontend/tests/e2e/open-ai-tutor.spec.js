@@ -3,7 +3,7 @@ import { join } from 'node:path'
 const evidence = process.env.OJ_TEST_OUTPUT_DIR
 
 test.describe.configure({ timeout: 45000 })
-async function setup(page, { contestSubmission = false, interrupted = false, diagnostic = false } = {}) {
+async function setup(page, { contestSubmission = false, interrupted = false, diagnostic = false, reviewStatus = 'SUCCEEDED' } = {}) {
   // 真实编辑器代码从本地依赖加载，浏览器验收不依赖公共 CDN。
   await page.route('**/monaco-editor@*/min/vs/**', route => {
     const asset = new URL(route.request().url()).pathname.split('/min/vs/')[1]
@@ -11,6 +11,8 @@ async function setup(page, { contestSubmission = false, interrupted = false, dia
   })
   const calls = []
   let history = []
+  const reviews = []
+  let nextReviewId = 101
   await page.addInitScript(() => {
     localStorage.setItem('accessToken', 'synthetic-teaching-token')
     localStorage.setItem('user', JSON.stringify({ id: 7, username: 'student', nickname: '学习者', role: 1 }))
@@ -21,6 +23,35 @@ async function setup(page, { contestSubmission = false, interrupted = false, dia
     const path = url.pathname
     if (!path.startsWith('/api/')) return route.continue()
     const json = data => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, data, message: '成功' }) })
+    const reviewSummary = review => ({
+      id: review.id, submissionId: review.submissionId, problemId: 1, problemTitle: '求和教学案例',
+      userId: 7, language: 'cpp', submissionStatus: 1, score: 100, runTime: 1, runMemory: 1000,
+      parentReviewId: review.parentReviewId || null, relationType: review.relationType, helpMode: review.helpMode,
+      studentQuestion: review.studentQuestion || '', status: review.status, message: '', createTime: review.createTime,
+      latencyMs: 25, model: 'synthetic-model', serviceName: '合成模型'
+    })
+    if (path === '/api/ai/reviews' && request.method() === 'POST') {
+      const payload = request.postDataJSON()
+      calls.push({ path, payload })
+      const prior = reviews.find(item => item.requestId === payload.requestId)
+      if (prior) return json(reviewSummary(prior))
+      const review = { ...payload, id: nextReviewId++, status: reviewStatus, answer: '这是参考实现，关键修改是边界条件。\n\n```cpp\nint main() { return 0; }\n```', requestId: payload.requestId, createTime: '2026-11-15T12:00:00' }
+      reviews.unshift(review)
+      return json(reviewSummary(review))
+    }
+    if (path === '/api/ai/reviews' && request.method() === 'GET') {
+      const submission = url.searchParams.get('submissionId')
+      const items = reviews.filter(item => !submission || String(item.submissionId) === submission).map(reviewSummary)
+      return json({ items, total: items.length, currentPage: 1, pageSize: 15 })
+    }
+    const reviewMatch = path.match(/^\/api\/ai\/reviews\/(\d+)(?:\/(status|cancel))?$/)
+    if (reviewMatch) {
+      const review = reviews.find(item => item.id === Number(reviewMatch[1]))
+      if (!review) return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ code: 404, message: '记录不存在' }) })
+      if (reviewMatch[2] === 'cancel') { review.status = 'CANCELLING'; return json(reviewSummary(review)) }
+      if (reviewMatch[2] === 'status') return json(reviewSummary(review))
+      return json({ ...reviewSummary(review), answer: review.answer, code: 'int main() { return 0; }', codeHash: 'synthetic-hash' })
+    }
     if (/\/api\/problem\/\d+$/.test(path)) return json({ id: Number(path.split('/').at(-1)), title: '求和教学案例', content: '输入两个整数，输出它们的和。', inputDesc: '两个整数', outputDesc: '和', hint: '绝对值不超过 100', timeLimit: 1000, memoryLimit: 256, samples: [{ input: '1 2', output: '3' }] })
     if (path === '/api/problem/draft/get' || path === '/api/problem/draft/latest') return json({ language: 'cpp', code: 'int main() { return 0; }' })
     if (path === '/api/ai/quota') return json({ remaining: 27000, dailyLimit: 30000, exempt: false })
@@ -109,17 +140,88 @@ test('actual contest submission hides AI even without a contest URL parameter', 
   await expect(page.locator('.review-dialog')).toHaveCount(0)
 })
 
+test('review confirmation can be cancelled without creating a record; notification bell stays separate', async ({ page }) => {
+  const calls = await setup(page); await page.goto('/submission/10')
+  await page.getByRole('button', { name: /AI 复盘/ }).click()
+  await page.getByRole('button', { name: '取消', exact: true }).click()
+  await expect(page.locator('.el-dialog')).toBeHidden()
+  expect(calls.filter(call => call.path === '/api/ai/reviews' && call.payload).length).toBe(0)
+  await expect(page.getByRole('button', { name: '通知中心' })).toBeVisible()
+  await page.locator('.user-dropdown-link').click()
+  await expect(page.getByRole('menuitem', { name: '复盘记录' })).toBeVisible()
+  await expect(page.getByRole('menuitem', { name: '通知中心' })).toHaveCount(0)
+})
+
 test('AC practice submission supports review and followup with learning modes', async ({ page }) => {
   const calls = await setup(page); await page.goto('/submission/10')
   await page.getByRole('button', { name: /AI 复盘/ }).click()
-  await expect(page.locator('.review-content')).toContainText('这是参考实现')
-  expect(calls.filter(call => call.path === '/api/ai/review')[0].payload.helpMode).toBe('AUTO')
-  await page.getByRole('button', { name: /检查思路/ }).click()
-  await page.getByRole('textbox', { name: '继续提问' }).fill('请解释刚才提到的边界条件')
+  await expect(page.getByText('确认生成 AI 代码复盘')).toBeVisible()
+  expect(calls.filter(call => call.path === '/api/ai/reviews' && call.payload).length).toBe(0)
+  await page.getByRole('button', { name: '确认并开始' }).click()
+  await expect(page).toHaveURL(/\/ai\/reviews\/\d+/)
+  await expect(page.locator('.review-answer')).toContainText('这是参考实现')
+  const created = calls.filter(call => call.path === '/api/ai/reviews' && call.payload)
+  expect(created[0].payload.helpMode).toBe('AUTO')
+  expect(created[0].payload.relationType).toBe('INITIAL')
+  await page.reload()
+  await expect(page.locator('.review-answer')).toContainText('这是参考实现')
+  await page.getByRole('button', { name: '继续追问' }).click()
+  await page.getByRole('textbox', { name: '继续追问' }).fill('请解释刚才提到的边界条件')
   await page.getByRole('button', { name: '发送追问' }).click()
-  await expect.poll(() => calls.filter(call => call.path === '/api/ai/review').length).toBe(2)
-  expect(calls.filter(call => call.path === '/api/ai/review')[1].payload.helpMode).toBe('CHECK_APPROACH')
-  expect(calls.filter(call => call.path === '/api/ai/review')[1].payload.previousAnswer).toContain('这是参考实现')
+  await expect(page).toHaveURL(/\/ai\/reviews\/\d+/)
+  await expect.poll(() => calls.filter(call => call.path === '/api/ai/reviews' && call.payload).length).toBe(2)
+  const followup = calls.filter(call => call.path === '/api/ai/reviews' && call.payload)[1].payload
+  expect(followup.helpMode).toBe('AUTO')
+  expect(followup.relationType).toBe('FOLLOW_UP')
+  expect(followup.parentReviewId).toBe(101)
+  expect(followup.previousAnswer).toBeUndefined()
+  await page.getByRole('button', { name: '重新分析' }).click()
+  await expect(page.getByText('分析历史提交 #10')).toBeVisible()
+  await page.getByRole('button', { name: '确认并开始' }).click()
+  await expect.poll(() => calls.filter(call => call.path === '/api/ai/reviews' && call.payload).length).toBe(3)
+  const reanalysis = calls.filter(call => call.path === '/api/ai/reviews' && call.payload)[2].payload
+  expect(reanalysis.relationType).toBe('REANALYZE')
+  expect(reanalysis.parentReviewId).toBeUndefined()
+  await page.locator('.user-dropdown-link').click()
+  await page.getByRole('menuitem', { name: '复盘记录' }).click()
+  await expect(page).toHaveURL(/\/my\/ai-reviews/)
+  await expect(page.getByText('共 3 条复盘记录')).toBeVisible()
+})
+
+test('stopping an active review shows CANCELLING and prevents a second stop', async ({ page }) => {
+  await setup(page, { reviewStatus: 'RUNNING' })
+  await page.goto('/submission/10')
+  await page.getByRole('button', { name: /AI 复盘/ }).click()
+  await page.getByRole('button', { name: '确认并开始' }).click()
+  await expect(page).toHaveURL(/\/ai\/reviews\/\d+/)
+  await page.getByRole('button', { name: '停止生成' }).click()
+  await page.getByRole('button', { name: '停止生成' }).last().click()
+  await expect(page.getByText('正在停止复盘生成')).toBeVisible()
+  await expect(page.getByRole('button', { name: '停止中' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: '重试' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '重新分析' })).toHaveCount(0)
+})
+
+test('retry confirmation reuses the failed review mode and question', async ({ page }) => {
+  const calls = await setup(page, { reviewStatus: 'FAILED' })
+  await page.goto('/submission/10')
+  await page.getByRole('button', { name: /AI 复盘/ }).click()
+  await page.locator('.review-input .el-select').click()
+  await page.getByRole('option', { name: '排查代码' }).click()
+  await page.getByPlaceholder('例如：请重点解释复杂度和边界条件').fill('请检查空数组')
+  await page.getByRole('button', { name: '确认并开始' }).click()
+  await expect(page).toHaveURL(/\/ai\/reviews\/\d+/)
+  await expect(page.getByRole('button', { name: '重试' })).toBeVisible()
+  await page.getByRole('button', { name: '重试' }).click()
+  await expect(page.getByPlaceholder('例如：请重点解释复杂度和边界条件')).toHaveValue('请检查空数组')
+  await expect(page.locator('.review-input .el-select__selected-item.el-select__placeholder')).toHaveText('排查代码')
+  await page.getByRole('button', { name: '确认并开始' }).click()
+  await expect.poll(() => calls.filter(call => call.path === '/api/ai/reviews' && call.payload).length).toBe(2)
+  const retry = calls.filter(call => call.path === '/api/ai/reviews' && call.payload)[1].payload
+  expect(retry.helpMode).toBe('DEBUG_CODE')
+  expect(retry.studentQuestion).toBe('请检查空数组')
+  expect(retry.relationType).toBe('RETRY')
+  expect(retry.parentReviewId).toBe(101)
 })
 
 test('sending after editing includes latest code and language, preserving draft across modes', async ({ page }) => {

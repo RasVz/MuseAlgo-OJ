@@ -43,6 +43,12 @@ class AiServiceReviewTest {
         assertEquals("AI_REVIEW_SUBMISSION_NOT_FOUND",assertThrows(BusinessException.class,()->service.prepare(10L,request())).getErrorCode().key());
         data(null,(byte)2);assertEquals("ACCESS_DENIED",assertThrows(BusinessException.class,()->service.prepare(20L,request())).getErrorCode().key());verifyNoInteractions(problems,gateway);
     }
+    @Test void examSubmissionCannotBeReviewed() {
+        when(submissions.findById(1L)).thenReturn(Optional.of(new SubmissionReviewQuery.SubmissionReviewData(
+                1L,10L,100L,(byte)1,"cpp","int main(){}",100,1,1,null,null,List.of(),88L)));
+        assertEquals("AI_REVIEW_EXAM_BLOCKED",assertThrows(BusinessException.class,()->service.prepare(10L,request())).getErrorCode().key());
+        verifyNoInteractions(problems,gateway,quota);
+    }
     @Test void pendingSubmissionCannotBeReviewed() { data(null,(byte)0);assertThrows(BusinessException.class,()->service.prepare(10L,request())); }
     @Test void followupTreatsClientPreviousAnswerAsUntrustedMaterial() {
         data(null,(byte)2);when(problems.load(100L)).thenReturn(new ProblemTutoringQuery.Context(100L,"题","内容"));when(quota.tryAcquire(10L,false)).thenReturn(true);

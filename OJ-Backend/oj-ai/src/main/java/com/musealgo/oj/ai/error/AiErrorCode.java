@@ -13,6 +13,8 @@ public enum AiErrorCode implements ErrorCode {
     AI_OUTPUT_LIMIT(502, "回复达到输出上限，尚未完成，请缩小问题范围或调整输出上限"),
     AI_STREAM_FAILED(500, "AI 回复中断，请重试"),
     AI_REVIEW_SUBMISSION_NOT_FOUND(404, "提交不存在"),
+    AI_REVIEW_NOT_FOUND(404, "复盘记录不存在"),
+    AI_REVIEW_EXAM_BLOCKED(403, "试卷提交暂不支持 AI 复盘，请在普通练习中使用"),
     AI_INPUT_INVALID(400, "请求参数不合法"),
     AI_PROMPT_NOT_FOUND(404, "模板不存在: "),
     AI_DRAFT_NOT_FOUND(404, "草稿不存在或已删除"),
