@@ -100,6 +100,7 @@
               :comments="comments"
               :has-more="commentsHasMore"
               :loading="commentsLoading"
+              :entity-type="commentEntityType"
               @refresh="fetchComments(post.id)"
               @load-more="loadMoreComments"
             />
@@ -146,6 +147,8 @@ const commentTotal = ref(0)
 const commentsLoading = ref(false)
 const commentsPage = ref(1)
 const commentPageSize = 20
+// 题解帖（type=1）的评论分区是 3，其余动态/文章是 1。
+const commentEntityType = ref(1)
 const commentsHasMore = computed(() => comments.value.length < commentTotal.value)
 const isFollowed = ref(false)
 const currentId = userStore.userId
@@ -196,8 +199,6 @@ const applyReactionData = (data = {}) => {
 
 const fetchDetail = async (id) => {
   loading.value = true
-  // 评论只依赖帖子 id，不必等详情返回后再串行请求。
-  fetchComments(id)
   try {
     const res = await getPostDetail(id)
     if (res.code === 200 && res.data) {
@@ -221,6 +222,8 @@ const fetchDetail = async (id) => {
         relatedProblems: Array.isArray(data.relatedProblems) ? data.relatedProblems : []
       }
       isFollowed.value = data.isFollowed || false
+      commentEntityType.value = Number(data.type) === 1 ? 3 : 1
+      fetchComments(id)
     }
   } catch (e) { console.error(e) }
   finally { loading.value = false }
@@ -279,7 +282,11 @@ const fetchComments = async (id, { reset = true } = {}) => {
   }
   commentsLoading.value = true
   try {
-    const res = await getPostComments(id, { page: commentsPage.value, size: commentPageSize })
+    const res = await getPostComments(id, {
+      page: commentsPage.value,
+      size: commentPageSize,
+      entityType: commentEntityType.value
+    })
     if (seq !== commentsSeq) return
     if (res.code === 200) {
       const pageData = res.data || {}

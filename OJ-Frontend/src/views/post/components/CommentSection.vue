@@ -56,7 +56,9 @@ import { useUserStore } from '@/stores/userStore'
 const props = defineProps({
   comments: { type: Array, default: () => [] },
   hasMore: { type: Boolean, default: false },
-  loading: { type: Boolean, default: false }
+  loading: { type: Boolean, default: false },
+  // 1-动态/文章评论，3-题解评论；与后端 CommentTargetService 的约定一致。
+  entityType: { type: Number, default: 1 }
 })
 const userStore = useUserStore()
 const emit = defineEmits(['refresh', 'load-more'])
@@ -113,11 +115,11 @@ const submit = async () => {
     return
   }
   
-  // entityType=1 表示评论目标是帖子（评论体系也服务于班级动态等场景）。
+  // 题解帖传 3，其余动态/文章传 1；分区由父组件根据帖子类型决定。
   const dto = {
     entityId: route.params.id,
     content: content.value,
-    entityType: 1
+    entityType: props.entityType
   }
 
   // parentId 指向根评论（楼中楼只做一层），replyCommentId 记录被回复的那条
