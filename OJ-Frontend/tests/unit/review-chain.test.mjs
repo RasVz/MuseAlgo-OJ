@@ -108,7 +108,7 @@ test('settings do not repeat an error already shown by the shared request layer'
 
 for (const [file, name, next, api] of [
   ['FavoriteView.vue', 'fetchPosts', 'const fetchProblemLists', 'getFavoritePosts'],
-  ['ReviewBookView.vue', 'load', 'const changeScope', 'getReviewBook']
+  ['ReviewBookView.vue', 'load', 'const goProblem', 'getReviewBook']
 ]) {
   test(`${file} keeps failed loading distinct from an empty result`, async () => {
     const source = readFileSync(new URL('../../src/views/user/' + file, import.meta.url), 'utf8')

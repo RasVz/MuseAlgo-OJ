@@ -139,12 +139,11 @@ export function getRecommend(userId) {
   })
 }
 
-// 获取错题本；today 为今日优先复习，all 为全部待复习题
-export function getReviewBook(scope = 'today') {
+// 获取全部待复习错题
+export function getReviewBook() {
   return request({
     url: '/user/review-book',
     method: 'get',
-    params: { scope },
   })
 }
 
@@ -153,13 +152,5 @@ export function markReviewMastered(problemId, mastered) {
     url: `/user/review-book/${problemId}/mastered`,
     method: 'post',
     params: { mastered },
-  })
-}
-
-export function getWeaknessAnalysis(params) {
-  return request({
-    url: '/profile/weakness',
-    method: 'get',
-    params,
   })
 }
