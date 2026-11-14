@@ -221,10 +221,9 @@ public class ContestAnswerApplicationService {
         }
 
         // 赛后只读：已报名用户或发起过 VP（含已结束 VP）的用户都可以复盘。
-        if (registration != null) {
+        // VP 与正式报名独立；本人已有 VP 可只读复盘，不受正式报名审核状态影响。
+        if (vp == null) {
             requireParticipant(registration);
-        } else if (vp == null) {
-            throw new ForbiddenException("比赛已结束，未参赛不能查看题目");
         }
         return new AnswerContext(contest, PHASE_ENDED, registration, false, false, true,
                 RESULT_FULL, end, 0L);
