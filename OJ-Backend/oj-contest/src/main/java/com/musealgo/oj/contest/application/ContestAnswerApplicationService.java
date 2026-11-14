@@ -188,8 +188,8 @@ public class ContestAnswerApplicationService {
         List<ContestProblemVO> rows = problemContestService.selectContestProblemList(contestId, 1, userId);
         return rows.stream()
                 .filter(row -> Objects.equals(problemId, row.getProblemId()))
-                .map(ContestProblemVO::getStatus)
-                .findFirst().orElse(null);
+                .findFirst()
+                .map(ContestProblemVO::getStatus).orElse(null);
     }
 
     private AnswerContext resolveContext(Contest contest, Long userId) {

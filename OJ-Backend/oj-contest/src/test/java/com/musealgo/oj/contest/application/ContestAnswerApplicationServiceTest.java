@@ -7,6 +7,7 @@ import com.musealgo.oj.common.exception.ForbiddenException;
 import com.musealgo.oj.common.security.AuthenticatedUser;
 import com.musealgo.oj.contest.entity.Contest;
 import com.musealgo.oj.contest.entity.ContestUser;
+import com.musealgo.oj.contest.entity.ProblemContest;
 import com.musealgo.oj.contest.entity.vo.ContestAnswerPaperVO;
 import com.musealgo.oj.contest.entity.vo.ContestProblemVO;
 import com.musealgo.oj.contest.entity.vo.VpAttemptVO;
@@ -27,6 +28,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -187,6 +189,28 @@ class ContestAnswerApplicationServiceTest {
         contest("ACM", LocalDateTime.now().minusHours(3), LocalDateTime.now().minusHours(1), 1);
         registration(status);
         assertThrows(BusinessException.class, () -> service.paper(1L));
+    }
+
+    @ParameterizedTest
+    @CsvSource(value = {"NONE,UNTOUCHED", "0,PENDING", "1,SOLVED", "2,ATTEMPTED"}, nullValues = "NONE")
+    void problemStatementSupportsUsersWithNoSubmission(String rawStatus, String expectedStatus) {
+        login(10L);
+        contest("ACM", LocalDateTime.now().minusHours(3), LocalDateTime.now().minusHours(1), 0);
+        registration("APPROVED");
+        ProblemContest relation = new ProblemContest().setContestId(1L).setProblemId(34L)
+                .setProblemOrder(1).setScore(100).setVisible(1).setIsDeleted(0);
+        when(problemContestMapper.selectOne(any(com.baomidou.mybatisplus.core.conditions.Wrapper.class)))
+                .thenReturn(relation);
+        when(statements.load(34L)).thenReturn(new ContestProblemStatementQuery.Statement(
+                34L, "题目 34", "题面", "输入", "输出", List.of(), 1000, 256));
+        when(problemContests.selectContestProblemList(1L, 1, 10L)).thenReturn(List.of(row(34L, rawStatus)));
+
+        var problem = service.problem(1L, 34L);
+
+        assertEquals(34L, problem.getProblemId());
+        assertEquals("题面", problem.getContent());
+        assertEquals(expectedStatus, problem.getMyStatus());
+        assertFalse(problem.getCanSubmit());
     }
 
     @Test
