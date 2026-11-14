@@ -672,13 +672,14 @@ public class UserController {
         return Result.success(rows);
     }
 
-    @Operation(summary = "标记错题掌握状态")
-    @PostMapping("/review-book/{problemId}/mastered")
-    public Result<Void> markReviewMastered(@PathVariable Long problemId, @RequestParam boolean mastered) {
+    @Operation(summary = "忽略错题")
+    @PostMapping("/review-book/{problemId}/ignore")
+    public Result<Void> ignoreReviewProblem(@PathVariable Long problemId) {
         Long userId = SecurityUtils.getUserId();
         if (userId == null) return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "请先登录");
-        int updated = jdbcTemplate.update("UPDATE user_problem_review SET status = ?, last_reviewed_at = NOW() WHERE user_id = ? AND problem_id = ?",
-                mastered ? "MASTERED" : "REVIEW", userId, problemId);
+        // 忽略状态记在错题本行上，收集逻辑只更新 reason，不会把 IGNORED 重新变回 REVIEW。
+        int updated = jdbcTemplate.update("UPDATE user_problem_review SET status = 'IGNORED', last_reviewed_at = NOW() WHERE user_id = ? AND problem_id = ?",
+                userId, problemId);
         if (updated == 0) return ErrorResponses.failure(SystemErrorCode.REVIEW_ENTRY_NOT_FOUND, "错题记录不存在");
         return Result.success(null);
     }

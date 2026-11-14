@@ -147,10 +147,9 @@ export function getReviewBook() {
   })
 }
 
-export function markReviewMastered(problemId, mastered) {
+export function ignoreReviewProblem(problemId) {
   return request({
-    url: `/user/review-book/${problemId}/mastered`,
+    url: `/user/review-book/${problemId}/ignore`,
     method: 'post',
-    params: { mastered },
   })
 }
