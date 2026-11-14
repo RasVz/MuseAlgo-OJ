@@ -73,8 +73,10 @@ const getStatusIcon = (s) => ({
 <style scoped>
 .status-banner {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   align-items: center;
-  gap: 24px;
+  gap: 12px 32px;
   padding: 14px 24px;
   border-radius: 0;
   border-bottom: 1px solid var(--border-light);
@@ -101,7 +103,6 @@ const getStatusIcon = (s) => ({
   display: flex;
   align-items: center;
   gap: 20px;
-  margin-left: auto;
 }
 
 .metric-item {
