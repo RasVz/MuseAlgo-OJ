@@ -5,6 +5,7 @@ import com.musealgo.oj.common.exception.CommonErrorCode;
 import com.musealgo.oj.community.error.CommunityErrorCode;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
@@ -17,6 +18,7 @@ import com.musealgo.oj.community.notification.NotificationType;
 import com.musealgo.oj.community.entity.Comment;
 import com.musealgo.oj.api.user.UserDisplayInfo;
 import com.musealgo.oj.community.entity.dto.CommentDTO;
+import com.musealgo.oj.community.entity.vo.CommentPageVO;
 import com.musealgo.oj.community.entity.vo.CommentVO;
 import com.musealgo.oj.community.mapper.CommentMapper;
 import com.musealgo.oj.community.service.CommentService;
@@ -29,6 +31,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -136,15 +139,55 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, Comment> impl
     @Override
     public List<CommentVO> getCommentList(CommentTarget target) {
         handlerFor(target).requireTarget(target.id(), target.type());
-        // 1. 查数据库
         List<Comment> comments = this.list(new LambdaQueryWrapper<Comment>()
                 .eq(Comment::getEntityId, target.id())
                 .eq(Comment::getEntityType, target.type())
+                .and(wrapper -> wrapper.eq(Comment::getIsDeleted, 0).or().isNull(Comment::getIsDeleted))
                 .orderByDesc(Comment::getCreateTime));
+        return toCommentViews(comments);
+    }
 
-        if (comments.isEmpty()) return new ArrayList<>();
+    @Override
+    public CommentPageVO getCommentPage(CommentTarget target, int page, int size) {
+        handlerFor(target).requireTarget(target.id(), target.type());
+        int safePage = Math.max(page, 1);
+        int safeSize = Math.min(Math.max(size, 1), 50);
 
-        // 2. 收集所有涉及到的 UserID (包括发评论的、被回复的)
+        // 只分页顶层评论；每页顶层评论下的回复一次性取全，
+        // 保证前端拿到的每个根节点都是完整的，不会出现子回复跨页丢失。
+        Page<Comment> rootPage = this.page(new Page<>(safePage, safeSize),
+                new LambdaQueryWrapper<Comment>()
+                        .eq(Comment::getEntityId, target.id())
+                        .eq(Comment::getEntityType, target.type())
+                        .and(wrapper -> wrapper.eq(Comment::getParentId, 0).or().isNull(Comment::getParentId))
+                        .and(wrapper -> wrapper.eq(Comment::getIsDeleted, 0).or().isNull(Comment::getIsDeleted))
+                        .orderByDesc(Comment::getCreateTime)
+                        .orderByDesc(Comment::getId));
+
+        List<Comment> roots = rootPage.getRecords();
+        if (roots == null || roots.isEmpty()) {
+            return new CommentPageVO(List.of(), rootPage.getTotal());
+        }
+
+        List<Long> rootIds = roots.stream().map(Comment::getId).filter(Objects::nonNull).toList();
+        List<Comment> replies = rootIds.isEmpty() ? List.of() : this.list(new LambdaQueryWrapper<Comment>()
+                .eq(Comment::getEntityId, target.id())
+                .eq(Comment::getEntityType, target.type())
+                .in(Comment::getParentId, rootIds)
+                .and(wrapper -> wrapper.eq(Comment::getIsDeleted, 0).or().isNull(Comment::getIsDeleted))
+                .orderByAsc(Comment::getCreateTime)
+                .orderByAsc(Comment::getId));
+
+        List<Comment> comments = new ArrayList<>(roots.size() + replies.size());
+        comments.addAll(roots);
+        comments.addAll(replies);
+        return new CommentPageVO(toCommentViews(comments), rootPage.getTotal());
+    }
+
+    private List<CommentVO> toCommentViews(List<Comment> comments) {
+        if (comments == null || comments.isEmpty()) return new ArrayList<>();
+
+        // 1. 收集所有涉及到的 UserID (包括发评论的、被回复的)
         Set<Long> userIds = comments.stream().map(Comment::getUserId).collect(Collectors.toSet());
         comments.forEach(c -> {
             if (c.getReplyUserId() != null && c.getReplyUserId() != 0) {
@@ -152,10 +195,10 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, Comment> impl
             }
         });
 
-        // 3. 一次性查出所有用户（走 oj-api 只读契约，Map 映射）
+        // 2. 一次性查出所有用户（走 oj-api 只读契约，Map 映射）
         Map<Long, UserDisplayInfo> userMap = userQuery.findDisplayInfoBatch(userIds);
 
-        // 4. 组装 VO (合并：基础信息 + 用户信息 + Redis点赞信息)
+        // 3. 组装 VO (合并：基础信息 + 用户信息 + Redis点赞信息)
         return comments.stream().map(c -> {
             CommentVO vo = new CommentVO();
             BeanUtils.copyProperties(c, vo);

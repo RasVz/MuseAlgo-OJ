@@ -76,12 +76,12 @@ export function getMyPosts(params) {
   })
 }
 
-// === 新增：获取评论列表 ===
-export function getPostComments(id) {
+// 顶层评论分页；records 含当前页根评论及其全部回复。
+export function getPostComments(id, params = {}) {
   return request({
-    url: '/comment/list',
+    url: '/comment/page',
     method: 'get',
-    params: { entityId: id, entityType: 1 }
+    params: { entityId: id, entityType: 1, ...params }
   })
 }
 

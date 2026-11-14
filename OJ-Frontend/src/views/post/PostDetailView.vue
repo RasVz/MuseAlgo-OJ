@@ -95,8 +95,14 @@
 
           <!-- 评论 -->
           <div class="comments-section" id="comments">
-            <h3 class="section-title">评论 {{ comments.length > 0 ? `(${comments.length})` : '' }}</h3>
-            <CommentSection :comments="comments" @refresh="fetchComments(post.id)" />
+            <h3 class="section-title">评论 {{ commentTotal > 0 ? `(${commentTotal})` : '' }}</h3>
+            <CommentSection
+              :comments="comments"
+              :has-more="commentsHasMore"
+              :loading="commentsLoading"
+              @refresh="fetchComments(post.id)"
+              @load-more="loadMoreComments"
+            />
           </div>
         </main>
 
@@ -121,7 +127,7 @@ import { Flag } from '@element-plus/icons-vue'
 import dayjs from 'dayjs'
 import { getPostDetail, getPostComments, togglePostLike, reportPost } from '@/api/post'
 import { toggleFollow } from '@/api/user'
-import { addFavorite, checkFavorite, removeFavorite } from '@/api/favorite'
+import { addFavorite, removeFavorite } from '@/api/favorite'
 import PostContent from './components/PostContent.vue'
 import CommentSection from './components/CommentSection.vue'
 import ArticleToc from './components/ArticleToc.vue'
@@ -136,6 +142,11 @@ const userStore = useUserStore()
 const loading = ref(false)
 const post = ref({}) 
 const comments = ref([])
+const commentTotal = ref(0)
+const commentsLoading = ref(false)
+const commentsPage = ref(1)
+const commentPageSize = 20
+const commentsHasMore = computed(() => comments.value.length < commentTotal.value)
 const isFollowed = ref(false)
 const currentId = userStore.userId
 
@@ -183,20 +194,10 @@ const applyReactionData = (data = {}) => {
   post.value.isLiked = Boolean(data.isLiked)
 }
 
-// 收藏状态用详情接口返回的 isFavorited 不可靠（可能未按当前用户计算），
-// 单独查一次收藏接口，确保按钮显示的是真实状态。
-const fetchFavoriteState = async (postId) => {
-  if (!currentId) return false
-  try {
-    const res = await checkFavorite({ targetId: postId, type: 'post' })
-    return res.code === 200 && Boolean(res.data)
-  } catch {
-    return false
-  }
-}
-
 const fetchDetail = async (id) => {
   loading.value = true
+  // 评论只依赖帖子 id，不必等详情返回后再串行请求。
+  fetchComments(id)
   try {
     const res = await getPostDetail(id)
     if (res.code === 200 && res.data) {
@@ -215,12 +216,11 @@ const fetchDetail = async (id) => {
         },
         likeCount: Number(data.likeCount || 0),
         isLiked: Boolean(data.isLiked),
-        isFavorited: data.isFavorited || false,
+        // 详情接口已按当前用户计算收藏态，不再额外请求收藏接口。
+        isFavorited: Boolean(data.isFavorited),
         relatedProblems: Array.isArray(data.relatedProblems) ? data.relatedProblems : []
       }
       isFollowed.value = data.isFollowed || false
-      post.value.isFavorited = await fetchFavoriteState(id)
-      fetchComments(id)
     }
   } catch (e) { console.error(e) }
   finally { loading.value = false }
@@ -255,6 +255,8 @@ const handleFavorite = async () => {
 // 评论是后端返回的扁平列表，前端组装成树。
 // 用 String() 归一 parentId/id：接口在这两处可能给出不同类型（数字 vs 字符串），
 // 直接用 Map 查找会全部落空，评论就都变成一级了。
+const flattenComment = (item) => [item, ...(item.children || [])]
+
 const buildCommentTree = (flatList) => {
   const result = [], map = new Map()
   flatList.forEach(item => { item.children = []; map.set(String(item.id), item) })
@@ -268,11 +270,38 @@ const buildCommentTree = (flatList) => {
   return result
 }
 
-const fetchComments = async (id) => {
+let commentsSeq = 0
+const fetchComments = async (id, { reset = true } = {}) => {
+  const seq = ++commentsSeq
+  if (reset) {
+    commentsPage.value = 1
+    comments.value = []
+  }
+  commentsLoading.value = true
   try {
-    const res = await getPostComments(id)
-    if (res.code === 200) comments.value = buildCommentTree(res.data || [])
-  } catch (e) { console.error('获取评论失败', e) }
+    const res = await getPostComments(id, { page: commentsPage.value, size: commentPageSize })
+    if (seq !== commentsSeq) return
+    if (res.code === 200) {
+      const pageData = res.data || {}
+      const incoming = Array.isArray(pageData.records) ? pageData.records : []
+      const merged = reset ? incoming : [...comments.value.flatMap(flattenComment), ...incoming]
+      // 去重后重新组树，避免加载更多时同一评论被追加两次。
+      const unique = [...new Map(merged.map(item => [String(item.id), item])).values()]
+      comments.value = buildCommentTree(unique)
+      commentTotal.value = Number(pageData.total || 0)
+    }
+  } catch (e) {
+    if (seq === commentsSeq) console.error('获取评论失败', e)
+  } finally {
+    if (seq === commentsSeq) commentsLoading.value = false
+  }
+}
+
+// 加载更多只追加新数据，已加载的树保持不变。
+const loadMoreComments = async () => {
+  if (commentsLoading.value || !commentsHasMore.value) return
+  commentsPage.value += 1
+  await fetchComments(route.params.id, { reset: false })
 }
 
 // 关注接口返回的是状态字符串而非布尔：'followed' / 'unfollowed'，要显式转成布尔。

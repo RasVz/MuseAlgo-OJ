@@ -33,6 +33,9 @@
         :comment="item" 
         @reply="onReceiveReply"
       />
+      <div v-if="hasMore" class="load-more">
+        <el-button :loading="loading" @click="$emit('load-more')">加载更多评论</el-button>
+      </div>
     </div>
   </div>
 </template>
@@ -50,9 +53,13 @@ import { useRoute } from 'vue-router'
 import { addComment } from '@/api/post'
 import { useUserStore } from '@/stores/userStore'
 
-const props = defineProps(['comments'])
+const props = defineProps({
+  comments: { type: Array, default: () => [] },
+  hasMore: { type: Boolean, default: false },
+  loading: { type: Boolean, default: false }
+})
 const userStore = useUserStore()
-const emit = defineEmits(['refresh'])
+const emit = defineEmits(['refresh', 'load-more'])
 
 const route = useRoute()
 const content = ref('')
@@ -162,4 +169,5 @@ const submit = async () => {
 .input-footer :deep(.el-button) { border-radius: var(--radius-control); }
 .cancel-reply { font-size: 13px; color: var(--text-secondary); cursor: pointer; }
 .cancel-reply:hover { color: var(--accent-danger); }
+.load-more { display: flex; justify-content: center; padding: 16px 0 4px; }
 </style>

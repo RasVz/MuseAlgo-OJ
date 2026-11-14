@@ -122,7 +122,7 @@ public class SecurityConfig {
 
                         // 公共接口 (首页公告、题目列表等)
                         .requestMatchers("/post/announcements", "/post/list").permitAll()
-                        .requestMatchers("/comment/list").permitAll()
+                        .requestMatchers("/comment/list", "/comment/page").permitAll()
                         .requestMatchers("/problem-list/list").permitAll()
                         .requestMatchers("/problem/list").permitAll()
                         .requestMatchers(HttpMethod.GET, "/problem/search", "/problem/filter-options").permitAll()
