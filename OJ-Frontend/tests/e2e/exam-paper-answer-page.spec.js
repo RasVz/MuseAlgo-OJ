@@ -258,6 +258,6 @@ test('expired attempt finishes automatically and returns to the timeout result',
   await page.goto(`/training/${PAPER_ID}`, { waitUntil: 'networkidle' })
 
   await expect(page).toHaveURL(new RegExp(`/training/${PAPER_ID}$`), { timeout: 15000 })
-  await expect(page.getByText('时间到，已自动交卷')).toBeVisible()
+  await expect(page.locator('.el-tag__content').filter({ hasText: '时间到，已自动交卷' })).toBeVisible()
   expect(state.attemptStatus).toBe('TIMEOUT')
 })
