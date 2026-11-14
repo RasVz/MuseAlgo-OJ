@@ -76,5 +76,6 @@
   "V75__problem_draft.sql": "0f2299926a7e73d1ee35fe2448e04970b13b5d925fbfe1ea325492cc88579c7a",
   "V76__exam_attempt_submission_binding.sql": "c6b96dd4e7861aaec6a49bf98217358ca251e0fa1bcfb9e4ee97a8e2a855d89c",
   "V77__ai_submission_review.sql": "a94a4f4210bd0ed7b9d671d42fb92cbd6ade87302d2eefcd871d8325e93efe9c",
-  "V78__submission_ai_diagnosis.sql": "3c265593c9fe8423ff852b2779051b68a4b88dde726fa6db274d7d737e6728a5"
+  "V78__submission_ai_diagnosis.sql": "3c265593c9fe8423ff852b2779051b68a4b88dde726fa6db274d7d737e6728a5",
+  "V79__admin_user_management.sql": "dfb5efef2e05c74d44838e3fef19623c53219939d35893a75ffd10eee17e3714"
 }

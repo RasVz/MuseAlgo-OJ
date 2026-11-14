@@ -30,7 +30,15 @@ public interface UserMapper extends BaseMapper<User> {
                                   @Param("expectedEncodedPassword") String expectedEncodedPassword,
                                   @Param("encodedPassword") String encodedPassword);
 
-    @Select("SELECT id FROM `user` WHERE role = 3 AND COALESCE(is_banned, 0) <> 1 ORDER BY id FOR UPDATE")
+    /**
+     * 锁定当前生效的管理员账号：排除已删除与封禁生效中的账号；
+     * 封禁已到期的账号按启用处理，避免过期封禁长期占用管理员名额。
+     */
+    @Select("SELECT id FROM `user` WHERE role = 3 " +
+            "AND COALESCE(is_deleted, 0) = 0 " +
+            "AND (COALESCE(is_banned, 0) <> 1 " +
+            "     OR (ban_expire_time IS NOT NULL AND ban_expire_time <= NOW())) " +
+            "ORDER BY id FOR UPDATE")
     List<Long> lockEnabledAdminIds();
 
     /**

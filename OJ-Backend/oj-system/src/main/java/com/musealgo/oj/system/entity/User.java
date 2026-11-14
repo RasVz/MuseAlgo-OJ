@@ -58,6 +58,25 @@ public class User implements Serializable, AuthenticatedUser {
     @TableField("is_banned")
     private Byte isBanned;
 
+    @ApiModelProperty("封禁原因")
+    @TableField("ban_reason")
+    private String banReason;
+
+    @ApiModelProperty("封禁到期时间；NULL 表示永久封禁")
+    @TableField("ban_expire_time")
+    private LocalDateTime banExpireTime;
+
+    /**
+     * 封禁在当前时刻是否生效。
+     * <p>到期封禁视为未封禁；调用方仍需自行决定是否清理过期字段。</p>
+     */
+    public boolean isBanActive(LocalDateTime now) {
+        if (isBanned == null || isBanned != 1) {
+            return false;
+        }
+        return banExpireTime == null || banExpireTime.isAfter(now);
+    }
+
     @ApiModelProperty("邮箱")
     @TableField("email")
     private String email;

@@ -15,6 +15,7 @@ import com.musealgo.oj.system.entity.User;
 import com.musealgo.oj.system.mapper.UserMapper;
 import com.musealgo.oj.system.mapper.UserAuthorityMapper;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -94,7 +95,7 @@ public class UserDetailsServiceImpl implements UserDetailsService {
      */
     public ReportActorSnapshot reportActorSnapshot(User user) {
         if (user == null) return null;
-        boolean active = (user.getIsBanned() == null || user.getIsBanned() != 1)
+        boolean active = !user.isBanActive(LocalDateTime.now())
                 && (user.getIsDeleted() == null || user.getIsDeleted() != 1);
         if (!active) return new ReportActorSnapshot(user.getId(), false, false, false);
         Set<String> authorities = resolveAuthorities(user).stream()

@@ -1,351 +1,637 @@
 <template>
   <div class="admin-users">
-    <div class="page-header">
+    <header class="page-header">
       <div>
-        <div class="page-title">用户管理</div>
-        <div class="page-desc">用户搜索、创建账号、角色调整、禁用与重置密码（禁用后登录与所有请求被拒绝）</div>
+        <div class="title-line">
+          <h1>用户管理</h1>
+          <span class="scope-label">管理员</span>
+        </div>
+        <p>检索账号、查看用户概况，处理角色、封禁与密码重置。</p>
       </div>
-      <div class="header-right">
-        <el-input v-model="keyword" placeholder="用户名 / 昵称 / ID" clearable style="width: 240px" @keyup.enter="fetchList" />
-        <el-button type="primary" @click="fetchList">搜索</el-button>
-        <el-button type="primary" icon="Plus" @click="openCreate">创建账号</el-button>
+      <el-button type="primary" :icon="Plus" @click="createVisible = true">创建账号</el-button>
+    </header>
+
+    <section class="directory-panel" aria-label="用户目录">
+      <form class="query-bar" @submit.prevent="search">
+        <div class="search-field">
+          <label for="user-keyword">查找用户</label>
+          <div class="search-control">
+            <el-input
+              id="user-keyword"
+              v-model="draftKeyword"
+              :prefix-icon="Search"
+              maxlength="100"
+              clearable
+              placeholder="用户名 / 昵称 / 真实姓名 / 邮箱 / ID"
+              @clear="search"
+            />
+            <el-button native-type="submit" type="primary">搜索</el-button>
+          </div>
+        </div>
+        <div class="filter-field">
+          <label for="user-role">角色</label>
+          <el-select
+            id="user-role"
+            :model-value="query.role == null ? 'all' : String(query.role)"
+            @change="changeQuery({ role: $event === 'all' ? null : Number($event), page: 1 })"
+          >
+            <el-option label="全部角色" value="all" />
+            <el-option label="学生" value="1" />
+            <el-option label="教师" value="2" />
+            <el-option label="管理员" value="3" />
+          </el-select>
+        </div>
+        <div class="filter-field">
+          <label for="user-status">状态</label>
+          <el-select
+            id="user-status"
+            :model-value="query.status"
+            @change="changeQuery({ status: $event, page: 1 })"
+          >
+            <el-option label="全部状态" value="all" />
+            <el-option label="正常" value="active" />
+            <el-option label="封禁中" value="banned" />
+          </el-select>
+        </div>
+        <el-button :icon="Download" :loading="exporting" class="export-button" @click="exportCsv">
+          导出 CSV
+        </el-button>
+      </form>
+
+      <div class="result-bar">
+        <span role="status" aria-live="polite">
+          <template v-if="loading">正在加载用户…</template>
+          <template v-else-if="error && !rows.length">暂未获取用户数量</template>
+          <template v-else>
+            {{ hasFilters ? '筛选结果' : '用户目录' }}<b>{{ total }}</b><span class="result-unit">个用户</span>
+          </template>
+        </span>
+        <el-button v-if="hasFilters" link type="primary" @click="resetQuery">重置筛选</el-button>
       </div>
-    </div>
 
-    <el-card shadow="never" v-loading="loading" class="users-card">
-      <el-table :data="users" border stripe height="100%" :default-sort="{ prop: 'id', order: 'descending' }" @sort-change="handleSortChange">
-        <el-table-column prop="id" label="ID" width="70" align="center" sortable="custom" />
-        <el-table-column label="用户名" min-width="160" class-name="nowrap-cell">
-          <template #default="{ row }">{{ row.username }}</template>
-        </el-table-column>
-        <el-table-column label="昵称" min-width="160" class-name="nowrap-cell">
-          <template #default="{ row }">{{ row.nickname || '-' }}</template>
-        </el-table-column>
-        <el-table-column label="真实姓名" min-width="100">
-          <template #default="{ row }">{{ row.realName || '-' }}</template>
-        </el-table-column>
-        <el-table-column prop="email" label="邮箱" min-width="220" class-name="nowrap-cell">
-          <template #default="{ row }">{{ row.email || '-' }}</template>
-        </el-table-column>
-        <el-table-column label="角色" width="130" align="center">
-          <template #default="{ row }">
-            <el-select :model-value="row.role" size="small" @change="(v) => changeRole(row, v)">
-              <el-option label="学生" :value="1" />
-              <el-option label="教师" :value="2" />
-              <el-option label="管理员" :value="3" />
-            </el-select>
-          </template>
-        </el-table-column>
-        <el-table-column prop="school" label="学校" min-width="120">
-          <template #default="{ row }">{{ row.school || '-' }}</template>
-        </el-table-column>
-        <el-table-column prop="submissionCount" label="提交数" width="90" align="center" sortable="custom" />
-        <el-table-column label="AI 用量" width="110" align="center" sortable="custom">
-          <template #default="{ row }">{{ Number(row.aiTokens ?? 0).toLocaleString() }}</template>
-        </el-table-column>
-        <el-table-column label="注册时间" min-width="160" show-overflow-tooltip>
-          <template #default="{ row }">{{ (row.createTime || '').slice(0, 16) || '-' }}</template>
-        </el-table-column>
-        <el-table-column label="最后登录" min-width="160" show-overflow-tooltip>
-          <template #default="{ row }">{{ (row.lastLoginTime || '').slice(0, 16) || '-' }}</template>
-        </el-table-column>
-        <el-table-column label="状态" width="100" align="center">
-          <template #default="{ row }">
-            <el-tag :type="row.isBanned === 1 ? 'danger' : 'success'" size="small">
-              {{ row.isBanned === 1 ? '已禁用' : '正常' }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="150" align="center" class-name="op-cell">
-          <template #default="{ row }">
-            <el-button
-              :type="row.isBanned === 1 ? 'success' : 'danger'"
-              size="small"
-              link
-              @click="toggleBan(row)"
-            >
-              {{ row.isBanned === 1 ? '启用' : '禁用' }}
-            </el-button>
-            <el-button type="warning" size="small" link @click="openResetPassword(row)">重置密码</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-      <el-pagination
-        v-model:current-page="page"
-        :page-size="size"
-        :total="total"
-        layout="total, prev, pager, next"
-        class="pager"
-        @current-change="fetchList"
-      />
-    </el-card>
+      <div v-if="error" class="error-bar" role="alert">
+        <div>
+          <strong>用户列表加载失败</strong>
+          <p>{{ error }}{{ rows.length ? '；下方保留上次加载的结果。' : '' }}</p>
+        </div>
+        <el-button :loading="loading" @click="fetchList">重试</el-button>
+      </div>
 
-    <!-- 创建账号 -->
-    <el-dialog v-model="createVisible" title="创建账号" width="480px" :close-on-click-modal="false">
-      <el-form ref="createFormRef" :model="createForm" :rules="createRules" label-width="80px">
-        <el-form-item label="用户名" prop="username">
-          <el-input v-model="createForm.username" placeholder="登录名，创建后不可修改" maxlength="32" />
-        </el-form-item>
-        <el-form-item label="昵称" prop="nickname">
-          <el-input v-model="createForm.nickname" placeholder="展示名称" maxlength="32" />
-        </el-form-item>
-        <el-form-item label="初始密码" prop="password">
-          <el-input v-model="createForm.password" type="password" show-password placeholder="至少 6 位" maxlength="32" />
-        </el-form-item>
-        <el-form-item label="角色" prop="role">
-          <el-radio-group v-model="createForm.role">
-            <el-radio :value="1">学生</el-radio>
-            <el-radio :value="2">教师</el-radio>
-            <el-radio :value="3">管理员</el-radio>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item label="邮箱" prop="email">
-          <el-input v-model="createForm.email" placeholder="选填，用于找回密码" maxlength="64" />
-        </el-form-item>
-        <el-form-item label="学校" prop="school">
-          <el-input v-model="createForm.school" placeholder="选填" maxlength="64" />
-        </el-form-item>
-        <el-form-item label="真实姓名" prop="realName">
-          <el-input v-model="createForm.realName" placeholder="选填" maxlength="32" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="createVisible = false">取消</el-button>
-        <el-button type="primary" :loading="creating" @click="submitCreate">创建</el-button>
-      </template>
-    </el-dialog>
+      <div v-if="selectedRows.length" class="batch-bar">
+        <span>已选择 {{ selectedRows.length }} 个用户</span>
+        <div class="batch-actions">
+          <el-button size="small" @click="openBatchRole">批量调整角色</el-button>
+          <el-button size="small" type="danger" plain @click="openBatchBan(true)">批量禁用</el-button>
+          <el-button size="small" type="success" plain @click="openBatchBan(false)">批量启用</el-button>
+          <el-button size="small" link @click="clearSelection">取消选择</el-button>
+        </div>
+      </div>
 
-    <!-- 重置密码 -->
-    <el-dialog v-model="resetVisible" :title="`重置密码：${resetTarget?.username || ''}`" width="420px" :close-on-click-modal="false">
-      <el-form ref="resetFormRef" :model="resetForm" :rules="resetRules" label-width="90px">
-        <el-form-item label="新密码" prop="newPassword">
-          <el-input v-model="resetForm.newPassword" type="password" show-password placeholder="至少 6 位" maxlength="32" />
-        </el-form-item>
-        <el-form-item label="确认密码" prop="confirmPassword">
-          <el-input v-model="resetForm.confirmPassword" type="password" show-password placeholder="再次输入新密码" maxlength="32" />
-        </el-form-item>
-      </el-form>
-      <el-alert type="info" :closable="false" title="重置后该用户需使用新密码登录" class="mb12" />
-      <template #footer>
-        <el-button @click="resetVisible = false">取消</el-button>
-        <el-button type="primary" :loading="resetting" @click="submitReset">确认重置</el-button>
-      </template>
-    </el-dialog>
+      <div class="results" v-loading="loading" :aria-busy="loading">
+        <UserTable
+          ref="tableRef"
+          :rows="rows"
+          :current-user-id="currentUserId"
+          :empty-text="emptyText"
+          :default-sort="defaultSort"
+          @detail="openDetail"
+          @selection-change="handleSelectionChange"
+          @sort-change="handleSortChange"
+        />
+      </div>
+
+      <footer class="pager-bar">
+        <el-pagination
+          :current-page="query.page"
+          :page-size="query.size"
+          :page-sizes="USER_PAGE_SIZES"
+          :total="total"
+          :pager-count="5"
+          :disabled="loading"
+          layout="total, sizes, prev, pager, next"
+          background
+          @current-change="changePage"
+          @size-change="changeSize"
+        />
+      </footer>
+    </section>
+
+    <UserDetailDrawer
+      v-model="detailVisible"
+      :user-id="detailUser?.id"
+      :fallback-row="detailUser"
+      :current-user-id="currentUserId"
+      @role="openRole"
+      @ban="openBan"
+      @reset="openReset"
+      @audit="openAudit"
+    />
+    <UserCreateDialog v-model="createVisible" @created="onCreated" />
+    <UserRoleDialog
+      v-model="roleDialogVisible"
+      :saving="roleSaving"
+      :target-name="roleTarget?.username || ''"
+      :current-role="Number(roleTarget?.role || 1)"
+      :batch-count="roleBatchCount"
+      :is-self="Number(roleTarget?.id) === currentUserId"
+      @confirm="confirmRole"
+    />
+    <UserBanDialog
+      v-model="banDialogVisible"
+      :saving="banSaving"
+      :banning="banMode === 'ban'"
+      :batch-count="banBatchCount"
+      :target-name="banTarget?.username || ''"
+      @confirm="confirmBan"
+    />
+    <UserResetPasswordDialog
+      v-model="resetDialogVisible"
+      :saving="resetSaving"
+      :target-name="resetTarget?.username || ''"
+      @confirm="confirmReset"
+    />
   </div>
 </template>
 
 <script setup>
-// 用户管理（仅管理员）：账号检索、角色调整、启用禁用，以及创建账号与重置密码。
-//
-// 角色语义：1=学生、2=教师、3=管理员，权限判断一律以这个数值为准。
-// 角色变更与禁用会立刻影响目标用户的登录态与全部接口权限，因此都带二次确认。
-import { ref, reactive, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { Download, Plus, Search } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import {
-  getAdminUsers, updateUserRole, setUserBanned,
-  createAdminUser, resetUserPassword
+  batchSetUserBanned,
+  batchUpdateUserRole,
+  exportAdminUsers,
+  getAdminUsers,
+  resetUserPassword,
+  setUserBanned,
+  updateUserRole,
 } from '@/api/adminUser'
-import { unwrapResultData, isResultSuccess, getResultMessage } from '@/utils/response'
+import { getResultMessage, isResultSuccess, unwrapResultData } from '@/utils/response'
+import { showApiError } from '@/utils/errorFeedback'
+import {
+  normalizeUserQuery,
+  sortFromTable,
+  USER_PAGE_SIZES,
+  userListParams,
+  usersRouteQuery,
+} from '@/utils/adminUserQuery'
+import { useUserStore } from '@/stores/userStore'
+import UserTable from './users/UserTable.vue'
+import UserDetailDrawer from './users/UserDetailDrawer.vue'
+import UserCreateDialog from './users/UserCreateDialog.vue'
+import UserRoleDialog from './users/UserRoleDialog.vue'
+import UserBanDialog from './users/UserBanDialog.vue'
+import UserResetPasswordDialog from './users/UserResetPasswordDialog.vue'
 
-const users = ref([])
-const loading = ref(false)
-const keyword = ref('')
-const page = ref(1)
-const size = ref(11)
-const sortBy = ref('id')
-const sortOrder = ref('desc')
+const route = useRoute()
+const router = useRouter()
+const userStore = useUserStore()
+const query = computed(() => normalizeUserQuery(route.query))
+const queryKey = computed(() => JSON.stringify(query.value))
+const currentUserId = computed(() => Number(userStore.userId) || null)
+
+const draftKeyword = ref('')
+const rows = ref([])
 const total = ref(0)
+const loading = ref(false)
+const error = ref('')
+const exporting = ref(false)
+const selectedRows = ref([])
+const tableRef = ref(null)
 
-const fetchList = async () => {
-  loading.value = true
-  try {
-    const res = await getAdminUsers({
-      page: page.value,
-      size: size.value,
-      keyword: keyword.value || undefined,
-      sortBy: sortBy.value,
-      order: sortOrder.value
-    })
-    const data = unwrapResultData(res)
-    users.value = data?.records ?? []
-    total.value = data?.total ?? 0
-  } finally {
-    loading.value = false
-  }
-}
-
-const handleSortChange = ({ prop, order }) => {
-  // 取消排序时回到默认：ID 从高到低
-  sortBy.value = order ? prop : 'id'
-  sortOrder.value = order === 'ascending' ? 'asc' : 'desc'
-  page.value = 1
-  fetchList()
-}
-
-const changeRole = async (row, role) => {
-  const labels = { 1: '学生', 2: '教师', 3: '管理员' }
-  // 先确认再改：角色是权限的唯一来源，降级操作会让目标用户立刻失去正在使用的能力。
-  try {
-    await ElMessageBox.confirm(
-      `确定将用户「${row.username}」的角色调整为${labels[role] || role}？`,
-      '角色调整确认',
-      { type: 'warning' }
-    )
-  } catch {
-    return
-  }
-  // 失败后重新拉列表：角色可能已被后端部分应用，本地那行数据不可信。
-  const res = await updateUserRole(row.id, role)
-  if (!isResultSuccess(res)) {
-    ElMessage.error(getResultMessage(res, '角色更新失败'))
-    fetchList()
-    return
-  }
-  row.role = role
-  ElMessage.success('角色已更新')
-}
-
-const toggleBan = async (row) => {
-  // isBanned 是 0/1 而非布尔，禁用态取反要先做一次比较转换
-  const banned = row.isBanned !== 1
-  await ElMessageBox.confirm(
-    banned ? `确定禁用用户「${row.username}」？其登录与所有请求将立即被拒绝。` : `确定启用用户「${row.username}」？`,
-    banned ? '禁用确认' : '启用确认',
-    { type: 'warning' }
-  )
-  const res = await setUserBanned(row.id, banned)
-  if (!isResultSuccess(res)) {
-    ElMessage.error(getResultMessage(res, '操作失败'))
-    return
-  }
-  ElMessage.success(banned ? '已禁用' : '已启用')
-  fetchList()
-}
-
-// ===== 创建账号 =====
+const detailVisible = ref(false)
+const detailUser = ref(null)
 const createVisible = ref(false)
-const creating = ref(false)
-const createFormRef = ref(null)
-const createForm = reactive({ username: '', nickname: '', password: '', role: 1, email: '', school: '', realName: '' })
-// 用户名规则与注册页保持一致（3-32 位字母数字下划线）：
-    // 管理员建号走的是同一套认证逻辑，这里不校验会创建出永远登不上的账号。
-const createRules = {
-  username: [
-    { required: true, message: '请输入用户名', trigger: 'blur' },
-    { pattern: /^[a-zA-Z0-9_]{3,32}$/, message: '3-32 位字母/数字/下划线', trigger: 'blur' }
-  ],
-  nickname: [{ required: true, message: '请输入昵称', trigger: 'blur' }],
-  password: [
-    { required: true, message: '请输入初始密码', trigger: 'blur' },
-    { min: 6, max: 32, message: '密码至少 6 位', trigger: 'blur' }
-  ],
-  email: [{ type: 'email', message: '邮箱格式不正确', trigger: 'blur' }]
-}
 
-const openCreate = () => {
-  createForm.username = ''
-  createForm.nickname = ''
-  createForm.password = ''
-  createForm.role = 1
-  createForm.email = ''
-  createForm.school = ''
-  createForm.realName = ''
-  createVisible.value = true
-}
+const roleDialogVisible = ref(false)
+const roleSaving = ref(false)
+const roleTarget = ref(null)
+const roleIds = ref([])
+const roleBatchCount = ref(0)
 
-const submitCreate = async () => {
+const banDialogVisible = ref(false)
+const banSaving = ref(false)
+const banTarget = ref(null)
+const banMode = ref('ban')
+const banIds = ref([])
+const banBatchCount = ref(0)
+
+const resetDialogVisible = ref(false)
+const resetSaving = ref(false)
+const resetTarget = ref(null)
+
+const hasFilters = computed(() =>
+  Boolean(query.value.keyword || query.value.role != null || query.value.status !== 'all'),
+)
+const emptyText = computed(() => (hasFilters.value ? '没有找到匹配的用户' : '暂无用户'))
+const defaultSort = computed(() => ({
+  prop: query.value.sortBy,
+  order: query.value.order === 'asc' ? 'ascending' : 'descending',
+}))
+
+let requestId = 0
+let controller
+
+watch(
+  queryKey,
+  () => {
+    draftKeyword.value = query.value.keyword
+    clearSelection()
+    const canonical = { path: route.path, query: usersRouteQuery(query.value) }
+    if (router.resolve(canonical).fullPath !== route.fullPath) void router.replace(canonical)
+    void fetchList()
+  },
+  { immediate: true },
+)
+
+async function fetchList() {
+  const id = ++requestId
+  controller?.abort()
+  controller = new AbortController()
+  loading.value = true
+  error.value = ''
   try {
-    await createFormRef.value.validate()
-  } catch {
-    return
-  }
-  creating.value = true
-  try {
-    const res = await createAdminUser({ ...createForm })
+    const state = { ...query.value }
+    const res = await getAdminUsers(userListParams(state), {
+      signal: controller.signal,
+      silent: true,
+    })
+    if (id !== requestId) return
     if (!isResultSuccess(res)) {
-      ElMessage.error(getResultMessage(res, '创建失败'))
+      error.value = getResultMessage(res, '用户列表加载失败')
       return
     }
-    ElMessage.success(`账号「${createForm.username}」创建成功`)
-    createVisible.value = false
-    fetchList()
-  } finally {
-    creating.value = false
-  }
-}
-
-// ===== 重置密码 =====
-const resetVisible = ref(false)
-const resetting = ref(false)
-const resetTarget = ref(null)
-const resetFormRef = ref(null)
-const resetForm = reactive({ newPassword: '', confirmPassword: '' })
-const resetRules = {
-  newPassword: [
-    { required: true, message: '请输入新密码', trigger: 'blur' },
-    { min: 6, max: 32, message: '密码至少 6 位', trigger: 'blur' }
-  ],
-  confirmPassword: [
-    { required: true, message: '请再次输入新密码', trigger: 'blur' },
-    {
-      validator: (rule, value, callback) => {
-        if (value !== resetForm.newPassword) callback(new Error('两次输入的密码不一致'))
-        else callback()
-      },
-      trigger: 'blur'
+    const data = unwrapResultData(res)
+    const lastPage = Math.max(1, Math.ceil((data?.total ?? 0) / state.size))
+    // 共享链接或他处删除可能让请求页超出范围，先回退到最后一页再拉取。
+    if (state.page > lastPage) {
+      await router.replace({ query: usersRouteQuery({ ...state, page: lastPage }) })
+      return
     }
-  ]
-}
-
-const openResetPassword = (row) => {
-  resetTarget.value = row
-  resetForm.newPassword = ''
-  resetForm.confirmPassword = ''
-  resetVisible.value = true
-}
-
-const submitReset = async () => {
-  try {
-    await resetFormRef.value.validate()
-  } catch {
-    return
+    rows.value = Array.isArray(data?.records) ? data.records : []
+    total.value = Number(data?.total) || 0
+  } catch (cause) {
+    if (id === requestId && cause.code !== 'ERR_CANCELED') {
+      showApiError(cause, '用户列表加载失败')
+      error.value = cause?.message || '请稍后重试'
+    }
+  } finally {
+    if (id === requestId) loading.value = false
   }
-  resetting.value = true
+}
+
+function changeQuery(patch) {
+  const next = { ...query.value, ...patch }
+  if (JSON.stringify(next) === JSON.stringify(query.value)) return fetchList()
+  return router.push({ query: usersRouteQuery(next) })
+}
+
+function search() {
+  return changeQuery({ keyword: draftKeyword.value.trim(), page: 1 })
+}
+
+function resetQuery() {
+  draftKeyword.value = ''
+  return changeQuery({
+    keyword: '',
+    role: null,
+    status: 'all',
+    sortBy: 'id',
+    order: 'desc',
+    page: 1,
+  })
+}
+
+function changePage(page) {
+  if (!loading.value && page !== query.value.page) return changeQuery({ page })
+}
+
+function changeSize(size) {
+  if (size !== query.value.size) return changeQuery({ size, page: 1 })
+}
+
+function handleSortChange(payload) {
+  return changeQuery({ ...sortFromTable(payload), page: 1 })
+}
+
+function handleSelectionChange(selection) {
+  selectedRows.value = selection
+}
+
+function clearSelection() {
+  selectedRows.value = []
+  tableRef.value?.clearSelection()
+}
+
+function openDetail(row) {
+  detailUser.value = row
+  detailVisible.value = true
+}
+
+function openRole(row) {
+  roleTarget.value = row
+  roleIds.value = [row.id]
+  roleBatchCount.value = 0
+  roleDialogVisible.value = true
+}
+
+function openBatchRole() {
+  if (!selectedRows.value.length) return
+  roleTarget.value = null
+  roleIds.value = selectedRows.value.map((row) => row.id)
+  roleBatchCount.value = roleIds.value.length
+  roleDialogVisible.value = true
+}
+
+async function confirmRole(role) {
+  if (!roleIds.value.length) return
+  roleSaving.value = true
   try {
-    const res = await resetUserPassword(resetTarget.value.id, resetForm.newPassword)
+    const res = roleBatchCount.value
+      ? await batchUpdateUserRole(roleIds.value, role)
+      : await updateUserRole(roleIds.value[0], role)
     if (!isResultSuccess(res)) {
-      ElMessage.error(getResultMessage(res, '重置失败'))
+      ElMessage.error(getResultMessage(res, '角色调整失败'))
+      return
+    }
+    ElMessage.success(roleBatchCount.value ? '批量角色已更新' : '角色已更新')
+    roleDialogVisible.value = false
+    detailVisible.value = false
+    clearSelection()
+    await fetchList()
+  } catch (cause) {
+    showApiError(cause, '角色调整失败')
+  } finally {
+    roleSaving.value = false
+  }
+}
+
+function openBan(row) {
+  banTarget.value = row
+  banIds.value = [row.id]
+  banBatchCount.value = 0
+  // 已过期但字段仍为 is_banned=1 的账号也应允许清除封禁记录。
+  banMode.value = row.banActive || Number(row.isBanned) === 1 ? 'unban' : 'ban'
+  banDialogVisible.value = true
+}
+
+function openBatchBan(banning) {
+  if (!selectedRows.value.length) return
+  banTarget.value = null
+  banIds.value = selectedRows.value.map((row) => row.id)
+  banBatchCount.value = banIds.value.length
+  banMode.value = banning ? 'ban' : 'unban'
+  banDialogVisible.value = true
+}
+
+async function confirmBan({ reason, expireTime }) {
+  if (!banIds.value.length) return
+  const banning = banMode.value === 'ban'
+  banSaving.value = true
+  try {
+    const payload = { banned: banning, reason, expireTime }
+    const res = banBatchCount.value
+      ? await batchSetUserBanned(banIds.value, payload)
+      : await setUserBanned(banIds.value[0], payload)
+    if (!isResultSuccess(res)) {
+      ElMessage.error(getResultMessage(res, banning ? '禁用失败' : '启用失败'))
+      return
+    }
+    ElMessage.success(banBatchCount.value ? (banning ? '已批量禁用' : '已批量启用') : banning ? '已禁用' : '已启用')
+    banDialogVisible.value = false
+    detailVisible.value = false
+    clearSelection()
+    await fetchList()
+  } catch (cause) {
+    showApiError(cause, banning ? '禁用失败' : '启用失败')
+  } finally {
+    banSaving.value = false
+  }
+}
+
+function openReset(row) {
+  resetTarget.value = row
+  resetDialogVisible.value = true
+}
+
+async function confirmReset(newPassword) {
+  if (!resetTarget.value?.id) return
+  resetSaving.value = true
+  try {
+    const res = await resetUserPassword(resetTarget.value.id, newPassword)
+    if (!isResultSuccess(res)) {
+      ElMessage.error(getResultMessage(res, '密码重置失败'))
       return
     }
     ElMessage.success(`已重置「${resetTarget.value.username}」的密码`)
-    resetVisible.value = false
+    resetDialogVisible.value = false
+    detailVisible.value = false
+  } catch (cause) {
+    showApiError(cause, '密码重置失败')
   } finally {
-    resetting.value = false
+    resetSaving.value = false
   }
 }
 
-onMounted(fetchList)
+function openAudit(row) {
+  if (!row?.id) return
+  router.push({ name: 'AdminAuditLogs', query: { userId: String(row.id) } })
+}
+
+async function exportCsv() {
+  exporting.value = true
+  try {
+    const { keyword, role, banned, sortBy, order } = userListParams(query.value)
+    const blob = await exportAdminUsers({ keyword, role, banned, sortBy, order })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = exportFilename()
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+    ElMessage.success('CSV 已导出')
+  } catch (cause) {
+    showApiError(cause, '导出失败')
+  } finally {
+    exporting.value = false
+  }
+}
+
+function exportFilename() {
+  const now = new Date()
+  const pad = (value) => String(value).padStart(2, '0')
+  return `用户列表-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.csv`
+}
+
+function onCreated() {
+  return changeQuery({ page: 1 })
+}
+
+onBeforeUnmount(() => {
+  requestId++
+  controller?.abort()
+})
 </script>
 
 <style scoped>
-/* 全视口 flex 布局：页面本身不滚动，表格内部滚动 */
 .admin-users {
-  padding: 16px;
+  padding: 28px 28px 20px;
+  gap: 24px;
   box-sizing: border-box;
+  color: var(--text-primary);
+  font-family: var(--font-family);
   height: 100%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
-.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px; flex-shrink: 0; }
-.page-title { font-size: 18px; font-weight: 600; }
-.page-desc { color: var(--text-secondary); font-size: 13px; margin-top: 4px; }
-.header-right { display: flex; gap: 8px; }
-.admin-users :deep(.users-card) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.admin-users :deep(.users-card .el-card__body) { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 20px 20px 8px; }
-.admin-users :deep(.el-table) { flex: 1; min-height: 0; }
-.pager { margin-top: 8px; justify-content: center; flex-shrink: 0; }
-.admin-users :deep(.op-cell .cell) { white-space: nowrap; }
-.admin-users :deep(.nowrap-cell .cell) { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.mb12 { margin-bottom: 12px; }
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+}
+.title-line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+h1 {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 650;
+  letter-spacing: -0.5px;
+}
+.scope-label {
+  color: var(--accent-primary);
+  background: var(--accent-primary-light);
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+.page-header p {
+  margin: 9px 0 0;
+  font-size: 14px;
+  color: var(--text-regular);
+  line-height: 1.6;
+}
+.directory-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--border-light);
+  border-radius: 14px;
+  background: var(--bg-surface);
+  overflow: hidden;
+}
+.query-bar {
+  padding: 20px 24px;
+  display: flex;
+  align-items: end;
+  gap: 14px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-light);
+}
+.search-field {
+  flex: 1;
+  min-width: 220px;
+  max-width: 560px;
+}
+label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text-regular);
+  font-size: 12px;
+  font-weight: 500;
+}
+.search-control {
+  display: flex;
+  gap: 8px;
+}
+.filter-field {
+  width: 140px;
+  flex: 0 0 140px;
+}
+.export-button {
+  margin-left: auto;
+}
+.result-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 24px;
+  font-size: 13px;
+  color: var(--text-regular);
+  min-height: 24px;
+  flex-shrink: 0;
+}
+.result-bar b {
+  font-size: 19px;
+  color: var(--text-primary);
+  margin: 0 6px 0 12px;
+  font-variant-numeric: tabular-nums;
+}
+.result-unit {
+  font-size: 12px;
+}
+.error-bar {
+  margin: 0 24px 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--el-color-danger-light-5);
+  border-radius: var(--radius-md);
+  background: var(--el-color-danger-light-9);
+  color: var(--text-regular);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-shrink: 0;
+}
+.error-bar strong {
+  color: var(--text-primary);
+}
+.error-bar p {
+  margin: 4px 0 0;
+  font-size: 12px;
+}
+.batch-bar {
+  margin: 0 24px 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-app);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-shrink: 0;
+  color: var(--text-regular);
+  font-size: 13px;
+}
+.batch-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.results {
+  flex: 1;
+  min-height: 120px;
+  position: relative;
+  overflow: hidden;
+}
+.pager-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 24px 14px;
+  flex-shrink: 0;
+}
 </style>
