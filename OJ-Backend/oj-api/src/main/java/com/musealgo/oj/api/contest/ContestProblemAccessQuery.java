@@ -21,4 +21,13 @@ public interface ContestProblemAccessQuery {
     default Set<Long> findRunningFormalContestProblemIds() {
         return Set.of();
     }
+
+    /**
+     * 当前用户是否可以进入该比赛的参赛卷。
+     * <p>公开比赛对登录用户开放；班级比赛只对班级成员、班级教师和比赛作者/管理员开放；
+     * 私有且未绑定班级的比赛只对作者/管理员开放。赛程阶段由调用方单独判断。</p>
+     */
+    default boolean canAccessContest(Long contestId, Long userId) {
+        return true;
+    }
 }

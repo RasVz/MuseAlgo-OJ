@@ -69,15 +69,22 @@ class ProblemAccessBoundaryIT {
         if(cls!=null && cls.getId()!=null) { jdbc.update("DELETE FROM class_student WHERE class_id=?",cls.getId()); jdbc.update("DELETE FROM class WHERE id=?",cls.getId()); }
         if(problem!=null && problem.getId()!=null) jdbc.update("DELETE FROM problem WHERE id=?",problem.getId());
     }
-    @Test void privateClassProblemIsReadableOnlyByAuthorizedActors() {
+    @Test void runningContestClosesGenericAccessWhileClassEntryStillWorks() {
         assertThrows(ForbiddenException.class,()->details.getDetail(problem.getId()));
         login(other,"STUDENT"); assertThrows(ForbiddenException.class,()->details.getDetail(problem.getId()));
-        login(student,"STUDENT"); assertNull(details.getDetail(problem.getId()).getStdAnswer());
+        login(student,"STUDENT");
+        // 比赛进行期：即使是班级成员，通用题目详情和普通练习也不可用，只能从比赛入口进入。
+        assertThrows(ForbiddenException.class,()->details.getDetail(problem.getId()));
         assertThrows(ForbiddenException.class,()->access.requirePracticeSubmission(problem.getId()));
         assertNotNull(resolver.resolve(contest.getId(),problem.getId(),student));
         login(other,"STUDENT"); assertThrows(ForbiddenException.class,()->resolver.resolve(contest.getId(),problem.getId(),other));
+        // 比赛结束后恢复班级题单访问；其他班级仍不可见。
+        jdbc.update("UPDATE contest SET end_time=DATE_SUB(NOW(),INTERVAL 1 MINUTE) WHERE id=?",contest.getId());
+        login(student,"STUDENT"); assertNull(details.getDetail(problem.getId()).getStdAnswer());
+        login(other,"STUDENT"); assertThrows(ForbiddenException.class,()->details.getDetail(problem.getId()));
+        // 题目公开后，其他用户恢复普通练习。
         jdbc.update("UPDATE problem SET is_public=1 WHERE id=?",problem.getId());
-        login(other,"STUDENT"); assertDoesNotThrow(()->access.requirePracticeSubmission(problem.getId()), "其他班级比赛不应阻断公开题日常练习");
+        assertDoesNotThrow(()->access.requirePracticeSubmission(problem.getId()));
         login(teacher,"TEACHER"); assertDoesNotThrow(()->details.getDetail(problem.getId()));
     }
     @Test void futureAssignmentAndFutureContestDoNotGrantEarlyAccess() {

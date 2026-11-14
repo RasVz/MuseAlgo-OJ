@@ -1,5 +1,6 @@
 package com.musealgo.oj.contest.application;
 
+import com.musealgo.oj.api.contest.ContestProblemAccessQuery;
 import com.musealgo.oj.api.problem.ContestProblemStatementQuery;
 import com.musealgo.oj.common.exception.BusinessException;
 import com.musealgo.oj.common.exception.CommonErrorCode;
@@ -56,11 +57,13 @@ public class ContestAnswerApplicationService {
     private final ProblemContestMapper problemContestMapper;
     private final VpAttemptService vpAttemptService;
     private final ContestProblemStatementQuery statementQuery;
+    private final ContestProblemAccessQuery contestProblemAccess;
 
     public ContestAnswerPaperVO paper(Long contestId) {
         Long userId = requireUserId();
         Contest contest = requireContest(contestId);
         ContestAccessPolicy.requireReadable(contest);
+        requireContestAccess(contest, userId);
         AnswerContext context = resolveContext(contest, userId);
 
         ContestAnswerPaperVO vo = new ContestAnswerPaperVO();
@@ -89,6 +92,7 @@ public class ContestAnswerApplicationService {
         Long userId = requireUserId();
         Contest contest = requireContest(contestId);
         ContestAccessPolicy.requireReadable(contest);
+        requireContestAccess(contest, userId);
         AnswerContext context = resolveContext(contest, userId);
         if (!context.canSeeProblems()) {
             throw new ForbiddenException("比赛尚未开始，不能查看题目");
@@ -134,7 +138,15 @@ public class ContestAnswerApplicationService {
         Long userId = requireUserId();
         Contest contest = requireContest(contestId);
         ContestAccessPolicy.requireReadable(contest);
+        requireContestAccess(contest, userId);
         return contestUserService.findRegistration(contestId, userId);
+    }
+
+    /** 班级比赛只对班级成员/教师开放；公开比赛对登录用户开放；私有比赛只对作者/管理员开放。 */
+    private void requireContestAccess(Contest contest, Long userId) {
+        if (!contestProblemAccess.canAccessContest(contest.getId(), userId)) {
+            throw new ForbiddenException("无权访问该比赛");
+        }
     }
 
     private List<ContestAnswerPaperVO.ProblemItem> loadProblems(AnswerContext context, Long userId) {

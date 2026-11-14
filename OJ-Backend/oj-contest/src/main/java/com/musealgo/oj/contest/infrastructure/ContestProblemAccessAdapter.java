@@ -59,6 +59,18 @@ public class ContestProblemAccessAdapter implements ContestProblemAccessQuery {
         return problemId != null && findRunningFormalContestProblemIds().contains(problemId);
     }
 
+    @Override public boolean canAccessContest(Long contestId, Long actor) {
+        Contest contest = contests.selectById(contestId);
+        if (contest == null || Integer.valueOf(1).equals(contest.getIsDeleted())) return false;
+        if (SecurityUtils.isAdmin()
+                || (SecurityUtils.isTeacherOrAdmin() && actor != null && actor.equals(contest.getAuthorId()))) return true;
+        if (!Integer.valueOf(1).equals(contest.getVisible())) return false;
+        if (contest.getClassId() == null) return actor != null && !"Private".equalsIgnoreCase(contest.getType());
+        return actor != null && classes.findById(contest.getClassId())
+                .map(c -> (SecurityUtils.isTeacherOrAdmin() && actor.equals(c.teacherId()))
+                        || classes.findStudentIds(contest.getClassId()).contains(actor)).orElse(false);
+    }
+
     /**
      * 取「公开且正在进行」的比赛题目 ID 集合。
      * <p>未公开比赛可能仍在配置中，不能用来阻断题目在题库中的正常练习；只封锁已公开比赛的赛程窗口。</p>

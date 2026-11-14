@@ -1,5 +1,6 @@
 package com.musealgo.oj.contest.application;
 
+import com.musealgo.oj.api.contest.ContestProblemAccessQuery;
 import com.musealgo.oj.api.problem.ContestProblemStatementQuery;
 import com.musealgo.oj.common.exception.BusinessException;
 import com.musealgo.oj.common.exception.ForbiddenException;
@@ -34,8 +35,9 @@ class ContestAnswerApplicationServiceTest {
     private final ProblemContestMapper problemContestMapper = mock(ProblemContestMapper.class);
     private final VpAttemptService vpAttempts = mock(VpAttemptService.class);
     private final ContestProblemStatementQuery statements = mock(ContestProblemStatementQuery.class);
+    private final ContestProblemAccessQuery contestAccess = mock(ContestProblemAccessQuery.class);
     private final ContestAnswerApplicationService service = new ContestAnswerApplicationService(
-            contests, registrations, problemContests, problemContestMapper, vpAttempts, statements);
+            contests, registrations, problemContests, problemContestMapper, vpAttempts, statements, contestAccess);
 
     @AfterEach
     void clear() {
@@ -46,6 +48,8 @@ class ContestAnswerApplicationServiceTest {
         AuthenticatedUser actor = () -> userId;
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
                 actor, null, List.of(new SimpleGrantedAuthority("ROLE_STUDENT"))));
+        when(contestAccess.canAccessContest(org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.eq(userId)))
+                .thenReturn(true);
     }
 
     private Contest contest(String mode, LocalDateTime start, LocalDateTime end, int review) {
@@ -78,6 +82,16 @@ class ContestAnswerApplicationServiceTest {
         row.setScore(100);
         row.setStatus(status);
         return row;
+    }
+
+    @Test
+    void classContestWithoutMembershipIsRejected() {
+        login(10L);
+        contest("ACM", LocalDateTime.now().minusMinutes(10), LocalDateTime.now().plusHours(1), 0);
+        registration("APPROVED");
+        when(contestAccess.canAccessContest(1L, 10L)).thenReturn(false);
+
+        assertThrows(ForbiddenException.class, () -> service.paper(1L));
     }
 
     @Test
