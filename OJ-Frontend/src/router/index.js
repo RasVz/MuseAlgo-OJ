@@ -118,8 +118,6 @@ const educationRoutes = [
 
 // 2.6 用户个人中心模块
 const userRoutes = [
-  { path: '/my/ai-reviews', name: 'AiReviewRecords', component: () => import('@/views/ai-review/AiReviewRecordsView.vue'), meta: { title: '复盘记录', requiresAuth: true } },
-  { path: '/ai/reviews/:id', name: 'AiReviewDetail', component: () => import('@/views/ai-review/AiReviewDetailView.vue'), meta: { title: 'AI 代码复盘', requiresAuth: true } },
   { path: '/my/post', name: 'MyPost', component: () => import('@/views/post/MyPostView.vue'), meta: { title: '我的动态', requiresAuth: true } },
   { path: '/my/problem/list', name:'MyProblemList', component: () => import('@/views/problem-list/MyProblemListView.vue'), meta: { title: '我的题单', requiresAuth: true } },
   { path: '/my/favorite', name: 'MyFavorite', component: () => import('@/views/user/FavoriteView.vue'), meta: { title: '我的收藏', requiresAuth: true } },

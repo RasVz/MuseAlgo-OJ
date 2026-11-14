@@ -68,16 +68,6 @@ public class AiController {
         return stream(user, request.getProblemId(), privileged, "ASK",
                 control -> aiService.streamChatGuarded(user, request, problem, privileged, control));
     }
-    @Operation(summary = "普通练习提交复盘（含 AC，流式）")
-    @PostMapping("/review")
-    @RateLimit(key = "aiTeaching", action = "AI 提问", time = 60, count = 12)
-    public SseEmitter reviewSubmission(@Valid @RequestBody AiReviewRequest request) {
-        Long user = user();
-        boolean privileged = SecurityUtils.isTeacherOrAdmin();
-        var review = aiService.prepareReview(user, request);
-        return stream(user, review.data().problemId(), privileged, "REVIEW",
-                control -> aiService.reviewSubmissionStream(user, request, review, privileged, control));
-    }
     private static Long user() {
         Long user = SecurityUtils.getUserId();
         if (user == null) throw new BusinessException(CommonErrorCode.AUTH_REQUIRED, "请先登录后再使用 AI 助教");

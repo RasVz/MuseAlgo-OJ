@@ -33,7 +33,6 @@ public class TutorMessageBuilder {
     public TutorMessageBuilder(PromptRegistry prompts) {
         this.prompts = prompts;
         prompts.register("tutor-open", 1, SYSTEM);
-        prompts.register("review-open", 1, SYSTEM + "\n本轮分析指定历史提交；AC 可检查正确性依据和优化，失败状态仅作为诊断线索。\n");
     }
 
     public JSONArray build(String key, Context problem, String code, String language, String question,

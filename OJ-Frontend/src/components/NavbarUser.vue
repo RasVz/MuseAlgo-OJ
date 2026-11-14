@@ -50,7 +50,6 @@
           <el-dropdown-item command="MyPost" icon="Notebook">我的动态</el-dropdown-item>
           <el-dropdown-item command="MyFavorite" icon="Star">收藏夹</el-dropdown-item>
           <el-dropdown-item command="ReviewBook" icon="Reading">错题本</el-dropdown-item>
-          <el-dropdown-item command="AiReviewRecords" icon="Document">复盘记录</el-dropdown-item>
 
           <el-dropdown-item v-if="userStore.isTeacher" command="AdminHome" divided icon="Odometer">管理中心</el-dropdown-item>
 

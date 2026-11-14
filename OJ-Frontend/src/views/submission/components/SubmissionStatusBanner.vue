@@ -28,14 +28,6 @@
         <span class="value">{{ detail.language }}</span>
       </div>
     </div>
-    <div v-if="canReview" class="review-action">
-      <el-button type="primary" :loading="reviewing" @click="$emit('review')">
-        🤖 AI 复盘
-      </el-button>
-      <el-button v-if="canViewReviews" plain @click="$emit('review-history')">
-        复盘记录<span v-if="reviewCount > 0">（{{ reviewCount }}）</span>
-      </el-button>
-    </div>
   </div>
 </template>
 
@@ -47,13 +39,8 @@ import {
 } from '@element-plus/icons-vue'
 
 defineProps({
-  detail: { type: Object, required: true },
-  canReview: { type: Boolean, default: false },
-  canViewReviews: { type: Boolean, default: false },
-  reviewCount: { type: Number, default: 0 },
-  reviewing: { type: Boolean, default: false }
+  detail: { type: Object, required: true }
 })
-defineEmits(['review', 'review-history'])
 
 // 状态码与后端 JudgeStatus 枚举一一对应。这里带上英文原名（Accepted / Wrong Answer…），
 // 是为了让学生对照国际通用的术语，方便查资料。
@@ -154,9 +141,6 @@ const getStatusIcon = (s) => ({
 .status-tle .status-text { color: var(--accent-warning); }
 .status-re { background: var(--accent-info-light); }
 .status-re .status-text { color: var(--accent-info); }
-
-.review-action :deep(.el-button) { border-radius: var(--radius-control); }
-.review-action { display: flex; gap: 8px; }
 
 /* 深色主题：上面几组浅色强调底在深色页面上会把 --text-primary 的数值压成浅底浅字，
    这里换成同色系低透明度深底；状态文字颜色（accent）保持不变。 */

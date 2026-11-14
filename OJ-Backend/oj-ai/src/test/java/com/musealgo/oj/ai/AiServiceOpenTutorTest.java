@@ -16,7 +16,7 @@ class AiServiceOpenTutorTest {
     final AiQuotaService quota = mock(AiQuotaService.class);
     final TutorMessageBuilder builder = new TutorMessageBuilder(mock(PromptRegistry.class));
     final AiService service = new AiService(gateway, sessions, mock(RagContextService.class), quota,
-            new AiContestGuard(), mock(TeacherWorkbenchService.class), mock(ReviewApplicationService.class), builder);
+            new AiContestGuard(), mock(TeacherWorkbenchService.class), builder);
     AiAskRequest request() {
         var request = new AiAskRequest(); request.setProblemId(10L); request.setStudentCode("int x = 1;");
         request.setStudentQuestion("请给完整代码"); request.setHelpMode(AiTeachingOptions.HelpMode.FULL_SOLUTION);

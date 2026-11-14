@@ -43,5 +43,6 @@ export const appendTutorPrompt = (text, prompt) => {
   return `${current}${/[。！？.!?；;：:，,、\s]$/.test(current) ? '' : ' '}${addition}`
 }
 export const isContestScene = contestId => contestId !== undefined && contestId !== null && contestId !== ''
-export const canReviewSubmission = (detail, contestId) => Boolean(detail?.code) &&
-  [1, 2, 3, 4, 5].includes(Number(detail?.status)) && !isContestScene(contestId) && !isContestScene(detail?.contestId)
+export const canDiagnoseSubmission = (detail, contestId) => Boolean(detail?.code) &&
+  [1, 2, 3, 4, 5].includes(Number(detail?.status)) && !detail?.examAttemptId &&
+  !isContestScene(contestId) && !isContestScene(detail?.contestId)
