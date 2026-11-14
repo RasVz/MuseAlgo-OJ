@@ -18,6 +18,11 @@ useAuthInterceptor()
 </script>
 
 <style>
+html {
+  /* 预留滚动条宽度：切换筛选后内容高度变化时，避免页面因滚动条出现/消失而横向抖动。 */
+  scrollbar-gutter: stable;
+}
+
 html, body {
   margin: 0;
   padding: 0;

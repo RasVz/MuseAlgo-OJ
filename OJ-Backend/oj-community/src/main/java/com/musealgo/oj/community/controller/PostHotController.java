@@ -279,9 +279,8 @@ public class PostHotController {
     @Operation(summary = "帖子浏览上报")
     public Result<Void> viewPost(@PathVariable Long postId) {
         Result<Void> result = new Result<>();
-        Long userId = SecurityUtils.getUserId(); // 未登录用户返回 null
-
-        postHotService.view(postId, userId);
+        Post post = postService.getById(postId);
+        postHotService.view(postId, post == null || post.getViews() == null ? 0 : post.getViews());
         result.setCode(200);
         result.setMessage("ok");
 

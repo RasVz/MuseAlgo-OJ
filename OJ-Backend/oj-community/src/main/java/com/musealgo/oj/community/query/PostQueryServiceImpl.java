@@ -106,7 +106,7 @@ class PostQueryServiceImpl implements PostQueryService {
         Post raw = targets.requireReadable(postId, currentUserId);
         PostVO view = mapper.selectPostVODetail(postId);
         if (view == null) return null;
-        hotPosts.view(postId, currentUserId);
+        hotPosts.view(postId, value(raw.getViews()));
         users.findDisplayInfo(view.getAuthorId()).ifPresent(user -> view.setMotto(user.motto()));
         if (currentUserId != null && view.getAuthorId() != null && !currentUserId.equals(view.getAuthorId())) {
             view.setIsFollowed(relations.selectCount(new LambdaQueryWrapper<UserRelation>().eq(UserRelation::getFollowerId, currentUserId)

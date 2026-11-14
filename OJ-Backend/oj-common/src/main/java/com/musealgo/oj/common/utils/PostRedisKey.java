@@ -48,11 +48,6 @@ public class PostRedisKey {
         return String.format("%s:disliked:%d", PREFIX, postId);
     }
 
-    // HyperLogLog: 浏览UV (防刷，允许微小误差)
-    public static String viewedUsers(Long postId) {
-        return String.format("%s:viewed:%d", PREFIX, postId);
-    }
-
     // String: 帖子热度分缓存（可选，用于快速读取当前分）
     public static String hotScore(Long postId) {
         return String.format("%s:score:%d", PREFIX, postId);

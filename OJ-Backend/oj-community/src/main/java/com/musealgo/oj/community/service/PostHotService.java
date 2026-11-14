@@ -30,10 +30,9 @@ import java.util.Objects;
  * 天然规避了这个竞态，也省掉一次网络往返。
  * </p>
  * <p>
- * <b>浏览量为何用 HyperLogLog：</b>浏览是唯一的高频写路径，若用 Set 存每个 UV，
- * 热门帖的 key 会膨胀到与访问量同阶；HLL 以约 0.81% 的标准误差换固定大小内存。
- * 代价是 {@code views} 是<b>近似值</b>，不可用于精确计数或计费，
- * 且 {@code PFADD} 无法删除元素——用户删帖时只能整体丢弃该帖的 HLL key。
+ * <b>浏览量按 PV 计数：</b>详情页每次访问 +1。早期实现用 HyperLogLog 存 UV，
+ * 但 UV 与数据库历史快照取 max 时会被旧值钉住，用户看不到增长；
+ * 现在以数据库快照为基线做原子自增，保证阅读数可见地增加。
  * </p>
  * <p>
  * 计数以 Redis 为准，数据库中的 {@code post} 快照仅在 key 被淘汰后用于补种
@@ -110,12 +109,25 @@ public class PostHotService {
                     "end " +
                     "return result";
 
+    /**
+     * 浏览量自增：以数据库快照为下限，避免 Redis 中残留的旧 UV 值把阅读数压回历史值。
+     * 每次详情访问 +1，按 PV 计数。
+     */
+    private static final String INCREMENT_VIEW_LUA =
+            "local persisted = tonumber(ARGV[1]) or 0 " +
+                    "local current = tonumber(redis.call('HGET', KEYS[1], 'views') or '0') " +
+                    "if current < persisted then current = persisted end " +
+                    "current = current + 1 " +
+                    "redis.call('HSET', KEYS[1], 'views', tostring(current)) " +
+                    "return current";
+
     private final StringRedisTemplate redisTemplate;
     private final PostRankingService rankingService;
 
     private final DefaultRedisScript<List> applyActionScript = buildListScript(APPLY_ACTION_AND_GET_STATS_LUA);
     private final DefaultRedisScript<List> batchStatsScript = buildListScript(BATCH_STATS_LUA);
     private final DefaultRedisScript<List> batchLikedScript = buildListScript(BATCH_LIKED_LUA);
+    private final DefaultRedisScript<Long> incrementViewScript = buildLongScript(INCREMENT_VIEW_LUA);
 
     public boolean like(Long postId, Long userId, String category,
                         boolean isTop, boolean isEssence, LocalDateTime createTime) {
@@ -250,37 +262,17 @@ public class PostHotService {
     }
 
     /**
-     * 浏览量按 UV 记录（HyperLogLog）。
-     * 兼顾游客登录状态下，兼容 null 传参记录统配浏览量
-     * <p>
-     * 注意：所有游客写入同一个 {@code anonymous} 成员，因此 N 个游客只计 1 个 UV。
-     * 这是 HLL + 无身份标识的固有限制，不是 bug；若产品要求区分游客 UV，
-     * 需引入 IP 或会话标识并评估其隐私合规性。
-     * </p>
+     * 记录一次详情页浏览（PV +1）。
      *
-     * @param userId 为 {@code null} 时按游客处理
+     * @param persistedViews 数据库中的历史阅读数，用作 Redis 冷启动/旧值修复的基线
      */
-    public void view(Long postId, Long userId) {
+    public void view(Long postId, int persistedViews) {
         if (postId == null) {
             return;
         }
-
-        ensureStatInitialized(postId);
-
-        String viewKey = PostRedisKey.viewedUsers(postId);
-        String statKey = PostRedisKey.stat(postId);
-
-        if (userId != null) {
-            redisTemplate.opsForHyperLogLog().add(viewKey, userId.toString());
-        } else {
-            // 游客统计入相同的 HLL 时统一算作 anonymous (可基于 IP 改进以精确计算游客UV)
-            redisTemplate.opsForHyperLogLog().add(viewKey, "anonymous");
-        }
-
-        Long uvCount = redisTemplate.opsForHyperLogLog().size(viewKey);
-        if (uvCount != null) {
-            redisTemplate.opsForHash().put(statKey, PostRankingService.FIELD_VIEWS, uvCount.toString());
-        }
+        int base = Math.max(0, persistedViews);
+        redisTemplate.execute(incrementViewScript,
+                List.of(PostRedisKey.stat(postId)), String.valueOf(base));
     }
 
     public void initNewPost(Long postId, String category, boolean isTop, boolean isEssence) {
@@ -448,6 +440,13 @@ public class PostHotService {
         DefaultRedisScript<List> script = new DefaultRedisScript<>();
         script.setScriptText(scriptText);
         script.setResultType(List.class);
+        return script;
+    }
+
+    private static DefaultRedisScript<Long> buildLongScript(String scriptText) {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setScriptText(scriptText);
+        script.setResultType(Long.class);
         return script;
     }
 

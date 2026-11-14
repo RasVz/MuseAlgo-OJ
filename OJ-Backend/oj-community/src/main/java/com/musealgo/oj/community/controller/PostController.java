@@ -297,6 +297,7 @@ public class PostController {
         for (PostVO post : page.getRecords()) {
             Map<String, Integer> stats = statsByPost.get(post.getId());
             if (stats != null) {
+                post.setViews(stats.getOrDefault("views", post.getViews() == null ? 0 : post.getViews()));
                 post.setLikes(stats.getOrDefault("likes", post.getLikes() == null ? 0 : post.getLikes()));
                 post.setCommentCount(stats.getOrDefault("comments",
                         post.getCommentCount() == null ? 0 : post.getCommentCount()));

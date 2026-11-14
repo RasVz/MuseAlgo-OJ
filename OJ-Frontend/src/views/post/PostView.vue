@@ -64,18 +64,20 @@
                 @click="changeSort('latest')"
               >最新</span>
             </div>
-            <button class="feed-tag-trigger" @click="tagDialogVisible = true">
-              <span v-if="selectedTags.length">已选 {{ selectedTags.length }} 个标签</span>
-              <span v-else>筛选标签</span>
-              <el-icon><ArrowDown /></el-icon>
-            </button>
-            <el-input 
-              v-model="searchKeyword" 
-              placeholder="搜索感兴趣的内容..." 
-              :prefix-icon="Search"
-              class="feed-search"
-              @keyup.enter="fetchData(1)"
-            />
+            <div class="feed-actions">
+              <button class="feed-tag-trigger" @click="tagDialogVisible = true">
+                <span v-if="selectedTags.length">已选 {{ selectedTags.length }} 个标签</span>
+                <span v-else>筛选标签</span>
+                <el-icon><ArrowDown /></el-icon>
+              </button>
+              <el-input 
+                v-model="searchKeyword" 
+                placeholder="搜索感兴趣的内容..." 
+                :prefix-icon="Search"
+                class="feed-search"
+                @keyup.enter="fetchData(1)"
+              />
+            </div>
           </div>
 
           <div v-if="selectedTags.length" class="active-tag-row">
@@ -136,7 +138,7 @@
             <el-empty v-else description="暂无相关文章" />
           </div>
 
-          <div class="pagination-box">
+          <div v-if="total > 0" class="pagination-box">
             <el-pagination 
               background 
               layout="prev, pager, next" 
@@ -310,6 +312,7 @@ onMounted(() => {
   margin-bottom: 16px; border: 1px solid var(--border-light);
 }
 .sort-tabs { display: flex; align-items: center; gap: 16px; font-size: 14px; }
+.feed-actions { display: flex; align-items: center; gap: 10px; margin-left: auto; }
 .sort-item { cursor: pointer; color: var(--text-secondary); transition: color 0.15s; padding-bottom: 2px; }
 .sort-item:hover { color: var(--text-primary); }
 .sort-item.active { color: var(--accent-primary); font-weight: 600; border-bottom: 2px solid var(--accent-primary); }
