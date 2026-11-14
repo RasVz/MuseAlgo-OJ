@@ -119,7 +119,8 @@ class ContestPublicationReadBoundaryTest {
         ContestUserService registrations = mock(ContestUserService.class);
         when(registrations.registerContest(5L, 9L)).thenThrow(new ForbiddenException("无权查看未公开比赛"));
         login(9L, "STUDENT");
-        ContestUserController registrationController = new ContestUserController(registrations, contests);
+        ContestUserController registrationController = new ContestUserController(registrations, contests,
+                mock(com.musealgo.oj.contest.application.ContestAnswerApplicationService.class));
         assertEquals(403, registrationController.register(5L).getCode());
     }
 
