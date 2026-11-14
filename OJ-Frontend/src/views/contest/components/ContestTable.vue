@@ -188,14 +188,14 @@ const toContestRank = (id) => router.push({ name: 'ContestRanking', params: { id
 </script>
 
 <style scoped>
-/* 工作台表格：表头 40px / 行 48px，首尾列 24px，其余单元格 12px */
+/* 工作台表格：表头 40px；比赛行含两行状态与操作，行高放宽到 64px 避免拥挤 */
 .contest-table { --el-table-border-color: var(--border-light); }
 .contest-table :deep(th.el-table__cell) {
   height: var(--table-header-height);
   padding: 0;
 }
 .contest-table :deep(td.el-table__cell) {
-  height: var(--table-row-height);
+  height: 64px;
   padding: 0;
 }
 .contest-table :deep(.el-table__cell .cell) { padding: 0 12px; }
@@ -220,6 +220,7 @@ const toContestRank = (id) => router.push({ name: 'ContestRanking', params: { id
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 3px;
   line-height: 1.4;
 }
 
@@ -231,15 +232,18 @@ const toContestRank = (id) => router.push({ name: 'ContestRanking', params: { id
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 6px;
 }
 
 .action-btn-wrapper {
-  height: 20px;
   display: flex;
   align-items: center;
 }
-.action-btn-wrapper :deep(.el-button) { border-radius: var(--radius-control); }
+.action-btn-wrapper :deep(.el-button) {
+  height: 28px;
+  padding: 0 14px;
+  border-radius: var(--radius-control);
+}
 
 .participant-count { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-secondary); }
 

@@ -6,16 +6,19 @@
       <el-button type="primary" @click="createDiscussion"><el-icon><EditPen /></el-icon>发起讨论</el-button>
     </section>
     <div class="discussion-toolbar">
-      <el-radio-group v-model="category" size="default" @change="reloadFromFirstPage">
-        <el-radio-button label="all">全部</el-radio-button>
-        <el-radio-button label="question">提问</el-radio-button>
-        <el-radio-button label="experience">经验分享</el-radio-button>
-        <el-radio-button label="contest-discussion">比赛讨论</el-radio-button>
-      </el-radio-group>
-      <el-radio-group v-model="sort" size="small" @change="reloadFromFirstPage">
-        <el-radio-button label="latest">最新</el-radio-button>
-        <el-radio-button label="hot">热门</el-radio-button>
-      </el-radio-group>
+      <WorkbenchSegmented
+        v-model="category"
+        :options="categoryOptions"
+        aria-label="讨论分类"
+        @change="reloadFromFirstPage"
+      />
+      <WorkbenchSegmented
+        v-model="sort"
+        :options="sortOptions"
+        size="sm"
+        aria-label="讨论排序"
+        @change="reloadFromFirstPage"
+      />
     </div>
     <main v-loading="loading" class="discussion-list">
       <article v-for="post in posts" :key="post.id" class="discussion-row" @click="goPost(post.id)">
@@ -37,9 +40,20 @@ import { useRouter } from 'vue-router'
 import dayjs from 'dayjs'
 import { ChatDotRound, EditPen } from '@element-plus/icons-vue'
 import NavbarContext from '@/components/NavbarContext.vue'
+import WorkbenchSegmented from '@/components/WorkbenchSegmented.vue'
 import { getPostList } from '@/api/post'
 import { usePagedPostList } from './composables/usePagedPostList'
 
+const categoryOptions = [
+  { value: 'all', label: '全部' },
+  { value: 'question', label: '提问' },
+  { value: 'experience', label: '经验分享' },
+  { value: 'contest-discussion', label: '比赛讨论' }
+]
+const sortOptions = [
+  { value: 'latest', label: '最新' },
+  { value: 'hot', label: '热门' }
+]
 const router = useRouter()
 const category = ref('all')
 const sort = ref('latest')
@@ -87,19 +101,6 @@ onMounted(() => loadPosts())
 .discussion-hero h1 { margin:0 0 8px; font-size:25px; }
 .discussion-hero p { margin:0; opacity:.82; }
 .discussion-toolbar { display:flex; justify-content:space-between; align-items:center; height:52px; margin:12px 0 8px; }
-.discussion-toolbar :deep(.el-radio-button__inner) {
-  height: 32px; display: inline-flex; align-items: center; padding: 0 12px;
-  border: none; outline: none; border-bottom: 2px solid transparent; border-radius: 0;
-  background: transparent; box-shadow: none !important;
-  color: var(--text-secondary); font-size: 14px;
-}
-.discussion-toolbar :deep(.el-radio-button:first-child .el-radio-button__inner),
-.discussion-toolbar :deep(.el-radio-button:last-child .el-radio-button__inner) { border-radius: 0; }
-.discussion-toolbar :deep(.el-radio-button__inner:hover) { color: var(--text-primary); }
-.discussion-toolbar :deep(.el-radio-button.is-active .el-radio-button__original-radio + .el-radio-button__inner) {
-  color: var(--accent-primary); font-weight: 600;
-  border-bottom-color: var(--accent-primary); background: transparent;
-}
 .discussion-list { overflow:hidden; border:1px solid var(--border-light); border-radius: var(--radius-card); background:var(--bg-surface); }
 .discussion-row { display:flex; gap:14px; align-items:flex-start; padding:18px 24px; border-bottom:1px solid var(--border-light); cursor:pointer; transition: background-color .15s; }
 .discussion-row:last-child { border-bottom:none; }

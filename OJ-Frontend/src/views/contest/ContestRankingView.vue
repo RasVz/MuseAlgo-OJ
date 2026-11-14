@@ -16,10 +16,11 @@
     </div>
 
     <div class="rank-switcher">
-      <el-radio-group v-model="activeTab">
-        <el-radio-button value="official">正式榜</el-radio-button>
-        <el-radio-button value="global">全局榜</el-radio-button>
-      </el-radio-group>
+      <WorkbenchSegmented
+        v-model="activeTab"
+        :options="boardOptions"
+        aria-label="榜单类型"
+      />
 
       <div v-if="activeTab === 'global'" class="board-legend">
         <el-tag type="warning" effect="plain" size="small">* 超限</el-tag>
@@ -84,6 +85,7 @@ import {
 import { getContestDetail } from '@/api/contest'
 import { useUserStore } from '@/stores/userStore'
 import { connectSSE } from '@/utils/sse'
+import WorkbenchSegmented from '@/components/WorkbenchSegmented.vue'
 import VpCorrectionCard from './components/VpCorrectionCard.vue'
 import ContestRankTable from './components/ContestRankTable.vue'
 
@@ -104,6 +106,10 @@ const streamExhausted = ref(false)
 
 // official | global —— 两个榜的数据、loading、error 完全独立，
 // 切换时互不覆盖，也方便分别保留各自的空态/错误态。
+const boardOptions = [
+  { value: 'official', label: '正式榜' },
+  { value: 'global', label: '全局榜' }
+]
 const activeTab = ref('official')
 const officialRankList = ref([])
 const globalRankList = ref([])
@@ -602,36 +608,15 @@ async function handleExportGlobal() {
 }
 .page-actions :deep(.el-button) { border-radius: var(--radius-control); }
 
-/* 页签：文字 + 下划线激活态，不用灰色填充 */
 .rank-switcher {
   flex: none;
-  min-height: 44px;
+  min-height: 48px;
   padding: 0 24px;
   display: flex;
   align-items: center;
   gap: 16px;
   flex-wrap: wrap;
   border-bottom: 1px solid var(--border-light);
-}
-.rank-switcher :deep(.el-radio-button__inner) {
-  height: 44px;
-  line-height: 42px;
-  padding: 0 2px;
-  border: none;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-  box-shadow: none;
-  background: transparent;
-  color: var(--text-regular);
-  font-size: 14px;
-}
-.rank-switcher :deep(.el-radio-button + .el-radio-button) { margin-left: 20px; }
-.rank-switcher :deep(.el-radio-button.is-active .el-radio-button__original-radio:not(:disabled) + .el-radio-button__inner) {
-  color: var(--accent-primary);
-  border-bottom-color: var(--accent-primary);
-  background: transparent;
-  box-shadow: none;
-  font-weight: 600;
 }
 
 .board-legend {

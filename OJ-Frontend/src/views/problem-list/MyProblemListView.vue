@@ -19,11 +19,13 @@
           @keyup.enter="fetchData"
         />
         
-        <el-radio-group v-model="filterType" class="ml-4" @change="fetchData">
-          <el-radio-button label="all">全部</el-radio-button>
-          <el-radio-button label="public">公开</el-radio-button>
-          <el-radio-button label="private">私有</el-radio-button>
-        </el-radio-group>
+        <WorkbenchSegmented
+          v-model="filterType"
+          :options="filterOptions"
+          size="sm"
+          aria-label="题单可见范围"
+          @change="fetchData"
+        />
 
         <div class="action-box">
           <el-button type="primary" icon="Plus" @click="handleCreate">
@@ -124,11 +126,17 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import NavbarContext from '@/components/NavbarContext.vue'
+import WorkbenchSegmented from '@/components/WorkbenchSegmented.vue'
 import { Lock, List } from '@element-plus/icons-vue'
 import { getProblemLists } from '@/api/problemList'
 import dayjs from 'dayjs'
 import { useUserStore } from '@/stores/userStore'
 
+const filterOptions = [
+  { value: 'all', label: '全部' },
+  { value: 'public', label: '公开' },
+  { value: 'private', label: '私有' }
+]
 const router = useRouter()
 const loading = ref(false)
 const listData = ref([])
@@ -237,7 +245,6 @@ onMounted(fetchData)
 }
 
 .search-input { width: 250px; }
-.ml-4 { margin-left: 0; }
 .filter-section :deep(.el-input__wrapper),
 .filter-section :deep(.el-button) { border-radius: var(--radius-control); }
 

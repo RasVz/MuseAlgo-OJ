@@ -6,10 +6,13 @@
         <h1>练习分析</h1>
         <p>{{ periodLabel }}</p>
       </div>
-      <el-radio-group v-model="range" aria-label="练习统计时间范围" @change="loadData"
-        ><el-radio-button value="all">全部</el-radio-button
-        ><el-radio-button value="30d">近 30 天</el-radio-button></el-radio-group
-      >
+      <WorkbenchSegmented
+        v-model="range"
+        :options="rangeOptions"
+        size="sm"
+        aria-label="练习统计时间范围"
+        @change="loadData"
+      />
     </header>
     <el-alert v-if="errorMessage" type="error" show-icon :closable="false" title="练习分析加载失败"
       ><div class="error-content">
@@ -104,10 +107,12 @@
             <h2>题目记录</h2>
             <p>最近记录，最多 {{ data.listLimit || 50 }} 条 · 按时间倒序</p>
           </div>
-          <el-radio-group v-model="listType" size="small" aria-label="题目记录类型"
-            ><el-radio-button value="passed">已通过</el-radio-button
-            ><el-radio-button value="tried">尝试未通过</el-radio-button></el-radio-group
-          >
+          <WorkbenchSegmented
+            v-model="listType"
+            :options="recordOptions"
+            size="sm"
+            aria-label="题目记录类型"
+          />
         </div>
         <PracticeProblemTable
           v-if="currentRows.length"
@@ -141,6 +146,15 @@ import StatsOverview from '@/components/StatsOverview.vue'
 import SkillRadar from '@/components/SkillRadar.vue'
 import RatingHistogram from '@/components/RatingHistogram.vue'
 import PracticeProblemTable from './components/PracticeProblemTable.vue'
+import WorkbenchSegmented from '@/components/WorkbenchSegmented.vue'
+const rangeOptions = [
+  { value: 'all', label: '全部' },
+  { value: '30d', label: '近 30 天' }
+]
+const recordOptions = [
+  { value: 'passed', label: '已通过' },
+  { value: 'tried', label: '尝试未通过' }
+]
 const range = ref('all'),
   listType = ref('passed'),
   loading = ref(true),
@@ -261,38 +275,6 @@ onMounted(loadData)
   border-radius: var(--radius-card);
   background: var(--bg-surface);
   min-width: 0;
-}
-/* 时间范围 / 题目记录的分段筛选：只保留文字 + 下划线激活，去掉蓝色实心填充 */
-.practice-page :deep(.el-radio-group) {
-  gap: 4px;
-}
-.practice-page :deep(.el-radio-button__inner) {
-  background: transparent;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-  box-shadow: none;
-  color: var(--text-secondary);
-  transition: color .15s, border-color .15s;
-}
-.practice-page :deep(.el-radio-button__inner:hover) {
-  background: transparent;
-  color: var(--text-primary);
-}
-.practice-page :deep(.el-radio-button.is-active .el-radio-button__original-radio:not(:disabled) + .el-radio-button__inner) {
-  background: transparent;
-  border-color: transparent;
-  border-bottom-color: var(--accent-primary);
-  box-shadow: none;
-  color: var(--accent-primary);
-}
-.practice-page :deep(.el-radio-button__original-radio:focus-visible + .el-radio-button__inner) {
-  border: 0;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-  box-shadow: none;
-  outline: 2px solid var(--accent-primary);
-  outline-offset: 2px;
 }
 .section-heading {
   display: flex;

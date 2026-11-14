@@ -43,14 +43,11 @@
         </div>
         
         <div class="view-toggle">
-          <el-radio-group v-model="currentView" size="large">
-            <el-radio-button label="info">
-              <el-icon class="mr-1"><DataBoard /></el-icon> 概览
-            </el-radio-button>
-            <el-radio-button label="problems">
-              <el-icon class="mr-1"><List /></el-icon> 题目 ({{ problems.length }})
-            </el-radio-button>
-          </el-radio-group>
+          <WorkbenchSegmented
+            v-model="currentView"
+            :options="viewOptions"
+            aria-label="题单视图"
+          />
         </div>
       </div>
 
@@ -79,12 +76,13 @@ import { showApiError } from '@/utils/errorFeedback'
 // 题单详情页（公开浏览视图）：概览与题目列表两个视图切换，支持收藏。
 // 「我已完成多少题」是本页最想传达的信息，所以完成数在拉题目时顺带统计，
 // 而不是让用户自己数——概览的环形进度条直接用它。
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/userStore'
 import { ElMessage } from 'element-plus'
 import { DataBoard, List } from '@element-plus/icons-vue'
 import NavBarContext from '@/components/NavbarContext.vue'
+import WorkbenchSegmented from '@/components/WorkbenchSegmented.vue'
 import { getProblemListDetail, getListProblems } from '@/api/problemList'
 
 import { addFavorite, removeFavorite, checkFavorite } from '@/api/favorite'
@@ -102,7 +100,11 @@ const problems = ref([])
 const loading = ref(false)
 const isOwner = ref(false) 
 const isFavorite = ref(false)
-const currentView = ref('info') 
+const currentView = ref('info')
+const viewOptions = computed(() => [
+  { value: 'info', label: '概览', icon: DataBoard },
+  { value: 'problems', label: `题目 (${problems.value.length})`, icon: List }
+]) 
 
 // 收藏体系用 targetType 区分目标种类：2=题单、1=题目。同一个收藏表靠这两个字段区分。
 const TARGET_TYPE_LIST = 2
@@ -280,28 +282,6 @@ onMounted(() => { fetchDetail() })
 .list-meta { display: flex; align-items: center; gap: 12px; }
 .update-time { font-size: 13px; color: var(--text-secondary); }
 .mr-1 { margin-right: 4px; }
-
-/* 视图切换按页签处理：只保留文字与下划线激活态，去掉灰色填充 */
-.view-toggle :deep(.el-radio-group) { display: flex; align-items: center; gap: 24px; }
-.view-toggle :deep(.el-radio-button__inner) {
-  background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-  box-shadow: none !important;
-  padding: 0 2px 8px;
-  color: var(--text-regular);
-  font-size: 14px;
-  font-weight: 500;
-}
-.view-toggle :deep(.el-radio-button__inner:hover) { color: var(--accent-primary); }
-.view-toggle :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
-  background: transparent;
-  border-bottom-color: var(--accent-primary);
-  box-shadow: none !important;
-  color: var(--text-primary);
-  font-weight: 600;
-}
 
 /* Problems View Card */
 .table-card {

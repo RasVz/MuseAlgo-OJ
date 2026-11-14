@@ -15,10 +15,13 @@
 
     <div class="solutions-toolbar">
       <span>{{ total }} 篇题解</span>
-      <el-radio-group v-model="sort" size="small" @change="fetchSolutions(1)">
-        <el-radio-button label="time">最新发布</el-radio-button>
-        <el-radio-button label="likes">最有帮助</el-radio-button>
-      </el-radio-group>
+      <WorkbenchSegmented
+        v-model="sort"
+        :options="sortOptions"
+        size="sm"
+        aria-label="题解排序"
+        @change="fetchSolutions(1)"
+      />
     </div>
 
     <main v-if="solutions.length" class="solution-list">
@@ -64,6 +67,7 @@ import { useRoute, useRouter } from 'vue-router'
 import dayjs from 'dayjs'
 import { ArrowLeft, ArrowRight, ChatLineRound, Document, EditPen } from '@element-plus/icons-vue'
 import NavbarContext from '@/components/NavbarContext.vue'
+import WorkbenchSegmented from '@/components/WorkbenchSegmented.vue'
 import { getProblemDetail } from '@/api/problem'
 import { getPostList } from '@/api/post'
 import { togglePostLike } from '@/api/post'
@@ -79,6 +83,10 @@ const solutions = ref([])
 const total = ref(0)
 const currentPage = ref(1)
 const pageSize = 10
+const sortOptions = [
+  { value: 'time', label: '最新发布' },
+  { value: 'likes', label: '最有帮助' }
+]
 const sort = ref('time')
 const userStore = useUserStore()
 
@@ -142,30 +150,6 @@ onMounted(() => {
 .solutions-header h1 { margin: 0; color: var(--text-primary); font-size: 24px; font-weight: 650; }
 .solutions-header p { margin: 7px 0 0; color: var(--text-regular); font-size: 14px; }
 .solutions-toolbar { display: flex; align-items: center; justify-content: space-between; height: 52px; padding: 0 24px; border-top: 1px solid var(--border-light); border-bottom: 1px solid var(--border-light); color: var(--text-secondary); font-size: 13px; }
-.solutions-toolbar :deep(.el-radio-button + .el-radio-button) { margin-left: 20px; }
-.solutions-toolbar :deep(.el-radio-button__inner) {
-  padding: 5px 0 3px;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-  outline: none;
-  background: transparent;
-  box-shadow: none;
-  color: var(--text-secondary);
-  font-size: 13px;
-  line-height: 1.5;
-}
-.solutions-toolbar :deep(.el-radio-button:first-child .el-radio-button__inner),
-.solutions-toolbar :deep(.el-radio-button:last-child .el-radio-button__inner) { border-radius: 0; }
-.solutions-toolbar :deep(.el-radio-button__inner:hover) { color: var(--accent-primary); }
-.solutions-toolbar :deep(.el-radio-button.is-active .el-radio-button__original-radio:not(:disabled) + .el-radio-button__inner) {
-  border-color: transparent;
-  border-bottom-color: var(--accent-primary);
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  color: var(--accent-primary);
-}
 .solution-list { margin: 0; }
 .solution-row { display: flex; align-items: flex-start; gap: 14px; padding: 16px 24px; border-bottom: 1px solid var(--border-light); cursor: pointer; transition: background .15s; }
 .solution-row:hover { background: var(--bg-surface-hover); }

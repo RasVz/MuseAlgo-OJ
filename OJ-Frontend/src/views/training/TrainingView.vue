@@ -11,12 +11,12 @@
 
     <main class="main-content">
       <section class="library-toolbar" aria-label="试卷筛选">
-        <el-radio-group v-model="category" class="category-filter" aria-label="试卷分类" @change="onCategoryChange">
-          <el-radio-button value="">全部</el-radio-button>
-          <el-radio-button v-for="cat in CATEGORIES" :key="cat.value" :value="cat.value">
-            {{ cat.label }}
-          </el-radio-button>
-        </el-radio-group>
+        <WorkbenchSegmented
+          v-model="category"
+          :options="categoryOptions"
+          aria-label="试卷分类"
+          @change="onCategoryChange"
+        />
         <el-input
           v-model="keywordDraft"
           class="search-input"
@@ -99,6 +99,7 @@
 import { ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import NavbarContext from '@/components/NavbarContext.vue'
+import WorkbenchSegmented from '@/components/WorkbenchSegmented.vue'
 import { getExamPaperList } from '@/api/examPaper'
 import { unwrapResultData } from '@/utils/response'
 
@@ -113,6 +114,7 @@ const CATEGORIES = [
   { value: 'MOCK', label: '模拟' }
 ]
 
+const categoryOptions = [{ value: '', label: '全部' }, ...CATEGORIES]
 const category = ref('')
 const keywordDraft = ref('')
 const keyword = ref('')
@@ -193,29 +195,6 @@ watch(
 .nav-desc { color: var(--text-secondary); font-size: 13px; margin-top: 4px; }
 .main-content { max-width: 1180px; margin: 0 auto; padding: 20px 24px 40px; }
 .library-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; min-height: 52px; margin-bottom: 12px; }
-
-/* 分类页签：只保留文字 + 下划线激活态，去掉灰色填充块 */
-.category-filter { display: flex; max-width: 100%; overflow-x: auto; }
-.category-filter :deep(.el-radio-button) { margin-right: 24px; }
-.category-filter :deep(.el-radio-button:last-child) { margin-right: 0; }
-.category-filter :deep(.el-radio-button__inner) {
-  height: auto;
-  padding: 0 0 10px;
-  border: none;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  color: var(--text-secondary);
-  font-size: 14px;
-  line-height: 1.4;
-}
-.category-filter :deep(.el-radio-button__inner:hover) { color: var(--text-primary); }
-.category-filter :deep(.el-radio-button.is-active .el-radio-button__inner) {
-  color: var(--accent-primary);
-  background: transparent;
-  box-shadow: none;
-  border-bottom: 2px solid var(--accent-primary);
-}
 
 /* 输入框与下拉统一 6px 圆角 */
 .search-input { max-width: 320px; }
