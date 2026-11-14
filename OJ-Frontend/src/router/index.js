@@ -89,7 +89,7 @@ const contestRoutes = [
   // 比赛参赛卷：整卷答题页，脱离比赛布局以保证作答期只保留答题必需入口。
   { path: 'contest/:id/answer', name: 'ContestAnswer', component: () => import('@/views/contest/ContestAnswerView.vue'), meta: { title: '比赛答题', requiresAuth: true, immersive: true } },
   {
-    path: 'contest/:id', component: () => import('@/layout/ContestLayout.vue'), meta: { title: '比赛详情', breadcrumb: [{ label: '比赛大厅', path: '/contest' }] },
+    path: 'contest/:id', component: () => import('@/layout/ContestLayout.vue'), meta: { title: '比赛详情', breadcrumb: [{ label: '比赛大厅', path: '/contest' }], immersive: true },
     children: [
       { path: '', redirect: { name: 'ContestProblem' } },
       { path: 'problem', name: 'ContestProblem', component: () => import('@/views/contest/ContestProblemSetView.vue') },
