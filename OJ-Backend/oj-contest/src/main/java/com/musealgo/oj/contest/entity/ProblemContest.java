@@ -1,5 +1,6 @@
 package com.musealgo.oj.contest.entity;
 
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -87,15 +88,18 @@ public class ProblemContest implements Serializable {
     /**
      * 题目标题（来自problem表）
      */
+    @TableField(exist = false)
     private String problemTitle;
 
     /**
      * 竞赛标题（来自contest表）
      */
+    @TableField(exist = false)
     private String contestTitle;
 
     /**
      * 题目难度（来自problem表）
      */
+    @TableField(exist = false)
     private Integer difficulty;
 }
