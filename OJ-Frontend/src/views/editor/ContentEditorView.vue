@@ -6,7 +6,7 @@
         <span v-if="isEdit" class="brand-badge edit">编辑中</span>
       </div>
 
-      <div class="channel-switch">
+      <div v-if="!isClassChannel" class="channel-switch">
         <button
           v-for="item in channelList"
           :key="item.key"
@@ -28,7 +28,7 @@
       </div>
     </header>
 
-    <main v-loading="loading" class="editor-body">
+    <main v-loading="loading" class="editor-body" :class="{ 'single-column': isClassChannel }">
       <section class="editor-main">
         <div class="channel-hint">
           <span>{{ channelConfig.hint }}</span>
@@ -37,7 +37,13 @@
         <BlockEditor ref="blockEditor" v-model="form.content" :placeholder="channelConfig.placeholder" />
       </section>
 
-      <EditorMetaPanel :form="form" :channel="channel" :tag-groups="tagGroups" @update-field="applyField" />
+      <EditorMetaPanel
+        v-if="!isClassChannel"
+        :form="form"
+        :channel="channel"
+        :tag-groups="tagGroups"
+        @update-field="applyField"
+      />
     </main>
   </div>
 </template>
@@ -52,7 +58,12 @@ import BlockEditor from './components/BlockEditor.vue'
 import EditorMetaPanel from './components/EditorMetaPanel.vue'
 import { CHANNELS, buildPayload, channelByKey, resolveChannel } from './channels'
 import { createPost, getPostDetail, getPostTagOptions, updatePost } from '@/api/post'
-import { UnsupportedMarkdownError, checkRoundTrip, markdownToDoc } from '@/utils/markdown-blocks'
+import {
+  UnsupportedMarkdownError,
+  checkRoundTrip,
+  collectImageSources,
+  markdownToDoc
+} from '@/utils/markdown-blocks'
 import { showApiError } from '@/utils/errorFeedback'
 
 const DRAFT_KEY = 'musealgo:editor:draft:new'
@@ -61,7 +72,8 @@ const DRAFT_DEBOUNCE = 800
 const route = useRoute()
 const router = useRouter()
 
-const channelList = Object.values(CHANNELS)
+// 隐藏频道（班级）只从班级页进入，不进入公共写作台的频道切换。
+const channelList = Object.values(CHANNELS).filter((item) => !item.hidden)
 const channel = ref('article')
 const loading = ref(false)
 const saving = ref(false)
@@ -81,11 +93,18 @@ const form = reactive({
   content: '',
   problemId: null,
   privacy: 0,
-  relatedProblemIds: []
+  relatedProblemIds: [],
+  classId: null,
+  images: []
 })
 
 const isEdit = computed(() => Boolean(form.id))
+const isClassChannel = computed(() => channel.value === 'class')
 const channelConfig = computed(() => channelByKey(channel.value))
+// 班级草稿按班隔离，避免覆盖公共写作台的草稿。
+const draftKey = computed(() => (
+  isClassChannel.value ? `musealgo:editor:draft:class:${form.classId || 'unknown'}` : DRAFT_KEY
+))
 
 const parseTags = (value) => {
   if (Array.isArray(value)) return value.filter(Boolean)
@@ -118,6 +137,7 @@ const snapshot = () => JSON.stringify({
   problemId: form.problemId,
   privacy: form.privacy,
   relatedProblemIds: form.relatedProblemIds,
+  classId: form.classId,
   channel: channel.value
 })
 
@@ -131,6 +151,15 @@ const applyField = (field, value) => {
 const applyChannel = (key) => {
   const config = channelByKey(key)
   form.type = config.type
+  if (config.key === 'class') {
+    const fromQuery = Number(route.query.classId)
+    form.classId = Number.isSafeInteger(fromQuery) && fromQuery > 0 ? fromQuery : null
+    form.category = 'question'
+    form.privacy = 0
+    form.problemId = null
+    return
+  }
+  form.classId = null
   if (config.key === 'solution') {
     form.category = 'solution'
     const fromQuery = Number(route.query.problemId)
@@ -194,10 +223,6 @@ const loadPost = async (id) => {
     }
     const data = res.data
     const resolved = resolveChannel(data.type, data.category)
-    if (resolved === 'class') {
-      openLegacyEditor(id, '班级内容带有 classId，更新接口不接受跨频道修改。')
-      return
-    }
     try {
       markdownToDoc(data.content || '')
     } catch (error) {
@@ -213,6 +238,7 @@ const loadPost = async (id) => {
     form.title = data.title || ''
     form.type = data.type ?? channelByKey(resolved).type
     form.category = data.category || channelByKey(resolved).defaultCategory
+    form.classId = resolved === 'class' ? (data.classId ?? null) : null
     form.summary = data.summary || ''
     form.content = data.content || ''
     form.privacy = Number(data.privacy ?? 0)
@@ -229,7 +255,7 @@ const loadPost = async (id) => {
 }
 
 const restoreDraft = async () => {
-  const raw = localStorage.getItem(DRAFT_KEY)
+  const raw = localStorage.getItem(draftKey.value)
   if (!raw) return
   try {
     const draft = JSON.parse(raw)
@@ -247,14 +273,19 @@ const restoreDraft = async () => {
     }
     ElMessage.success('已恢复本地草稿')
   } catch (error) {
-    if (error instanceof SyntaxError) localStorage.removeItem(DRAFT_KEY)
+    if (error instanceof SyntaxError) localStorage.removeItem(draftKey.value)
   }
 }
 
 const saveDraft = () => {
   if (isEdit.value || !isDirty.value) return
-  localStorage.setItem(DRAFT_KEY, JSON.stringify({
-    form: { ...form, tags: [...form.tags], relatedProblemIds: [...form.relatedProblemIds] },
+  localStorage.setItem(draftKey.value, JSON.stringify({
+    form: {
+      ...form,
+      tags: [...form.tags],
+      relatedProblemIds: [...form.relatedProblemIds],
+      images: [...form.images]
+    },
     channel: channel.value,
     savedAt: Date.now()
   }))
@@ -262,13 +293,16 @@ const saveDraft = () => {
 }
 
 const handleSave = async () => {
+  const doc = blockEditor.value?.getDoc()
+  // 列表缩略图从正文图片节点派生；正文仍是唯一内容源。
+  if (doc) form.images = collectImageSources(doc, 9)
+
   const { payload, error } = buildPayload({ channel: channel.value, form })
   if (error) {
     ElMessage.warning(error)
     return
   }
 
-  const doc = blockEditor.value?.getDoc()
   const issue = doc ? checkRoundTrip(doc) : { reason: '编辑器尚未就绪' }
   if (import.meta.env.DEV) console.log('[save] guard', issue)
   if (issue) {
@@ -286,13 +320,15 @@ const handleSave = async () => {
       ElMessage.error(res.message || '保存失败')
       return
     }
-    localStorage.removeItem(DRAFT_KEY)
+    localStorage.removeItem(draftKey.value)
     initialSnapshot.value = snapshot()
     draftStatus.value = '草稿会自动保存到本机'
     ElMessage.success(isEdit.value ? '已更新' : '发布成功')
     if (!isEdit.value) {
+      const classId = form.classId
       setTimeout(() => {
         if (window.opener) window.close()
+        else if (isClassChannel.value && classId) router.push(`/class/${classId}/post`)
         else router.push('/my/post')
       }, 800)
     }
@@ -436,6 +472,7 @@ onBeforeUnmount(() => {
   padding: 20px 20px 60px;
   align-items: start;
 }
+.editor-body.single-column { grid-template-columns: minmax(0, 1fr); }
 .editor-main {
   min-width: 0;
   padding: 16px 24px 8px;

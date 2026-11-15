@@ -41,7 +41,7 @@
 <script setup>
 // 我的文章列表项：卡片 + 操作菜单（查看/编辑/删除）。
 import { computed } from 'vue'
-import { ChatDotRound, Document, Picture, Reading, View } from '@element-plus/icons-vue'
+import { ChatDotRound, Document, Picture, Reading, School, View } from '@element-plus/icons-vue'
 
 const props = defineProps({
   post: { type: Object, required: true }
@@ -53,6 +53,9 @@ defineEmits(['view', 'edit', 'delete'])
 // 只看 type 会把它们误显示成讨论贴。
 const contentMeta = computed(() => {
   const type = Number(props.post.type)
+  if (type === 3) {
+    return { label: '班级动态', tagType: 'info', icon: School }
+  }
   if (props.post.problemId || props.post.category === 'solution' || type === 1) {
     return { label: '题解', tagType: 'primary', icon: Document }
   }

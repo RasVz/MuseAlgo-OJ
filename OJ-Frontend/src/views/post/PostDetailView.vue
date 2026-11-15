@@ -55,7 +55,7 @@
             />
           </div>
 
-          <div v-if="post.imagesArray && post.imagesArray.length > 0" class="post-images">
+          <div v-if="post.imagesArray && post.imagesArray.length > 0 && !contentHasMarkdownImages" class="post-images">
             <div :class="getGridClass(post.imagesArray.length)">
               <el-image 
                 v-for="(img, index) in post.imagesArray" 
@@ -174,6 +174,10 @@ const getGridClass = (count) => {
   if (count === 4) return 'grid-4'
   return 'grid-9'
 }
+
+// 正文已渲染 Markdown 图片时，images 网格只会在同一页重复显示同一批图。
+// 仅对「正文无图、images 有值」的历史记录保留网格。
+const contentHasMarkdownImages = computed(() => /!\[[^\]]*\]\([^)]+\)/.test(String(post.value.content || '')))
 
 const goUser = (id) => router.push({ name: 'UserProfile', params: { id } })
 const goProblem = (id) => router.push({ name: 'ProblemDetail', params: { id } })

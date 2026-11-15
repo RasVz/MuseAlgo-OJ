@@ -88,52 +88,14 @@
 
           <div class="article-list" v-loading="loading">
             <template v-if="articleList.length > 0">
-              <el-card 
-                v-for="article in articleList" 
-                :key="article.id" 
-                shadow="never" 
-                class="article-feed-card"
-                :body-style="{ padding: '20px' }"
-                @click="goToPostDetail(article.id)"
-              >
-                <div class="article-inner">
-                  <h2 class="article-title">{{ article.title }}</h2>
-                  
-                  <p class="article-preview">{{ article.summary || '暂无摘要' }}</p>
-                  
-                  <div class="article-footer">
-                    <div class="footer-left">
-                      <div class="author-box" @click.stop="goToUserProfile(article.authorId)">
-                        <el-avatar :size="24" :src="article.authorAvatar" class="author-avatar">
-                          {{ (article.authorName || 'U').charAt(0) }}
-                        </el-avatar>
-                        <span class="author-name">{{ article.authorName }}</span>
-                      </div>
-                      
-                      <div class="tags-box">
-                        <el-tag v-for="tag in article.tags" 
-                          :key="tag" size="small" type="info" 
-                          effect="plain" class="article-tag" @click.stop="filterByTag(tag)">
-                          # {{ tag }}
-                        </el-tag>
-                      </div>
-                    </div>
-
-                    <div class="footer-right">
-                      <span class="stat-item">{{ formatTime(article.createTime) }}</span>
-                      <span class="stat-item">
-                        <el-icon><View /></el-icon> {{ article.views }}
-                      </span>
-                      <span class="stat-item">
-                        <el-icon><ChatDotRound /></el-icon> {{ article.comments }}
-                      </span>
-                      <span class="stat-item like-item">
-                        <svg class="heart-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>{{ article.likes }}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </el-card>
+              <PostFeedCard
+                v-for="article in articleList"
+                :key="article.id"
+                :post="article"
+                @view="goToPostDetail"
+                @user="goToUserProfile"
+                @tag="filterByTag"
+              />
             </template>
             <el-empty v-else description="暂无相关文章" />
           </div>
@@ -172,12 +134,12 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import NavbarContext from '@/components/NavbarContext.vue'
 import PostTagSelectorDialog from './components/PostTagSelectorDialog.vue'
+import PostFeedCard from './components/PostFeedCard.vue'
 import { publicPostCategories, usePublicPostFeed } from './composables/usePublicPostFeed'
 import { 
-  Reading, Search, View, ChatDotRound,
+  Reading, Search, ChatDotRound,
   ArrowDown, Document, DataLine, Sunny, Coffee, Trophy, Bell
 } from '@element-plus/icons-vue'
-import dayjs from 'dayjs'
 
 const router = useRouter()
 const route = useRoute()
@@ -235,11 +197,6 @@ const clearTags = () => {
 const filterByTag = (tag) => {
   filterByTagRaw(tag)
   syncQuery(1)
-}
-
-const formatTime = (time) => {
-  if (!time) return ''
-  return dayjs(time).format('YYYY-MM-DD')
 }
 
 // 切换筛选维度后必须回到第 1 页：带着旧页码请求新条件会落到空页，
@@ -331,34 +288,6 @@ onMounted(() => {
 }
 .active-tag-row :deep(.el-button) { color: var(--text-filter-strip); }
 
-/* --- 文章卡片 --- */
-.article-feed-card {
-  margin-bottom: 14px; border: 1px solid var(--border-light); border-radius: var(--radius-card);
-  cursor: pointer; transition: border-color 0.2s; background: var(--bg-surface);
-}
-.article-feed-card:hover { border-color: var(--border-base); }
-.article-title {
-  font-size: 18px; font-weight: 700; color: var(--text-primary);
-  margin: 0 0 10px 0; line-height: 1.45;
-}
-.article-title:hover { color: var(--accent-primary); }
-.article-preview {
-  font-size: 14px; color: var(--text-regular); line-height: 1.7;
-  margin: 0 0 16px 0; display: -webkit-box;
-  -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden;
-}
-.article-footer { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border-light); padding-top: 14px; }
-.footer-left { display: flex; align-items: center; gap: 14px; }
-.author-box { display: flex; align-items: center; gap: 8px; cursor: pointer; }
-.author-name { font-size: 13px; color: var(--text-primary); font-weight: 500; }
-.author-box:hover .author-name { color: var(--accent-primary); }
-.tags-box { display: flex; gap: 6px; }
-.article-tag { border: none; background: var(--bg-app); color: var(--text-secondary); cursor: pointer; border-radius: var(--radius-tag); }
-.article-tag:hover { color: var(--text-filter-strip); background: var(--bg-filter-strip); }
-.footer-right { display: flex; align-items: center; gap: 14px; color: var(--text-secondary); font-size: 13px; }
-.stat-item { display: flex; align-items: center; gap: 4px; }
-.like-item { color: var(--text-secondary); transition: color 0.15s; }
-.like-item:hover { color: var(--accent-danger); }
-.heart-icon { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+/* --- 卡片样式在 PostFeedCard 内，与班级动态共用 --- */
 .pagination-box { display: flex; justify-content: center; align-items: center; height: 56px; margin: 0 0 8px; }
 </style>

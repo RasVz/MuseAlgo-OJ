@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { getPostList, getPostTagOptions } from '@/api/post'
+import { parsePostImages } from '@/utils/post-images'
 import { usePagedPostList } from './usePagedPostList'
 
 export const publicPostCategories = Object.freeze([
@@ -44,6 +45,7 @@ const normalizeArticle = (item = {}) => ({
   authorName: item.authorName || (item.authorId ? `用户${item.authorId}` : '未知用户'),
   authorAvatar: item.authorAvatar || '',
   tags: parseTags(item.tags),
+  images: parsePostImages(item.images),
   createTime: item.createTime,
   views: toNumber(item.views),
   likes: toNumber(item.likes),

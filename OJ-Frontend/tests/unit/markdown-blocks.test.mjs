@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 
 import {
   checkRoundTrip,
+  collectImageSources,
   docToMarkdown,
   markdownToDoc,
   renderMathHtml
@@ -49,6 +50,20 @@ test('分割线与图片可往返', () => {
   assert.equal(doc.content[0].type, 'horizontalRule')
   assert.equal(doc.content[1].content[0].type, 'image')
   assert.deepEqual(roundTrip(source), doc)
+})
+
+test('图片地址收集去重并限制上限', () => {
+  const doc = markdownToDoc([
+    '![a](a.png)',
+    '![a again](a.png)',
+    '- 列表内 ![b](b.png)',
+    '![c](c.png)',
+    '![d](d.png)'
+  ].join('\n\n'))
+
+  assert.deepEqual(collectImageSources(doc), ['a.png', 'b.png', 'c.png', 'd.png'])
+  assert.deepEqual(collectImageSources(doc, 2), ['a.png', 'b.png'])
+  assert.deepEqual(collectImageSources({ type: 'doc', content: [] }), [])
 })
 
 test('链接与行内代码不被转义破坏', () => {

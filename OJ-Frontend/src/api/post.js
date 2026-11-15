@@ -67,12 +67,20 @@ export function togglePostDislike(id, active) {
   })
 }
 
-// === 新增：获取我的帖子 ===
+// === 新增：获取我的帖子（classId 可选，用于班级内容二级列表） ===
 export function getMyPosts(params) {
   return request({
     url: '/post/my',
     method: 'get',
     params
+  })
+}
+
+// 我的内容 → 班级内容：我发过动态的班级聚合
+export function getMyClassSummaries() {
+  return request({
+    url: '/post/my/classes',
+    method: 'get'
   })
 }
 
