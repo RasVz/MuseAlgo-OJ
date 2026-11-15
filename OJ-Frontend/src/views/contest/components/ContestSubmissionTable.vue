@@ -3,7 +3,8 @@
     v-loading="loading"
     :data="list"
     style="width: 100%"
-    :header-cell-style="{ background: 'var(--bg-input)', color: 'var(--text-regular)' }"
+    class="submission-table"
+    :header-cell-style="{ background: 'var(--bg-app)', color: 'var(--text-regular)', fontWeight: '600' }"
   >
     <el-table-column prop="id" label="#" width="90" align="center" />
 
@@ -116,6 +117,22 @@ const canViewCode = (row) => {
 </script>
 
 <style scoped>
+/* 工作台表格：表头 40px / 行 48px，首尾列 24px，其余单元格 12px */
+.submission-table { --el-table-border-color: var(--border-light); }
+.submission-table :deep(th.el-table__cell) {
+  height: var(--table-header-height);
+  padding: 0;
+}
+.submission-table :deep(td.el-table__cell) {
+  height: var(--table-row-height);
+  padding: 0;
+}
+.submission-table :deep(.el-table__cell .cell) { padding: 0 12px; }
+.submission-table :deep(th:first-child .cell),
+.submission-table :deep(td:first-child .cell) { padding-left: 24px; }
+.submission-table :deep(th:last-child .cell),
+.submission-table :deep(td:last-child .cell) { padding-right: 24px; }
+
 .user-cell {
   display: flex;
   align-items: center;

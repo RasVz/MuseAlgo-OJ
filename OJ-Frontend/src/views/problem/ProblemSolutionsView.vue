@@ -15,10 +15,13 @@
 
     <div class="solutions-toolbar">
       <span>{{ total }} 篇题解</span>
-      <el-radio-group v-model="sort" size="small" @change="fetchSolutions(1)">
-        <el-radio-button label="time">最新发布</el-radio-button>
-        <el-radio-button label="likes">最有帮助</el-radio-button>
-      </el-radio-group>
+      <WorkbenchSegmented
+        v-model="sort"
+        :options="sortOptions"
+        size="sm"
+        aria-label="题解排序"
+        @change="fetchSolutions(1)"
+      />
     </div>
 
     <main v-if="solutions.length" class="solution-list">
@@ -44,7 +47,7 @@
         <el-icon class="row-arrow"><ArrowRight /></el-icon>
       </article>
     </main>
-    <el-empty v-else-if="!loading" description="这道题还没有题解">
+    <el-empty v-else-if="!loading" class="solutions-empty" description="这道题还没有题解">
       <el-button type="primary" @click="writeSolution">写第一篇题解</el-button>
     </el-empty>
 
@@ -64,6 +67,7 @@ import { useRoute, useRouter } from 'vue-router'
 import dayjs from 'dayjs'
 import { ArrowLeft, ArrowRight, ChatLineRound, Document, EditPen } from '@element-plus/icons-vue'
 import NavbarContext from '@/components/NavbarContext.vue'
+import WorkbenchSegmented from '@/components/WorkbenchSegmented.vue'
 import { getProblemDetail } from '@/api/problem'
 import { getPostList } from '@/api/post'
 import { togglePostLike } from '@/api/post'
@@ -79,6 +83,10 @@ const solutions = ref([])
 const total = ref(0)
 const currentPage = ref(1)
 const pageSize = 10
+const sortOptions = [
+  { value: 'time', label: '最新发布' },
+  { value: 'likes', label: '最有帮助' }
+]
 const sort = ref('time')
 const userStore = useUserStore()
 
@@ -134,18 +142,18 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.solutions-view { max-width: 1040px; min-height: calc(100vh - 88px); margin: 0 auto; padding: 28px 24px 48px; }
+.solutions-view { min-height: calc(100vh - var(--app-header-height)); background: var(--bg-surface); }
 .navbar-title { display: flex; align-items: center; gap: 8px; color: var(--text-primary); font-size: 18px; font-weight: 650; }
-.solutions-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
+.solutions-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; padding: 20px 24px 16px; }
 .back-link { display: inline-flex; align-items: center; gap: 4px; margin: 0 0 12px; padding: 0; border: 0; background: none; color: var(--text-regular); cursor: pointer; font-size: 13px; }
 .back-link:hover { color: var(--accent-primary); }
 .solutions-header h1 { margin: 0; color: var(--text-primary); font-size: 24px; font-weight: 650; }
 .solutions-header p { margin: 7px 0 0; color: var(--text-regular); font-size: 14px; }
-.solutions-toolbar { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-top: 1px solid var(--border-light); border-bottom: 1px solid var(--border-light); color: var(--text-secondary); font-size: 13px; }
-.solution-list { margin-top: 6px; }
-.solution-row { display: flex; align-items: flex-start; gap: 14px; padding: 18px 12px; border-bottom: 1px solid var(--border-light); border-radius: var(--radius-sm); cursor: pointer; transition: background .15s; }
+.solutions-toolbar { display: flex; align-items: center; justify-content: space-between; height: 52px; padding: 0 24px; border-top: 1px solid var(--border-light); border-bottom: 1px solid var(--border-light); color: var(--text-secondary); font-size: 13px; }
+.solution-list { margin: 0; }
+.solution-row { display: flex; align-items: flex-start; gap: 14px; padding: 16px 24px; border-bottom: 1px solid var(--border-light); cursor: pointer; transition: background .15s; }
 .solution-row:hover { background: var(--bg-surface-hover); }
-.solution-icon { display: grid; flex: 0 0 36px; width: 36px; height: 36px; place-items: center; border: 1px solid #bfdbfe; border-radius: var(--radius-sm); background: var(--accent-primary-light); color: var(--accent-primary); }
+.solution-icon { display: grid; flex: 0 0 36px; width: 36px; height: 36px; place-items: center; border: 1px solid var(--border-filter-strip); border-radius: var(--radius-control); background: var(--bg-filter-strip); color: var(--text-filter-strip); }
 .solution-main { min-width: 0; flex: 1; }
 .solution-title-row { display: flex; min-width: 0; align-items: center; gap: 7px; }
 .solution-main h2 { overflow: hidden; flex: 0 1 auto; margin: 0; color: var(--text-primary); font-size: 15px; font-weight: 600; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }
@@ -157,6 +165,9 @@ onMounted(() => {
 .helpful-button:hover, .helpful-button.active { color: #e85d75; }
 .helpful-button.active .heart-icon { fill: currentColor; }
 .row-arrow { align-self: center; color: var(--text-placeholder); }
-.pagination { display: flex; justify-content: center; padding-top: 24px; }
-@media (max-width: 640px) { .solutions-view { padding: 20px 16px 36px; } .solutions-header { align-items: flex-start; flex-direction: column; } .solution-meta { gap: 6px 12px; } }
+.solutions-empty { padding: 48px 24px; }
+.pagination { display: flex; align-items: center; justify-content: center; height: 56px; }
+.pagination :deep(.el-pagination.is-background .btn-prev),
+.pagination :deep(.el-pagination.is-background .btn-next),
+.pagination :deep(.el-pagination.is-background .el-pager li) { border-radius: var(--radius-control); }
 </style>

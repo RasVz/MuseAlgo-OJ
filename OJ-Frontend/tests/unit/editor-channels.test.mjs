@@ -12,7 +12,9 @@ const baseForm = {
   content: '# 正文',
   problemId: null,
   privacy: 0,
-  relatedProblemIds: []
+  relatedProblemIds: [],
+  classId: null,
+  images: []
 }
 
 test('文章载荷：type=2、标签用逗号拼接、保留关联练习', () => {
@@ -60,6 +62,42 @@ test('标题、摘要与标签数量校验', () => {
   assert.match(buildPayload({ channel: 'article', form: { ...baseForm, summary: 'a'.repeat(257) } }).error, /256/)
   assert.match(buildPayload({ channel: 'article', form: { ...baseForm, tags: Array.from({ length: 9 }, (_, i) => `t${i}`) } }).error, /8/)
   assert.match(buildPayload({ channel: 'article', form: { ...baseForm, content: '   ' } }).error, /正文/)
+})
+
+test('班级载荷：锁定类型、分类、可见性并清空标签与题目关联', () => {
+  const { payload } = buildPayload({
+    channel: 'class',
+    form: {
+      ...baseForm,
+      classId: 12,
+      category: 'algorithm',
+      tags: ['标签'],
+      privacy: 1,
+      problemId: 9,
+      relatedProblemIds: [1],
+      images: ['a.png', 'b.png']
+    }
+  })
+  assert.equal(payload.type, 3)
+  assert.equal(payload.category, 'question')
+  assert.equal(payload.privacy, 0)
+  assert.equal(payload.tags, '')
+  assert.equal(payload.problemId, null)
+  assert.deepEqual(payload.relatedProblemIds, [])
+  assert.equal(payload.classId, 12)
+  assert.equal(payload.images, 'a.png,b.png')
+})
+
+test('班级载荷缺少有效 classId 时拒绝提交', () => {
+  assert.match(buildPayload({ channel: 'class', form: { ...baseForm } }).error, /班级信息/)
+  assert.match(buildPayload({ channel: 'class', form: { ...baseForm, classId: -1 } }).error, /班级信息/)
+})
+
+test('正文图片写入 images 且最多保留 9 条', () => {
+  const images = Array.from({ length: 10 }, (_, index) => `https://example.com/${index}.png`)
+  const { payload } = buildPayload({ channel: 'article', form: { ...baseForm, images } })
+  assert.equal(payload.images.split(',').length, 9)
+  assert.equal(payload.images.split(',')[0], 'https://example.com/0.png')
 })
 
 test('频道判定覆盖历史数据', () => {

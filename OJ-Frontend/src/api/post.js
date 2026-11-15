@@ -67,7 +67,7 @@ export function togglePostDislike(id, active) {
   })
 }
 
-// === 新增：获取我的帖子 ===
+// === 新增：获取我的帖子（classId 可选，用于班级内容二级列表） ===
 export function getMyPosts(params) {
   return request({
     url: '/post/my',
@@ -76,12 +76,20 @@ export function getMyPosts(params) {
   })
 }
 
-// === 新增：获取评论列表 ===
-export function getPostComments(id) {
+// 我的内容 → 班级内容：我发过动态的班级聚合
+export function getMyClassSummaries() {
   return request({
-    url: '/comment/list',
+    url: '/post/my/classes',
+    method: 'get'
+  })
+}
+
+// 顶层评论分页；records 含当前页根评论及其全部回复。
+export function getPostComments(id, params = {}) {
+  return request({
+    url: '/comment/page',
     method: 'get',
-    params: { entityId: id, entityType: 1 }
+    params: { entityId: id, entityType: 1, ...params }
   })
 }
 

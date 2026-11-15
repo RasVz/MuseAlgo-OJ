@@ -93,6 +93,25 @@ class JwtAuthenticationTokenFilterTest {
     }
 
     @Test
+    void expiredBanNoLongerBlocksExistingToken() throws Exception {
+        LoginUser expired = currentUser(9L, 3L);
+        expired.setIsBanned((byte) 1);
+        expired.setBanExpireTime(java.time.LocalDateTime.now().minusMinutes(1));
+        when(jwtUtils.extractUsername("expired-ban-access")).thenReturn("student");
+        when(userDetailsService.loadUserByUsername("student")).thenReturn(expired);
+        when(jwtUtils.validateAccessToken("expired-ban-access", "student")).thenReturn(true);
+        when(jwtUtils.hasCurrentCredentialVersion("expired-ban-access", 3L)).thenReturn(true);
+        when(jwtUtils.extractJti("expired-ban-access")).thenReturn("expired-ban-jti");
+        when(blacklistService.isRevoked("expired-ban-jti")).thenReturn(false);
+
+        boolean[] authenticatedDuringRequest = {false};
+        runFilter("expired-ban-access", (request, response) -> authenticatedDuringRequest[0] =
+                SecurityContextHolder.getContext().getAuthentication() != null);
+
+        assertTrue(authenticatedDuringRequest[0]);
+    }
+
+    @Test
     void acceptsScopedCoursewareCookieOnItsOutputPath() throws Exception {
         LoginUser current = currentUser(9L, 3L);
         when(jwtUtils.extractUsername("courseware-token")).thenReturn("student");

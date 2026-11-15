@@ -7,8 +7,10 @@ import com.musealgo.oj.common.exception.ForbiddenException;
 import com.musealgo.oj.common.security.AuthenticatedUser;
 import com.musealgo.oj.contest.entity.Contest;
 import com.musealgo.oj.contest.entity.ContestUser;
+import com.musealgo.oj.contest.entity.ProblemContest;
 import com.musealgo.oj.contest.entity.vo.ContestAnswerPaperVO;
 import com.musealgo.oj.contest.entity.vo.ContestProblemVO;
+import com.musealgo.oj.contest.entity.vo.VpAttemptVO;
 import com.musealgo.oj.contest.mapper.ProblemContestMapper;
 import com.musealgo.oj.contest.service.ContestService;
 import com.musealgo.oj.contest.service.ContestUserService;
@@ -16,6 +18,8 @@ import com.musealgo.oj.contest.service.ProblemContestService;
 import com.musealgo.oj.contest.service.VpAttemptService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -24,6 +28,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -156,6 +161,56 @@ class ContestAnswerApplicationServiceTest {
         assertFalse(paper.getCanSubmit());
         assertEquals("FULL", paper.getResultVisibility());
         assertEquals("ATTEMPTED", paper.getProblems().get(0).getMyStatus());
+    }
+
+    @ParameterizedTest
+    @CsvSource({"PENDING,FINISHED", "PENDING,SETTLING", "REJECTED,FINISHED", "REJECTED,SETTLING"})
+    void ownVpPermitsReadOnlyReviewRegardlessOfFormalRegistration(String registrationStatus, String vpStatus) {
+        login(10L);
+        contest("ACM", LocalDateTime.now().minusHours(3), LocalDateTime.now().minusHours(1), 1);
+        registration(registrationStatus);
+        VpAttemptVO vp = new VpAttemptVO();
+        vp.setStatus(vpStatus);
+        when(vpAttempts.getMy(1L, 10L)).thenReturn(vp);
+        when(problemContests.selectContestProblemList(1L, 1, 10L)).thenReturn(List.of(row(34L, "2")));
+
+        ContestAnswerPaperVO paper = service.paper(1L);
+        assertEquals("ENDED", paper.getStatus());
+        assertFalse(paper.getCanSubmit());
+        assertFalse(paper.getCanFinish());
+        assertEquals("FULL", paper.getResultVisibility());
+        assertEquals(1, paper.getProblems().size());
+    }
+
+    @ParameterizedTest
+    @CsvSource({"PENDING", "REJECTED"})
+    void unapprovedFormalRegistrationWithoutVpDoesNotPermitReview(String status) {
+        login(10L);
+        contest("ACM", LocalDateTime.now().minusHours(3), LocalDateTime.now().minusHours(1), 1);
+        registration(status);
+        assertThrows(BusinessException.class, () -> service.paper(1L));
+    }
+
+    @ParameterizedTest
+    @CsvSource(value = {"NONE,UNTOUCHED", "0,PENDING", "1,SOLVED", "2,ATTEMPTED"}, nullValues = "NONE")
+    void problemStatementSupportsUsersWithNoSubmission(String rawStatus, String expectedStatus) {
+        login(10L);
+        contest("ACM", LocalDateTime.now().minusHours(3), LocalDateTime.now().minusHours(1), 0);
+        registration("APPROVED");
+        ProblemContest relation = new ProblemContest().setContestId(1L).setProblemId(34L)
+                .setProblemOrder(1).setScore(100).setVisible(1).setIsDeleted(0);
+        when(problemContestMapper.selectOne(any(com.baomidou.mybatisplus.core.conditions.Wrapper.class)))
+                .thenReturn(relation);
+        when(statements.load(34L)).thenReturn(new ContestProblemStatementQuery.Statement(
+                34L, "题目 34", "题面", "输入", "输出", List.of(), 1000, 256));
+        when(problemContests.selectContestProblemList(1L, 1, 10L)).thenReturn(List.of(row(34L, rawStatus)));
+
+        var problem = service.problem(1L, 34L);
+
+        assertEquals(34L, problem.getProblemId());
+        assertEquals("题面", problem.getContent());
+        assertEquals(expectedStatus, problem.getMyStatus());
+        assertFalse(problem.getCanSubmit());
     }
 
     @Test

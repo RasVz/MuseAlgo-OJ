@@ -92,7 +92,7 @@ public class PracticeAnalyticsService {
 
     /**
      * 构建当前登录学生的练习分析。
-     * <p>未登录直接 403（与 WeaknessController 的鉴权写法一致），不做匿名降级。</p>
+     * <p>未登录直接 403（与个人中心其他分析接口的鉴权写法一致），不做匿名降级。</p>
      *
      * @param range all 或 30d，null/空串按 all 处理；其他值抛 IllegalArgumentException（→ HTTP code 400）
      */

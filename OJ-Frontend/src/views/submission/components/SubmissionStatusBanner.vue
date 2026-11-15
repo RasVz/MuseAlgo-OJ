@@ -1,6 +1,6 @@
 <template>
-  <div class="status-banner mb-4">
-    <div class="status-card" :class="getStatusClass(detail.status)">
+  <div class="status-banner" :class="getStatusClass(detail.status)">
+    <div class="status-inner">
       <div class="status-left">
         <el-icon class="status-icon" :size="24">
           <component :is="getStatusIcon(detail.status)" />
@@ -13,26 +13,18 @@
           <span class="label">分数</span>
           <span class="value score">{{ detail.score }}</span>
         </div>
-        <div class="divider"></div>
         <div class="metric-item">
           <span class="label">耗时</span>
           <span class="value">{{ detail.runTime }} ms</span>
         </div>
-        <div class="divider"></div>
         <div class="metric-item">
           <span class="label">内存</span>
           <span class="value">{{ (detail.runMemory / 1024).toFixed(2) }} MB</span>
         </div>
-        <div class="divider"></div>
         <div class="metric-item">
           <span class="label">语言</span>
           <span class="value">{{ detail.language }}</span>
         </div>
-      </div>
-      <div v-if="canReview" class="review-action">
-        <el-button type="primary" :loading="reviewing" @click="$emit('review')">
-          🤖 AI 复盘
-        </el-button>
       </div>
     </div>
   </div>
@@ -46,11 +38,8 @@ import {
 } from '@element-plus/icons-vue'
 
 defineProps({
-  detail: { type: Object, required: true },
-  canReview: { type: Boolean, default: false },
-  reviewing: { type: Boolean, default: false }
+  detail: { type: Object, required: true }
 })
-defineEmits(['review'])
 
 // 状态码与后端 JudgeStatus 枚举一一对应。这里带上英文原名（Accepted / Wrong Answer…），
 // 是为了让学生对照国际通用的术语，方便查资料。
@@ -81,17 +70,25 @@ const getStatusIcon = (s) => ({
 </script>
 
 <style scoped>
-.mb-4 { margin-bottom: 20px; }
-
-.status-card {
+.status-banner {
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
+  padding: 14px 0;
+  border-radius: 0;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-app);
+}
+
+/* 与下方 detail-container 同宽同内边距：状态文字对齐内容左缘，指标对齐内容右缘。 */
+.status-inner {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  padding: 20px 30px;
-  border-radius: 8px;
-  background: var(--bg-surface);
-  box-shadow: var(--shadow-md);
-  border-left: 6px solid var(--text-secondary);
+  gap: 12px 24px;
+  width: 100%;
+  max-width: 1000px;
+  padding: 0 24px;
+  box-sizing: border-box;
 }
 
 .status-left {
@@ -101,8 +98,8 @@ const getStatusIcon = (s) => ({
 }
 
 .status-text {
-  font-size: 24px;
-  font-weight: bold;
+  font-size: 20px;
+  font-weight: 700;
   color: var(--text-primary);
 }
 
@@ -112,17 +109,23 @@ const getStatusIcon = (s) => ({
 
 .status-metrics {
   display: flex;
-  align-items: center;
-  gap: 20px;
-  background: var(--bg-surface-soft);
-  padding: 8px 20px;
-  border-radius: 20px;
+  align-items: stretch;
+  margin-left: auto;
 }
 
+/* 四个信息各占一格，用浅竖线分隔；最后一格的右缘与下方内容右缘对齐。 */
 .metric-item {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
+  min-width: 104px;
+  padding: 2px 24px;
+  border-left: 1px solid var(--border-light);
+}
+
+.metric-item:last-child {
+  border-right: 1px solid var(--border-light);
 }
 
 .metric-item .label {
@@ -132,35 +135,24 @@ const getStatusIcon = (s) => ({
 }
 
 .metric-item .value {
-  font-family: Consolas, monospace;
+  font-family: var(--font-mono);
   font-weight: bold;
   font-size: 16px;
   color: var(--text-primary);
 }
 
-.divider {
-  width: 1px;
-  height: 24px;
-  background-color: var(--border-light);
-}
-
-.status-ac { border-left-color: var(--accent-success); background: var(--accent-success-light); }
+.status-ac { background: var(--accent-success-light); }
 .status-ac .status-text, .status-ac .status-icon { color: var(--accent-success); }
 .status-ac .value.score { color: var(--accent-success); }
-.status-wa { border-left-color: var(--accent-danger); background: var(--accent-danger-light); }
+.status-wa { background: var(--accent-danger-light); }
 .status-wa .status-text, .status-wa .status-icon { color: var(--accent-danger); }
 .status-wa .value.score { color: var(--accent-danger); }
-.status-ce { border-left-color: var(--accent-warning); background: var(--accent-warning-light); }
+.status-ce { background: var(--accent-warning-light); }
 .status-ce .status-text, .status-ce .status-icon { color: var(--accent-warning); }
-.status-tle { border-left-color: var(--accent-warning); background: var(--accent-warning-light); }
+.status-tle { background: var(--accent-warning-light); }
 .status-tle .status-text { color: var(--accent-warning); }
-.status-re { border-left-color: var(--accent-info); background: var(--accent-info-light); }
+.status-re { background: var(--accent-info-light); }
 .status-re .status-text { color: var(--accent-info); }
-
-.review-action {
-  margin-left: auto;
-  align-self: center;
-}
 
 /* 深色主题：上面几组浅色强调底在深色页面上会把 --text-primary 的数值压成浅底浅字，
    这里换成同色系低透明度深底；状态文字颜色（accent）保持不变。 */

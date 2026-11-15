@@ -42,7 +42,7 @@ class AiSseSecurityHttpTest {
     }
     @Test void authenticatedErrorStreamsHaveACompleteHttpBody() throws Exception {
         String token=jwt.generateAccessToken("sse-fixture",0L);
-        for(String path:List.of("/ai/ask/stream","/ai/review")) {
+        for(String path:List.of("/ai/ask/stream","/ai/diagnoses/1/generate")) {
             var response=request(path,token);assertEquals(200,response.statusCode());assertTrue(response.body().contains("event:app-error"));assertTrue(response.body().contains("AI_CONTEST_BLOCKED"));
         }
     }
@@ -51,8 +51,8 @@ class AiSseSecurityHttpTest {
     }
     @Test void originalRequestsRemainAuthenticated() throws Exception {
         int before=controller.calls.get();
-        for(String path:List.of("/ai/ask/stream","/ai/review","/ai/ask/stream/other"))assertEquals(401,request(path,null).statusCode());
-        assertEquals(401,request("/ai/review","invalid").statusCode());assertEquals(before,controller.calls.get());
+        for(String path:List.of("/ai/ask/stream","/ai/diagnoses/1/generate","/ai/ask/stream/other"))assertEquals(401,request(path,null).statusCode());
+        assertEquals(401,request("/ai/diagnoses/1/generate","invalid").statusCode());assertEquals(before,controller.calls.get());
     }
     @Configuration(proxyBeanMethods=false)
     @EnableAutoConfiguration(exclude=DataSourceAutoConfiguration.class)
@@ -68,7 +68,7 @@ class AiSseSecurityHttpTest {
     }
     @RestController static class Probe {
         final AtomicInteger calls=new AtomicInteger();
-        @PostMapping(value={"/ai/ask/stream","/ai/review"},produces=MediaType.TEXT_EVENT_STREAM_VALUE)
+        @PostMapping(value={"/ai/ask/stream","/ai/diagnoses/1/generate"},produces=MediaType.TEXT_EVENT_STREAM_VALUE)
         SseEmitter stream(@RequestParam(defaultValue="false") boolean done){
             calls.incrementAndGet();SseEmitter emitter=new SseEmitter(3000L);
             CompletableFuture.runAsync(()->{try{Thread.sleep(25);if(done)emitter.send(SseEmitter.event().name("done").data(""));else emitter.send(SseEmitter.event().name("app-error").data(Map.of("code",403,"errorCode","AI_CONTEST_BLOCKED"),MediaType.APPLICATION_JSON));emitter.complete();}catch(Exception failure){emitter.completeWithError(failure);}});

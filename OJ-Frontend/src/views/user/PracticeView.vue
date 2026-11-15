@@ -6,10 +6,13 @@
         <h1>练习分析</h1>
         <p>{{ periodLabel }}</p>
       </div>
-      <el-radio-group v-model="range" aria-label="练习统计时间范围" @change="loadData"
-        ><el-radio-button value="all">全部</el-radio-button
-        ><el-radio-button value="30d">近 30 天</el-radio-button></el-radio-group
-      >
+      <WorkbenchSegmented
+        v-model="range"
+        :options="rangeOptions"
+        size="sm"
+        aria-label="练习统计时间范围"
+        @change="loadData"
+      />
     </header>
     <el-alert v-if="errorMessage" type="error" show-icon :closable="false" title="练习分析加载失败"
       ><div class="error-content">
@@ -104,10 +107,12 @@
             <h2>题目记录</h2>
             <p>最近记录，最多 {{ data.listLimit || 50 }} 条 · 按时间倒序</p>
           </div>
-          <el-radio-group v-model="listType" size="small" aria-label="题目记录类型"
-            ><el-radio-button value="passed">已通过</el-radio-button
-            ><el-radio-button value="tried">尝试未通过</el-radio-button></el-radio-group
-          >
+          <WorkbenchSegmented
+            v-model="listType"
+            :options="recordOptions"
+            size="sm"
+            aria-label="题目记录类型"
+          />
         </div>
         <PracticeProblemTable
           v-if="currentRows.length"
@@ -141,6 +146,15 @@ import StatsOverview from '@/components/StatsOverview.vue'
 import SkillRadar from '@/components/SkillRadar.vue'
 import RatingHistogram from '@/components/RatingHistogram.vue'
 import PracticeProblemTable from './components/PracticeProblemTable.vue'
+import WorkbenchSegmented from '@/components/WorkbenchSegmented.vue'
+const rangeOptions = [
+  { value: 'all', label: '全部' },
+  { value: '30d', label: '近 30 天' }
+]
+const recordOptions = [
+  { value: 'passed', label: '已通过' },
+  { value: 'tried', label: '尝试未通过' }
+]
 const range = ref('all'),
   listType = ref('passed'),
   loading = ref(true),
@@ -218,10 +232,11 @@ onMounted(loadData)
 <style scoped>
 .practice-page {
   font-family: var(--font-family);
-  max-width: 1400px;
   min-width: 0;
-  margin: 0 auto;
-  padding: 4px 4px 28px;
+  min-height: calc(100vh - var(--app-header-height));
+  box-sizing: border-box;
+  background: var(--bg-surface);
+  padding: 20px 20px 28px;
 }
 .practice-page-header {
   display: flex;
@@ -257,7 +272,7 @@ onMounted(loadData)
 .analysis-card {
   padding: 22px 24px;
   border: 1px solid var(--border-light);
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   background: var(--bg-surface);
   min-width: 0;
 }

@@ -7,7 +7,6 @@
           v-if="isOwner" 
           type="primary" 
           icon="Edit" 
-          round 
           @click="handleGoToEdit"
         >
           编辑题单
@@ -18,7 +17,6 @@
           :type="isFavorite ? 'warning' : 'default'" 
           :icon="isFavorite ? 'StarFilled' : 'Star'" 
           plain 
-          round
           @click="handleFavorite"
         >
           {{ isFavorite ? '已收藏' : '收藏' }} {{ problemListDetail.favoriteCount || 0 }}
@@ -45,14 +43,11 @@
         </div>
         
         <div class="view-toggle">
-          <el-radio-group v-model="currentView" size="large">
-            <el-radio-button label="info">
-              <el-icon class="mr-1"><DataBoard /></el-icon> 概览
-            </el-radio-button>
-            <el-radio-button label="problems">
-              <el-icon class="mr-1"><List /></el-icon> 题目 ({{ problems.length }})
-            </el-radio-button>
-          </el-radio-group>
+          <WorkbenchSegmented
+            v-model="currentView"
+            :options="viewOptions"
+            aria-label="题单视图"
+          />
         </div>
       </div>
 
@@ -81,12 +76,13 @@ import { showApiError } from '@/utils/errorFeedback'
 // 题单详情页（公开浏览视图）：概览与题目列表两个视图切换，支持收藏。
 // 「我已完成多少题」是本页最想传达的信息，所以完成数在拉题目时顺带统计，
 // 而不是让用户自己数——概览的环形进度条直接用它。
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/userStore'
 import { ElMessage } from 'element-plus'
 import { DataBoard, List } from '@element-plus/icons-vue'
 import NavBarContext from '@/components/NavbarContext.vue'
+import WorkbenchSegmented from '@/components/WorkbenchSegmented.vue'
 import { getProblemListDetail, getListProblems } from '@/api/problemList'
 
 import { addFavorite, removeFavorite, checkFavorite } from '@/api/favorite'
@@ -104,7 +100,11 @@ const problems = ref([])
 const loading = ref(false)
 const isOwner = ref(false) 
 const isFavorite = ref(false)
-const currentView = ref('info') 
+const currentView = ref('info')
+const viewOptions = computed(() => [
+  { value: 'info', label: '概览', icon: DataBoard },
+  { value: 'problems', label: `题目 (${problems.value.length})`, icon: List }
+]) 
 
 // 收藏体系用 targetType 区分目标种类：2=题单、1=题目。同一个收藏表靠这两个字段区分。
 const TARGET_TYPE_LIST = 2
@@ -250,8 +250,8 @@ onMounted(() => { fetchDetail() })
 
 <style scoped>
 .problem-list-detail {
-  min-height: calc(100vh - 60px);
-  background-color: var(--bg-app);
+  min-height: calc(100vh - var(--app-header-height));
+  background-color: var(--bg-surface);
   padding-bottom: 40px;
 }
 
@@ -262,6 +262,7 @@ onMounted(() => { fetchDetail() })
 }
 
 .context-buttons { display: flex; align-items: center; gap: 12px; }
+.context-buttons :deep(.el-button) { border-radius: var(--radius-control); }
 
 /* Header & Toggle */
 .page-header {
@@ -272,8 +273,8 @@ onMounted(() => { fetchDetail() })
 }
 
 .list-title {
-  font-size: 28px;
-  font-weight: 700;
+  font-size: 24px;
+  font-weight: 600;
   color: var(--text-primary);
   margin: 0 0 8px 0;
 }
@@ -284,8 +285,10 @@ onMounted(() => { fetchDetail() })
 
 /* Problems View Card */
 .table-card {
-  border-radius: 8px;
-  border: none;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border-light);
+  box-shadow: none;
+  overflow: hidden;
 }
 
 .table-card :deep(.el-card__body) {

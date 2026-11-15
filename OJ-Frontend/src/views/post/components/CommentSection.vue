@@ -33,6 +33,9 @@
         :comment="item" 
         @reply="onReceiveReply"
       />
+      <div v-if="hasMore" class="load-more">
+        <el-button :loading="loading" @click="$emit('load-more')">加载更多评论</el-button>
+      </div>
     </div>
   </div>
 </template>
@@ -50,9 +53,15 @@ import { useRoute } from 'vue-router'
 import { addComment } from '@/api/post'
 import { useUserStore } from '@/stores/userStore'
 
-const props = defineProps(['comments'])
+const props = defineProps({
+  comments: { type: Array, default: () => [] },
+  hasMore: { type: Boolean, default: false },
+  loading: { type: Boolean, default: false },
+  // 1-动态/文章评论，3-题解评论；与后端 CommentTargetService 的约定一致。
+  entityType: { type: Number, default: 1 }
+})
 const userStore = useUserStore()
-const emit = defineEmits(['refresh'])
+const emit = defineEmits(['refresh', 'load-more'])
 
 const route = useRoute()
 const content = ref('')
@@ -106,11 +115,11 @@ const submit = async () => {
     return
   }
   
-  // entityType=1 表示评论目标是帖子（评论体系也服务于班级动态等场景）。
+  // 题解帖传 3，其余动态/文章传 1；分区由父组件根据帖子类型决定。
   const dto = {
     entityId: route.params.id,
     content: content.value,
-    entityType: 1
+    entityType: props.entityType
   }
 
   // parentId 指向根评论（楼中楼只做一层），replyCommentId 记录被回复的那条
@@ -148,17 +157,19 @@ const submit = async () => {
 .count { font-size: 14px; color: var(--text-secondary); font-weight: 400; }
 
 .input-area {
-  display: flex; gap: 14px; margin-bottom: 36px;
-  background: var(--bg-app); border-radius: var(--radius-md);
+  display: flex; gap: 14px; margin-bottom: 32px;
+  background: var(--bg-surface); border-radius: var(--radius-card);
   padding: 18px; border: 1px solid var(--border-light);
 }
 .input-box { flex: 1; display: flex; flex-direction: column; }
 .input-box :deep(.el-textarea__inner) {
-  border-radius: var(--radius-sm); border-color: var(--border-light);
+  border-radius: var(--radius-control); border-color: var(--border-light);
   background: var(--bg-surface); resize: none; font-size: 14px;
 }
 .input-box :deep(.el-textarea__inner):focus { border-color: var(--accent-primary); }
 .input-footer { margin-top: 10px; display: flex; justify-content: flex-end; align-items: center; gap: 14px; }
+.input-footer :deep(.el-button) { border-radius: var(--radius-control); }
 .cancel-reply { font-size: 13px; color: var(--text-secondary); cursor: pointer; }
 .cancel-reply:hover { color: var(--accent-danger); }
+.load-more { display: flex; justify-content: center; padding: 16px 0 4px; }
 </style>

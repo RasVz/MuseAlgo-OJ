@@ -27,7 +27,8 @@
         :key="activeObjective.id"
         :question="activeObjective"
         :model-value="answers[activeObjective.id]"
-        :disabled="!canSubmit"
+        :disabled="!canSubmit || finishing"
+        :save-status-text="objectiveSaveError || (savingObjective ? '正在保存答案…' : '客观题修改会自动保存')"
         :index="objectiveQuestions.indexOf(activeObjective)"
         @update:model-value="answers[activeObjective.id] = $event"
       />
@@ -67,7 +68,8 @@ import { createScopedDraftAdapter } from '@/composables/useScopedCodeDraft'
 import {
   buildExamAnswerState,
   buildExamAnswersPayload,
-  createExamDraftStorage
+  createExamDraftStorage,
+  serializeQuestionAnswer
 } from '@/utils/examPaper'
 import { getResultMessage, isResultSuccess, unwrapResultData } from '@/utils/response'
 import { showApiError } from '@/utils/errorFeedback'
@@ -88,11 +90,14 @@ const codingProblem = ref(null)
 const codingLoading = ref(false)
 const submitting = ref(false)
 const savingObjective = ref(false)
+const objectiveSaveError = ref('')
 const finishing = ref(false)
 const resultsByProblem = reactive({})
 const draftAdapter = ref(null)
 
 let objectiveDraft = null
+let objectiveSavePromise = null
+let savedObjectiveFingerprint = ''
 let refreshTimer = null
 let submissionPollTimer = null
 let codingGeneration = 0
@@ -112,11 +117,11 @@ const navItems = computed(() => {
   const objective = objectiveQuestions.value.map((question, index) => {
     const value = answers[question.id]
     const answered = Array.isArray(value) ? value.length > 0 : String(value ?? '').trim().length > 0
-    const status = question.correct === true
-      ? 'CORRECT'
-      : question.correct === false
-        ? 'INCORRECT'
-        : answered ? 'ANSWERED' : 'UNTOUCHED'
+    const currentResult = answered && serializeQuestionAnswer(question, value)
+      === serializeQuestionAnswer(question, question.myAnswer)
+    const status = !answered ? 'UNTOUCHED'
+      : currentResult && question.correct === true ? 'CORRECT'
+        : currentResult && question.correct === false ? 'INCORRECT' : 'ANSWERED'
     return {
       key: `objective-${question.id}`,
       label: `客观题 ${index + 1}`,
@@ -167,20 +172,19 @@ const bootstrap = async () => {
       })
     }
     attemptId.value = id
-    draftAdapter.value = createScopedDraftAdapter(`paper:${id}`)
+    draftAdapter.value = createScopedDraftAdapter(`paper:${id}`, userStore.userId ?? userStore.userInfo?.id)
     const userId = userStore.userId ?? userStore.userInfo?.id
     objectiveDraft = userId
       ? createExamDraftStorage({ userId, paperId: paperId.value, attemptId: id })
       : null
     await refreshPaper(true)
     if (!paper.value) throw new Error('试卷加载失败')
-    if (paper.value.status !== 'RUNNING') {
-      if (paper.value.status === 'TIMEOUT') {
-        try { await finishExamAttempt(paperId.value) } catch { /* 结果页会展示最终状态 */ }
-      }
-      await router.replace({ name: 'TrainingDetail', params: { id: paperId.value } })
+    if (paper.value.status === 'SUBMITTED') {
+      await returnToResult()
       return
     }
+    if (paper.value.status === 'TIMEOUT' || remaining.value <= 0) await finishPaper(true)
+    if (finished) return
     startRefreshLoop()
   } catch (caught) {
     error.value = caught.message || '试卷加载失败'
@@ -210,6 +214,10 @@ const restoreAnswers = () => {
     questionId: question.id,
     answer: question.myAnswer ?? ''
   }))
+  savedObjectiveFingerprint = JSON.stringify(buildExamAnswersPayload(questions, buildExamAnswerState({
+    questions,
+    attempt: { answers: serverAnswers }
+  })))
   const state = buildExamAnswerState({
     questions,
     attempt: { answers: serverAnswers },
@@ -256,32 +264,54 @@ const selectQuestion = key => {
   loadActiveCoding()
 }
 
-const saveObjective = async () => {
-  if (!objectiveQuestions.value.length || savingObjective.value) return
-  savingObjective.value = true
-  try {
-    const payload = buildExamAnswersPayload(objectiveQuestions.value, answers)
-    const res = await submitExamPaperAnswers(paperId.value, payload)
-    if (!isResultSuccess(res)) {
-      ElMessage.error(getResultMessage(res, '客观题提交失败'))
-      return
+// 串行保存快照；请求进行中又修改时，继续保存最新值，交卷也等待同一条保存链。
+const persistObjectiveAnswers = () => {
+  if (objectiveSavePromise) return objectiveSavePromise
+  if (!objectiveQuestions.value.length) return Promise.resolve(true)
+  objectiveSavePromise = Promise.resolve().then(async () => {
+    savingObjective.value = true
+    while (!disposed && !finished) {
+      const payload = buildExamAnswersPayload(objectiveQuestions.value, answers)
+      const fingerprint = JSON.stringify(payload)
+      if (fingerprint === savedObjectiveFingerprint) return true
+      if (!canSubmit.value) return false
+      const res = await submitExamPaperAnswers(paperId.value, payload, { silent: true })
+      if (!isResultSuccess(res)) throw new Error(getResultMessage(res, '答案保存失败'))
+      savedObjectiveFingerprint = fingerprint
+      const list = unwrapResultData(res) || []
+      for (const result of list) {
+        const question = objectiveQuestions.value.find(item => String(item.id) === String(result.questionId))
+        if (!question || serializeQuestionAnswer(question, answers[question.id]) !== result.myAnswer) continue
+        question.correct = result.correct
+        question.gainedScore = result.score
+        question.myAnswer = result.myAnswer
+      }
     }
-    const list = unwrapResultData(res) || []
-    for (const result of list) {
-      const question = objectiveQuestions.value.find(item => String(item.id) === String(result.questionId))
-      if (!question) continue
-      question.correct = result.correct
-      question.gainedScore = result.score
-      question.myAnswer = result.myAnswer
-    }
-    objectiveDraft?.save(answers)
-    const score = list.reduce((sum, item) => sum + (item.score ?? 0), 0)
-    ElMessage.success(`客观题已判分，本次得分 ${score}`)
-    await refreshPaper(false)
-  } catch (caught) {
-    showApiError(caught, '客观题提交失败')
-  } finally {
+    return false
+  }).finally(() => {
     savingObjective.value = false
+    objectiveSavePromise = null
+  })
+  return objectiveSavePromise
+}
+
+const saveObjective = async ({ quiet = false } = {}) => {
+  try {
+    const saved = await persistObjectiveAnswers()
+    if (!saved) {
+      objectiveSaveError.value = '作答已截止，未保存的修改仅保留在本机草稿'
+      return false
+    }
+    objectiveSaveError.value = ''
+    if (!quiet) {
+      const score = objectiveQuestions.value.reduce((sum, question) => sum + (question.gainedScore ?? 0), 0)
+      ElMessage.success(`客观题已判分，本次得分 ${score}`)
+    }
+    return true
+  } catch {
+    objectiveSaveError.value = '答案保存失败，请重试；本机草稿已保留'
+    if (!quiet) ElMessage.error(objectiveSaveError.value)
+    return false
   }
 }
 
@@ -352,16 +382,15 @@ const pollSubmission = (submissionId, problemId) => {
 }
 
 const refreshLoopTick = async () => {
-  if (disposed || finished) return
+  if (disposed || finished || finishing.value) return
   try {
-    if (paper.value?.status === 'RUNNING' && remaining.value <= 0) {
-      // 判题未完成时先继续刷新，避免每 15 秒重复弹「仍在判题」提示。
-      if (!paper.value?.gradingPending) await finishPaper(true)
-      return
-    }
+    // 到时仍刷新，服务端可能仍在等待判题，也可能已由定时任务结算。
     await refreshPaper(false)
+    if (canSubmit.value && objectiveSaveError.value) await saveObjective({ quiet: true })
+    if (paper.value?.status === 'SUBMITTED') await returnToResult()
+    else if (paper.value?.status === 'TIMEOUT' || remaining.value <= 0) await finishPaper(true)
   } catch {
-    // 定时刷新失败不打断作答；用户可以继续写代码或手动刷新。
+    // 定时刷新失败保留草稿，下一次继续同步。
   }
 }
 
@@ -371,7 +400,7 @@ const startRefreshLoop = () => {
 }
 
 const finishPaper = async (auto = false) => {
-  if (finishing.value) return
+  if (finishing.value || finished || disposed) return
   if (!auto) {
     try {
       await ElMessageBox.confirm('交卷后不能继续修改，确定交卷？', '交卷确认', {
@@ -383,25 +412,42 @@ const finishPaper = async (auto = false) => {
       return
     }
   }
-  if (paper.value?.gradingPending) {
+  if (!auto && paper.value?.gradingPending) {
     ElMessage.warning('编程题仍在判题，请等待判题完成后再交卷')
     return
   }
+  if (finishing.value || finished) return
   finishing.value = true
   try {
-    const res = await finishExamAttempt(paperId.value)
+    const saved = await saveObjective({ quiet: true })
+    if (!saved && !auto) {
+      ElMessage.error(objectiveSaveError.value)
+      return
+    }
+    const res = await finishExamAttempt(paperId.value, { silent: auto })
     if (!isResultSuccess(res)) {
       ElMessage.error(getResultMessage(res, '交卷失败'))
       return
     }
-    finished = true
+    const attempt = unwrapResultData(res)
+    if (!['TIMEOUT', 'SUBMITTED'].includes(attempt?.status)) return
+    if (!saved) ElMessage.warning(objectiveSaveError.value)
     ElMessage.success(auto ? '时间到，已自动交卷' : '交卷成功')
-    await router.replace({ name: 'TrainingDetail', params: { id: paperId.value } })
+    await returnToResult()
   } catch (caught) {
+    const code = caught?.errorCode || caught?.response?.data?.errorCode
+    if (auto && code === 'EXAM_ATTEMPT_GRADING_PENDING') return
     showApiError(caught, '交卷失败')
   } finally {
     finishing.value = false
   }
+}
+
+const returnToResult = async () => {
+  finished = true
+  const currentFingerprint = JSON.stringify(buildExamAnswersPayload(objectiveQuestions.value, answers))
+  if (currentFingerprint === savedObjectiveFingerprint) objectiveDraft?.clear()
+  await router.replace({ name: 'TrainingDetail', params: { id: paperId.value } })
 }
 
 const backToPaper = () => {
@@ -430,7 +476,10 @@ watch(() => route.query.q, () => {
 })
 
 watch(answers, () => {
-  if (paper.value?.status === 'RUNNING') objectiveDraft?.save(answers)
+  if (paper.value?.status === 'RUNNING') {
+    objectiveDraft?.save(answers)
+    if (canSubmit.value && !finishing.value) void saveObjective({ quiet: true })
+  }
 }, { deep: true })
 
 onMounted(() => {
@@ -450,7 +499,7 @@ onBeforeUnmount(() => {
 onBeforeRouteLeave(async () => {
   if (finished || paper.value?.status !== 'RUNNING') return true
   try {
-    await ElMessageBox.confirm('离开后计时继续，确定返回答题卡？', '离开答题页', {
+    await ElMessageBox.confirm('离开后计时继续，确定返回试卷详情？', '离开答题页', {
       type: 'warning',
       confirmButtonText: '确定离开',
       cancelButtonText: '继续作答'
@@ -464,7 +513,7 @@ onBeforeRouteLeave(async () => {
 
 <style scoped>
 .exam-paper-answer {
-  height: 100%;
+  height: 100dvh;
   min-height: 0;
   overflow: hidden;
 }

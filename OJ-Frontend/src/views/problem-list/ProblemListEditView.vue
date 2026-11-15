@@ -16,7 +16,6 @@
           v-if="isCreateMode"
           type="primary"
           icon="Check"
-          round
           @click="handleSaveTitle"
           :loading="saving"
         >
@@ -25,7 +24,6 @@
         <el-button
           v-if="isHomeworkMode && !isCreateMode"
           type="primary"
-          round
           @click="handleSaveHomeworkSettings"
           :loading="savingHomework"
         >
@@ -66,7 +64,7 @@
         :is-homework-mode="isHomeworkMode"
       />
 
-      <el-card shadow="always" class="main-card">
+      <el-card shadow="never" class="main-card">
           
         <el-tabs v-model="activeTab" class="custom-tabs">
           <el-tab-pane name="info" :disabled="isCreateMode">
@@ -363,47 +361,60 @@ const handleDelete = () => {
 
 <style scoped>
 .edit-view-container {
-  min-height: calc(100vh - 60px);
-  background-color: var(--bg-app);
+  min-height: calc(100vh - var(--app-header-height));
+  background-color: var(--bg-surface);
   padding-bottom: 40px;
 }
 .content-wrapper { max-width: 1100px; margin: 0 auto; padding: 20px; }
 
 .nav-return-btn { display: flex; align-items: center; height: 100%; }
-.back-btn-text { font-size: 15px; color: var(--text-regular); transition: all 0.3s; }
-.back-btn-text:hover { color: var(--accent-primary); transform: translateX(-2px); }
+.back-btn-text { font-size: 15px; color: var(--text-regular); transition: color 0.2s; }
+.back-btn-text:hover { color: var(--accent-primary); }
 .back-text { margin-left: 6px; font-weight: 500; }
-.nav-divider { margin: 0 12px; height: 16px; border-color: var(--border-base); }
-.nav-mode-tag { font-size: 13px; color: var(--text-secondary); background: var(--bg-surface-hover); padding: 2px 8px; border-radius: 4px; }
+.nav-divider { margin: 0 12px; height: 16px; border-color: var(--border-light); }
+.nav-mode-tag { font-size: 13px; color: var(--text-secondary); background: var(--bg-app); padding: 2px 8px; border-radius: var(--radius-tag); }
 
 .nav-actions { margin-left: auto; display: flex; gap: 12px; align-items: center;}
+.nav-actions :deep(.el-button) { border-radius: var(--radius-control); }
 
 .page-header { margin-bottom: 24px; margin-top: 10px; }
 .header-content { display: flex; flex-direction: column; gap: 8px; }
 
 .title-row { display: flex; align-items: center; gap: 12px; }
-.title-prefix { color: var(--text-secondary); font-weight: 400; font-size: 20px; flex-shrink: 0; }
+.title-prefix { color: var(--text-secondary); font-weight: 400; font-size: 18px; flex-shrink: 0; }
 
-.title-text { font-size: 20px; font-weight: bold; color: var(--text-primary); }
+.title-text { font-size: 20px; font-weight: 600; color: var(--text-primary); }
 
-.title-input { max-width: 400px; font-size: 18px; font-weight: bold; }
+.title-input { max-width: 400px; font-size: 16px; font-weight: 600; }
 .title-input :deep(.el-input__wrapper) {
   box-shadow: none !important;
   border-bottom: 2px solid var(--border-base);
   border-radius: 0;
   padding: 0 4px;
   background: transparent;
-  transition: border-color 0.3s;
+  transition: border-color 0.2s;
 }
 .title-input :deep(.el-input__wrapper.is-focus) {
   border-bottom-color: var(--accent-primary);
 }
 
-.sub-tips { font-size: 14px; color: var(--text-secondary); }
+.sub-tips { font-size: 13px; color: var(--text-secondary); }
 
-.main-card { border-radius: 12px; border: none; box-shadow: var(--shadow-md) !important; }
+.main-card {
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border-light);
+  box-shadow: none;
+}
 .custom-tabs :deep(.el-tabs__nav-wrap::after) { height: 1px; background-color: var(--border-light); }
-.custom-tabs :deep(.el-tabs__item) { font-size: 16px; padding: 0 24px; height: 50px; line-height: 50px; }
+.custom-tabs :deep(.el-tabs__item) {
+  font-size: 15px;
+  padding: 0 20px;
+  height: 48px;
+  line-height: 48px;
+  color: var(--text-regular);
+}
+.custom-tabs :deep(.el-tabs__item:hover) { color: var(--accent-primary); }
+.custom-tabs :deep(.el-tabs__item.is-active) { color: var(--text-primary); font-weight: 600; }
 .custom-tab-label { display: flex; align-items: center; gap: 6px; }
 
 .empty-state { padding: 60px 0; }

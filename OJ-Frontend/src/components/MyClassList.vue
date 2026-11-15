@@ -8,7 +8,7 @@
             <span class="count-tag">共 {{ total }} 个</span>
           </div>
           
-          <el-button type="primary" icon="Plus" round @click="joinDialogVisible = true">加入新班级</el-button>
+          <el-button type="primary" icon="Plus" @click="joinDialogVisible = true">加入新班级</el-button>
 
           <el-dialog v-model="joinDialogVisible" title="加入班级" style="top:12%" width="400px" append-to-body>
             <div style="text-align: center; margin: 20px 0;">
@@ -161,10 +161,10 @@ const enterClass = (classItem) => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  border-radius: 16px;
+  border-radius: var(--radius-card);
   border: 1px solid var(--border-light);
 }
-.main-card :deep(.el-card__header) { padding: 18px 20px; }
+.main-card :deep(.el-card__header) { padding: 16px 20px; }
 .main-card :deep(.el-card__body) {
   flex: 1;
   display: flex;
@@ -174,67 +174,39 @@ const enterClass = (classItem) => {
 }
 .card-header { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
 .header-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.title { margin: 0; font-size: 20px; line-height: 1.4; font-weight: 700; color: var(--text-primary); }
+.title { margin: 0; font-size: 18px; line-height: 1.4; font-weight: 700; color: var(--text-primary); }
 .count-tag { color: var(--text-secondary); font-size: 13px; white-space: nowrap; }
-.scroll-container { flex: 1; overflow-y: auto; padding: 20px; container-type: inline-size; }
+.scroll-container { flex: 1; overflow-y: auto; padding: 16px; container-type: inline-size; }
 .class-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
+  gap: 16px;
   align-content: start;
 }
 .class-card {
-  --book-ink: #284b70;
-  --book-cover: #edf3f9;
   box-sizing: border-box;
-  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
   height: 144px;
-  padding: 12px 14px 10px 22px;
+  padding: 14px 16px;
   text-align: left;
   font: inherit;
   color: var(--text-primary);
-  background: var(--book-cover);
-  border: 1px solid color-mix(in srgb, var(--book-ink) 15%, var(--border-light));
-  border-radius: 5px 13px 13px 5px;
-  box-shadow: 0 3px 0 var(--bg-surface), 0 4px 0 var(--border-light), 0 7px 10px rgba(36, 60, 100, 0.06);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-card);
   cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition: border-color 0.2s ease;
 }
-.class-card:nth-child(3n+2) { --book-ink: #32685f; --book-cover: #edf5f1; }
-.class-card:nth-child(3n) { --book-ink: #79633f; --book-cover: #f7f3e9; }
-:global(.dark .class-view-container .class-card) { --book-ink: #a8c6e5; --book-cover: #253448; }
-:global(.dark .class-view-container .class-card:nth-child(3n+2)) { --book-ink: #a5d4c7; --book-cover: #243b36; }
-:global(.dark .class-view-container .class-card:nth-child(3n)) { --book-ink: #dcc9a3; --book-cover: #3c3528; }
-.class-card::before {
-  content: '';
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 7px;
-  background: var(--book-ink);
-  border-radius: 4px 0 0 4px;
-  opacity: 0.72;
-  pointer-events: none;
-}
-.class-card::after {
-  content: '';
-  position: absolute;
-  inset: 0 auto 0 10px;
-  width: 1px;
-  background: var(--book-ink);
-  opacity: 0.13;
-  pointer-events: none;
-}
-.class-card:hover { transform: translateY(-3px); box-shadow: 0 3px 0 var(--bg-surface), 0 4px 0 var(--border-light), var(--shadow-md); }
-.class-card:focus-visible { outline: 3px solid var(--el-color-primary); outline-offset: 3px; }
-.book-emblem { display: flex; align-items: center; gap: 5px; margin-bottom: 8px; color: var(--book-ink); font-size: 11px; line-height: 1.4; letter-spacing: 0.06em; }
+.class-card:hover { border-color: var(--border-hover); }
+.class-card:focus-visible { outline: 3px solid var(--accent-primary); outline-offset: 3px; }
+.book-emblem { display: flex; align-items: center; gap: 5px; margin-bottom: 8px; color: var(--text-secondary); font-size: 11px; line-height: 1.4; letter-spacing: 0.06em; }
 .book-emblem .el-icon { font-size: 14px; }
 .class-name {
-  font-family: 'Songti SC', 'STSong', 'Noto Serif CJK SC', serif;
-  font-size: 16px;
-  font-weight: 700;
+  font-family: var(--font-family);
+  font-size: 15px;
+  font-weight: 600;
   line-height: 1.4;
   letter-spacing: 0.02em;
   overflow-wrap: anywhere;
@@ -252,16 +224,23 @@ const enterClass = (classItem) => {
   gap: 8px;
   margin-top: auto;
   padding-top: 8px;
-  color: var(--book-ink);
+  color: var(--accent-primary);
   font-size: 12px;
   line-height: 1.4;
 }
 .pagination-box {
   flex-shrink: 0;
-  padding: 16px 24px;
+  height: 56px;
+  padding: 0 24px;
   border-top: 1px solid var(--border-light);
   display: flex;
   justify-content: center;
+  align-items: center;
+}
+.pagination-box :deep(.el-pagination.is-background .btn-prev),
+.pagination-box :deep(.el-pagination.is-background .btn-next),
+.pagination-box :deep(.el-pagination.is-background .el-pager li) {
+  border-radius: var(--radius-control);
 }
 @container (max-width: 759px) {
   .class-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -281,7 +260,7 @@ const enterClass = (classItem) => {
   .class-name { font-size: 15px; }
   .class-school { margin-top: 4px; }
   .class-entry { padding-top: 6px; }
-  .pagination-box { padding: 12px 24px; }
+  .pagination-box { padding: 0 24px; }
 }
 @media (max-width: 1050px) {
   .class-view-container, .main-card { height: auto; }

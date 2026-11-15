@@ -18,7 +18,6 @@
             <el-button 
               type="primary" 
               plain 
-              round 
               size="small" 
               icon="Setting"
               @click="handleGoAdmin(classId)"
@@ -160,12 +159,15 @@ onMounted(() => {
 }
 .transparent-menu :deep(.el-menu-item:hover) {
   color: var(--accent-primary);
-  background-color: var(--accent-primary-light) !important;
+  background-color: transparent !important;
 }
 
+/* 班级子页面自行管理内部滚动，页面外壳白底贴边、不加内边距。 */
 .class-content {
   flex: 1;
-  padding-right: 10px;
-  overflow-y: auto;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  background: var(--bg-surface);
 }
 </style>

@@ -1,5 +1,5 @@
 <template>
-  <el-card shadow="hover" class="home-card accepted-rank-card">
+  <el-card shadow="never" class="home-card accepted-rank-card">
     <template #header>
       <div class="card-header">
         <span class="header-title"><el-icon><Trophy /></el-icon> Rating 榜 (Top 10)</span>
@@ -95,7 +95,7 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.home-card { border-radius: 12px; border: none; height: 100%; display: flex; flex-direction: column; }
+.home-card { border-radius: var(--radius-card); border: 1px solid var(--border-light); height: 100%; display: flex; flex-direction: column; }
 .card-header { display: flex; justify-content: space-between; align-items: center; }
 .header-title { font-weight: bold; font-size: 16px; display: flex; align-items: center; gap: 6px; }
 

@@ -106,12 +106,27 @@ class PostContentRulesTest {
     void updateKeepsClassContentTypeAndCategory() {
         Post previous = post(3, "question");
         previous.setClassId(9L);
+        previous.setPrivacy(0);
 
         Post patch = post(2, "algorithm");
+        patch.setPrivacy(1);
         PostContentRules.applyForUpdate(patch, previous);
 
         assertEquals(3, patch.getType());
         assertEquals("question", patch.getCategory());
+        assertEquals(0, patch.getPrivacy());
+    }
+
+    @Test
+    void classPublishForcesQuestionCategoryAndPublicVisibility() {
+        Post post = post(2, "algorithm");
+        post.setClassId(9L);
+        post.setPrivacy(1);
+        PostContentRules.applyForPublish(post);
+
+        assertEquals(3, post.getType());
+        assertEquals("question", post.getCategory());
+        assertEquals(0, post.getPrivacy());
     }
 
     @Test

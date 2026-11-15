@@ -212,9 +212,17 @@ const triggerReset = () => {
 
 .label {
   font-weight: bold;
-  color: var(--text-regular);
+  color: var(--text-primary);
   font-size: 14px;
   white-space: nowrap;
+}
+
+.filter-item :deep(.el-input__wrapper),
+.filter-item :deep(.el-select__wrapper) {
+  border-radius: var(--radius-control);
+}
+.action-group :deep(.el-button) {
+  border-radius: var(--radius-control);
 }
 
 .divider {
@@ -251,7 +259,7 @@ const triggerReset = () => {
   width: 100%;
   text-align: center;
   color: var(--text-on-accent);
-  border-radius: 4px;       /* 圆角 */
+  border-radius: var(--radius-tag);
   font-weight: 600;         /* 字体加粗 */
   font-size: 13px;
   line-height: 28px;        /* 高度 */

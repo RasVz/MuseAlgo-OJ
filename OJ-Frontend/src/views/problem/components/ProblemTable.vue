@@ -8,7 +8,6 @@
           size="small"
           :type="layout.showTags ? 'primary' : ''" 
           :plain="!layout.showTags"
-          round
           @click="layout.showTags = !layout.showTags"
         >
           显示算法标签
@@ -18,7 +17,6 @@
           size="small"
           :type="layout.showDifficulty ? 'primary' : ''" 
           :plain="!layout.showDifficulty"
-          round
           @click="layout.showDifficulty = !layout.showDifficulty"
         >
           显示题目难度
@@ -30,9 +28,8 @@
       <el-table 
         :data="data" 
         style="width: 100%" 
-        stripe 
         v-loading="loading" 
-        :header-cell-style="{ background: 'var(--el-fill-color-light)', color: 'var(--text-regular)', fontWeight: 'bold' }"
+        :header-cell-style="{ background: 'var(--bg-app)', color: 'var(--text-regular)', fontWeight: '600' }"
         @row-click="handleRowClick"
         class="problem-table-pointer"
       >
@@ -175,40 +172,70 @@ const handleRowClick = (row) => router.push({ name: 'ProblemDetail', params: { i
   flex-direction: column;
   height: 100%;
   background: var(--bg-surface);
-  border-radius: 8px;
+  border-radius: 0;
 }
 
 /* 工具栏样式 */
 .table-toolbar {
-  padding: 10px 20px;
+  height: 52px;
+  flex: none;
+  padding: 0 24px;
   border-bottom: 1px solid var(--border-light);
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 .total-text { font-size: 13px; color: var(--text-secondary); }
-.toolbar-actions { display: flex; gap: 10px; }
+.toolbar-actions { display: flex; align-items: center; gap: 8px; }
+.toolbar-actions :deep(.el-button) {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: var(--radius-control);
+  font-size: 12px;
+}
 
 /* 表格主体样式 */
 .table-body {
   flex: 1;
+  min-height: 0;
   overflow: auto; /* 允许表格内部滚动 */
 }
 
 /* 翻页样式 */
 .pagination-footer {
-  padding: 10px 0;
+  height: 56px;
+  flex: none;
+  padding: 0;
   display: flex;
   justify-content: center;
   align-items: center;
   border-top: 1px solid var(--border-light);
 }
+.pagination-footer :deep(.el-pagination.is-background .btn-prev),
+.pagination-footer :deep(.el-pagination.is-background .btn-next),
+.pagination-footer :deep(.el-pagination.is-background .el-pager li) {
+  border-radius: var(--radius-control);
+}
 
-.problem-table-pointer { cursor: pointer; }
-.title-text { font-weight: 600; font-size: 15px; color: var(--text-primary); transition: color 0.2s; }
+.problem-table-pointer { cursor: pointer; --el-table-border-color: var(--border-light); }
+.problem-table-pointer :deep(th.el-table__cell) {
+  height: var(--table-header-height);
+  padding: 0;
+}
+.problem-table-pointer :deep(td.el-table__cell) {
+  height: var(--table-row-height);
+  padding: 0;
+}
+.problem-table-pointer :deep(.el-table__cell .cell) { padding: 0 12px; }
+.problem-table-pointer :deep(th:first-child .cell),
+.problem-table-pointer :deep(td:first-child .cell) { padding-left: 24px; }
+.problem-table-pointer :deep(th:last-child .cell),
+.problem-table-pointer :deep(td:last-child .cell) { padding-right: 24px; }
+
+.title-text { font-weight: 600; font-size: 14px; color: var(--text-primary); transition: color 0.2s; }
 .problem-table-pointer :deep(.el-table__row:hover) .title-text { color: var(--accent-primary); }
 .tags-box { display: flex; gap: 4px; flex-wrap: wrap; }
-.m-tag { border-radius: 4px; font-size: 11px; background-color: var(--el-fill-color-light); border: none; color: var(--text-regular); }
+.m-tag { border-radius: var(--radius-tag); font-size: 11px; background-color: var(--el-fill-color-light); border: none; color: var(--text-regular); }
 .diff { font-weight: 600; }
 .diff small { margin-left: 4px; color: var(--text-secondary); font-family: var(--font-mono); font-size: 11px; font-weight: 500; }
 </style>

@@ -25,7 +25,7 @@
 - 普通答疑按当前用户和题目隔离，历史保留最近十轮、24 小时有效；请求时还会按预算去掉过长的旧轮次。
 - 关闭抽屉、切题或停止生成会取消请求；已收到片段标为未完成，未完成回复不作为完整回答写入服务端历史。
 - 清空同时作用于服务端。若本题仍有请求处理，会提示稍后重试，不显示清空成功。
-- 复盘分析指定历史提交。追问携带的前次分析仅作为用户提供的参考文字，过长时节选，不代表当前编辑器草稿。
+- 复盘分析指定历史提交。新入口先确认，再创建后台任务并进入独立阅读页；离开页面仍继续生成。右上角用户菜单的「复盘记录」可查看本人历史，通知仍通过常驻铃铛进入。追问由服务端读取本人同一提交的父记录作为参考，不代表当前编辑器草稿。详见[复盘记录](AI-REVIEW-RECORDS.md)。
 
 ## 默认诊断与临时样例
 
@@ -67,7 +67,12 @@
 | 接口 | 用途 |
 |---|---|
 | `POST /ai/ask/stream` | 答疑：problemId、studentQuestion、studentCode、language、可选 contestId 与 helpMode |
-| `POST /ai/review` | 复盘：submissionId、可选 studentQuestion/previousAnswer/contestId 与 helpMode |
+| `POST /ai/reviews` | 创建持久复盘任务：requestId、submissionId、relationType、可选 studentQuestion/parentReviewId 与 helpMode |
+| `GET /ai/reviews` | 本人复盘记录列表，支持分页、题目/提交/状态过滤 |
+| `GET /ai/reviews/{id}` | 本人复盘详情，包含正文及可读取的原提交代码 |
+| `GET /ai/reviews/{id}/status` | 轻量任务状态，不返回正文 |
+| `POST /ai/reviews/{id}/cancel` | 明确停止生成；页面离开不调用此接口 |
+| `POST /ai/review` | 旧流式调用兼容入口；新页面全部使用持久任务接口 |
 | `GET /ai/conversation?problemId=…` | 恢复当前用户本题历史 |
 | `DELETE /ai/conversation?problemId=…` | 清空当前用户本题历史 |
 | `GET /ai/quota` | 当前用户剩余额度、豁免状态及重置时间 |

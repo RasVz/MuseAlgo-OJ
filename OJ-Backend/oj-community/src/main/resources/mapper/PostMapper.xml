@@ -45,20 +45,48 @@
           多标签之间是 AND（必须同时具备），单个标签内部是 OR（两种格式任一）。
         -->
         SELECT
-        post.*,
+        post.id,
+        post.title,
+        COALESCE(NULLIF(post.summary, ''), LEFT(post.content, 200)) AS summary,
+        post.author_id,
+        post.problem_id,
+        post.contest_id,
+        post.class_id,
+        post.type,
+        post.category,
+        post.tags,
+        post.images,
+        post.is_top,
+        post.is_essence,
+        post.is_official,
+        post.views,
+        post.likes,
+        post.dislikes,
+        post.favorites,
+        post.comment_count,
+        post.score,
+        post.create_time,
         user.nickname AS authorName,
         user.avatar AS authorAvatar
         FROM post
         LEFT JOIN user ON post.author_id = user.id
         <where>
             post.privacy = 0
+            AND (post.is_deleted = 0 OR post.is_deleted IS NULL)
 
             <if test="authorId != null">
                 AND post.author_id = #{authorId}
             </if>
 
+            <!--
+              班级动态是班级内部内容流：只认 type=3，且不叠加
+              contest/problem/category 条件——班级帖可以带题目或比赛关联，
+              这些条件会让它们从班级列表消失。type/types 参数在该场景不参与，
+              避免调用方用公开列表的筛选口径收窄班级内容。
+            -->
             <if test="classId != null">
                 AND post.class_id = #{classId}
+                AND post.type = 3
             </if>
             <if test="classId == null">AND post.class_id IS NULL</if>
 
@@ -73,7 +101,7 @@
             </if>
 
             <!-- 题解(type=1)通常关联题目；按内容类型浏览时不应被 problem_id IS NULL 排除。 -->
-            <if test="contestId == null and problemId == null
+            <if test="classId == null and contestId == null and problemId == null
                     and (type == null or type != 1)
                     and (types == null or !types.contains(1))">
                 AND post.contest_id IS NULL
@@ -83,17 +111,19 @@
                 </if>
             </if>
 
-            <choose>
-                <when test="type != null">
-                    AND post.type = #{type}
-                </when>
-                <when test="types != null and types.size() > 0">
-                    AND post.type IN
-                    <foreach collection="types" item="item" open="(" separator="," close=")">
-                        #{item}
-                    </foreach>
-                </when>
-            </choose>
+            <if test="classId == null">
+                <choose>
+                    <when test="type != null">
+                        AND post.type = #{type}
+                    </when>
+                    <when test="types != null and types.size() > 0">
+                        AND post.type IN
+                        <foreach collection="types" item="item" open="(" separator="," close=")">
+                            #{item}
+                        </foreach>
+                    </when>
+                </choose>
+            </if>
             <if test="keyword != null and keyword != ''">
                 AND (post.title LIKE CONCAT('%', #{keyword}, '%') OR post.summary LIKE CONCAT('%', #{keyword}, '%'))
             </if>
@@ -108,6 +138,14 @@
         </where>
 
         <choose>
+            <!--
+              班级动态按发布时间倒序，且不引用 is_top/is_official/is_essence：
+              治理接口可以置顶某条班级帖，但班级列表的稳定顺序不应被它打断。
+              id DESC 是同一秒内多条动态的分页兜底，保证翻页不重不漏。
+            -->
+            <when test="classId != null">
+                ORDER BY post.create_time DESC, post.id DESC
+            </when>
             <when test="sort == 'hot'">
                 ORDER BY post.is_top DESC, post.score DESC, post.views DESC, post.create_time DESC
             </when>
@@ -130,9 +168,8 @@
             post.type = 2     —— 只推文章/题解，动态出现在这里没有意义
             post.privacy = 0 —— 隐私内容不进公开展示
             post.is_deleted = 0 —— 软删的帖子必须排除
-          注意 selectPostVOList 里只过滤了 privacy，没过滤 is_deleted，
-          两者口径不一致是有原因的：列表页的 is_deleted 由上层/拦截器统一处理，
-          而这里是独立 SQL，没有那层保障。这处显式过滤不能「顺手统一」掉。
+          列表 SQL（selectPostVOList）同样显式过滤 is_deleted；不要依赖上层拦截器，
+          Post 实体没有逻辑删除注解，删除语义由各入口自行保证。
 
           helpful 与 likes 两种排序共用同一套「精选优先」前缀，
           差别只在 likes DESC 是否参与——精选权重高于点赞数。
@@ -167,6 +204,27 @@
         FROM post
                  LEFT JOIN user ON post.author_id = user.id
         WHERE post.id = #{id}
+    </select>
+
+    <!--
+      我的班级内容一级列表：只按「我发过动态的班级」聚合。
+      不依赖 /class/my——那里只含学生身份，教师任课班级会漏，
+      且会把从未发过动态的班级也列出来。
+    -->
+    <select id="selectMyClassSummaries" resultType="com.musealgo.oj.community.entity.vo.MyClassPostSummaryVO">
+        SELECT
+            p.class_id AS classId,
+            c.name AS className,
+            COUNT(*) AS postCount,
+            MAX(p.create_time) AS lastPostTime
+        FROM post p
+        JOIN class c ON c.id = p.class_id
+        WHERE p.author_id = #{authorId}
+          AND p.class_id IS NOT NULL
+          AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
+          AND p.privacy = 0
+        GROUP BY p.class_id, c.name
+        ORDER BY lastPostTime DESC
     </select>
 
     <!-- 定时任务：按更新时间游标扫描近期活跃帖子，供热度分重算与索引重建 -->

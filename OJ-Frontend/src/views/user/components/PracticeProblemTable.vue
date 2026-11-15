@@ -40,7 +40,8 @@ const problemLink = (row) => ({ name: 'ProblemDetail', params: { id: row.problem
   grid-template-columns: minmax(0, 1fr) 150px 150px 80px;
   align-items: center;
   gap: 20px;
-  padding: 16px 0;
+  min-height: var(--table-row-height);
+  padding: 0 12px;
   border-bottom: 1px solid var(--border-light);
   font-size: 13px;
 }
@@ -48,10 +49,11 @@ const problemLink = (row) => ({ name: 'ProblemDetail', params: { id: row.problem
   border: 0;
 }
 .problem-head {
+  min-height: var(--table-header-height);
+  background: var(--bg-app);
   color: var(--text-secondary);
   font-size: 12px;
-  padding-top: 4px;
-  padding-bottom: 12px;
+  padding: 0 12px;
 }
 .problem-name {
   color: var(--text-primary);

@@ -1,11 +1,11 @@
 <template>
-  <el-card shadow="hover" class="side-card homework-card">
+  <el-card shadow="never" class="side-card homework-card">
     <div class="mini-stat-box">
       <div class="stat-left">
         <div class="stat-label">待完成作业</div>
         <div class="stat-number" :class="{ 'text-danger': totalTodo > 0 }">{{ totalTodo }}</div>
       </div>
-      <el-button v-if="totalTodo > 0" type="danger" plain size="small" round @click="$router.push({ name: 'MyHomework' })">
+      <el-button v-if="totalTodo > 0" type="danger" plain size="small" @click="$router.push({ name: 'MyHomework' })">
         去完成
       </el-button>
       <div v-else class="stat-tip">暂无待办 🎉</div>
@@ -60,13 +60,15 @@ onMounted(() => {
 
 <style scoped>
 .side-card {
-  border-radius: 16px;
-  border: none;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border-light);
 }
 
 .homework-card :deep(.el-card__body) {
   padding: 15px 20px;
 }
+
+.homework-card :deep(.el-button) { border-radius: var(--radius-control); }
 
 .mini-stat-box { display: flex; justify-content: space-between; align-items: center; }
 .stat-left { display: flex; align-items: baseline; gap: 10px; }

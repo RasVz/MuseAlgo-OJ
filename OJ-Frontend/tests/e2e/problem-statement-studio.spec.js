@@ -245,6 +245,13 @@ test('就地编辑、差异大弹窗、另存为新版本', async ({ page }) => 
 
   const contentBlock = page.locator('.st-block').nth(1)
   await contentBlock.getByRole('button', { name: '编辑' }).click()
+  await expect(contentBlock.getByRole('button', { name: '取消' })).toBeVisible()
+  await contentBlock.locator('textarea').fill('误改的内容，应当被取消撤回')
+  await contentBlock.getByRole('button', { name: '取消' }).click()
+  await expect(contentBlock.locator('textarea')).toHaveCount(0)
+  await expect(contentBlock.locator('.st-render')).toContainText('给定一个整数数组')
+
+  await contentBlock.getByRole('button', { name: '编辑' }).click()
   await contentBlock.locator('textarea').fill(`${CONTENT_V3}\n\n补充：数组元素互不相同。`)
   await contentBlock.getByRole('button', { name: '完成' }).click()
 

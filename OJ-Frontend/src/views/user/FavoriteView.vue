@@ -241,22 +241,23 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.favorite-view { max-width: 980px; margin: 0 auto; padding: 28px 24px 48px; }
+.favorite-view { min-height: calc(100vh - var(--app-header-height)); box-sizing: border-box; background: var(--bg-surface); padding: 20px 20px 48px; }
+.favorite-header, .favorite-tabs, .favorite-content { max-width: 980px; margin-left: auto; margin-right: auto; }
 .navbar-title { display: flex; align-items: center; gap: 8px; color: var(--text-primary); font-size: 18px; font-weight: 650; }
 
 .favorite-header { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 24px; }
 .favorite-header h1 { margin: 0; color: var(--text-primary); font-size: 24px; font-weight: 650; letter-spacing: 0; }
 .favorite-header p { margin: 7px 0 0; color: var(--text-regular); font-size: 14px; }
 
-.favorite-tabs { display: flex; gap: 6px; padding-bottom: 14px; border-bottom: 1px solid var(--border-light); }
-.favorite-tab { display: inline-flex; align-items: center; gap: 7px; min-height: 36px; padding: 0 12px; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; color: var(--text-regular); cursor: pointer; font-size: 14px; transition: background .15s, color .15s, border-color .15s; }
-.favorite-tab:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
-.favorite-tab.active { background: var(--accent-primary-light); border-color: var(--el-color-primary-light-7); color: var(--accent-primary-dark); font-weight: 600; }
-.tab-count { min-width: 20px; padding: 0 5px; border-radius: 10px; background: var(--bg-app); color: var(--text-secondary); font-size: 12px; line-height: 20px; text-align: center; }
-.favorite-tab.active .tab-count { background: var(--el-color-primary-light-8); color: var(--accent-primary-dark); }
+.favorite-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border-light); }
+.favorite-tab { display: inline-flex; align-items: center; gap: 7px; min-height: 44px; padding: 0 12px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--text-regular); cursor: pointer; font-size: 14px; transition: color .15s, border-color .15s; }
+.favorite-tab:hover { background: transparent; color: var(--text-primary); }
+.favorite-tab.active { background: transparent; border-color: var(--accent-primary); color: var(--accent-primary); font-weight: 600; }
+.tab-count { min-width: 20px; padding: 0 5px; border-radius: var(--radius-tag); background: var(--bg-app); color: var(--text-secondary); font-size: 12px; line-height: 20px; text-align: center; }
+.favorite-tab.active .tab-count { background: color-mix(in srgb, var(--accent-primary) 12%, transparent); color: var(--accent-primary); }
 
 .favorite-content { min-height: 280px; padding-top: 12px; }
-.favorite-entry { position: relative; display: flex; align-items: flex-start; gap: 14px; padding: 18px 46px 18px 14px; border-bottom: 1px solid var(--border-light); border-radius: var(--radius-sm); cursor: pointer; outline: none; transition: background .15s; }
+.favorite-entry { position: relative; display: flex; align-items: flex-start; gap: 14px; padding: 18px 46px 18px 14px; border-bottom: 1px solid var(--border-light); border-radius: 0; cursor: pointer; outline: none; transition: background .15s; }
 .favorite-entry:hover, .favorite-entry:focus-visible { background: var(--bg-surface-hover); }
 .favorite-entry:focus-visible, .problem-list-card:focus-visible { box-shadow: 0 0 0 2px var(--accent-primary-light); }
 .entry-icon { flex: 0 0 36px; display: grid; width: 36px; height: 36px; place-items: center; border: 1px solid; border-radius: var(--radius-sm); font-size: 17px; }
@@ -275,8 +276,8 @@ onMounted(() => {
 .unfavorite-button:hover { background: var(--accent-danger-light); color: var(--accent-danger); }
 
 .problem-list-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; padding-top: 4px; }
-.problem-list-card { position: relative; min-height: 178px; padding: 18px; border: 1px solid var(--border-light); border-radius: var(--radius-sm); background: var(--bg-surface); cursor: pointer; outline: none; transition: border-color .15s, box-shadow .15s, transform .15s; }
-.problem-list-card:hover { border-color: var(--border-hover); box-shadow: var(--shadow-sm); transform: translateY(-1px); }
+.problem-list-card { position: relative; min-height: 178px; padding: 18px; border: 1px solid var(--border-light); border-radius: var(--radius-card); background: var(--bg-surface); cursor: pointer; outline: none; transition: border-color .15s; }
+.problem-list-card:hover { border-color: var(--border-hover); }
 .problem-card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
 .problem-card-top .unfavorite-button { position: static; }
 .problem-list-card > p { display: -webkit-box; overflow: hidden; min-height: 40px; margin: 7px 0 14px; color: var(--text-regular); font-size: 13px; line-height: 1.55; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }

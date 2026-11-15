@@ -28,7 +28,8 @@
             :data="contestList"
             height="100%"
             style="width: 100%"
-            stripe
+            :header-cell-style="{ background: 'var(--bg-app)', color: 'var(--text-regular)', fontWeight: '600' }"
+            class="contest-table"
             @sort-change="handleSortChange"
           >
             <el-table-column prop="id" label="ID" width="100" align="center" sortable="custom" />
@@ -251,18 +252,31 @@ watch(
 <style scoped>
 /* 整个容器撑满剩余高度 */
 .class-contest-container {
-  padding: 10px;
-  height: calc(100vh - var(--app-header-height) - 60px); /* 视口高度减去顶栏及页面外层占用 */
+  padding: 0;
+  height: 100%;
   display: flex;
   flex-direction: column;
+  background: var(--bg-surface);
 }
 
 /* 卡片使用 Flex 布局撑满 */
 .box-card {
-  border-radius: 10px;
+  border-radius: 0;
+  border: none;
   flex: 1;
   display: flex;
   flex-direction: column;
+  background: var(--bg-surface);
+}
+
+/* 工具栏高度与题库一致 */
+:deep(.el-card__header) {
+  height: 52px;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--border-light);
+  box-sizing: border-box;
 }
 
 /* 重写 el-card 的 body 样式，让它成为 Flex 容器 */
@@ -271,28 +285,32 @@ watch(
   display: flex;
   flex-direction: column;
   overflow: hidden; /* 防止内容撑破卡片 */
-  padding: 15px 20px 20px 20px;
+  padding: 0;
 }
 
 .card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  width: 100%;
 }
 
 .header-title {
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 700;
   color: var(--text-primary);
 }
 
 .search-input {
   width: 280px;
 }
+.search-input :deep(.el-input__wrapper) {
+  border-radius: var(--radius-control);
+}
 
 .contest-title {
   font-weight: 500;
-  font-size: 15px;
+  font-size: 14px;
 }
 
 /* 将包裹器设为 Flex 列 */
@@ -311,13 +329,26 @@ watch(
 
 /* 分页容器固定且居中 */
 .pagination-container {
-  margin-top: 15px;
+  height: 56px;
+  margin-top: 0;
   display: flex;
   justify-content: center;
+  align-items: center;
+  border-top: 1px solid var(--border-light);
   flex-shrink: 0; /* 防止被压缩 */
 }
-
-:deep(.el-table .el-table__row) {
-  height: 51.5px; /* 每页 10 行刚好填满容器；改每页条数时须同步调整此值 */
+.pagination-container :deep(.el-pagination.is-background .btn-prev),
+.pagination-container :deep(.el-pagination.is-background .btn-next),
+.pagination-container :deep(.el-pagination.is-background .el-pager li) {
+  border-radius: var(--radius-control);
 }
+
+.contest-table { --el-table-border-color: var(--border-light); }
+.contest-table :deep(th.el-table__cell) { height: var(--table-header-height); padding: 0; }
+.contest-table :deep(td.el-table__cell) { height: var(--table-row-height); padding: 0; }
+.contest-table :deep(.el-table__cell .cell) { padding: 0 12px; }
+.contest-table :deep(th:first-child .cell),
+.contest-table :deep(td:first-child .cell) { padding-left: 24px; }
+.contest-table :deep(th:last-child .cell),
+.contest-table :deep(td:last-child .cell) { padding-right: 24px; }
 </style>

@@ -23,15 +23,15 @@ defineEmits(['open'])
 </script>
 
 <style scoped>
-.related-problems-section { margin: 26px 0; padding: 18px 20px; border: 1px solid var(--el-color-primary-light-8); border-radius: var(--radius-md); background: var(--bg-surface); }
+.related-problems-section { margin: 26px 0; padding: 16px 20px; border: 1px solid var(--border-light); border-radius: var(--radius-card); background: var(--bg-surface); }
 
 .related-section-heading { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; color: var(--accent-primary); font-size: 15px; font-weight: 650; }
 .related-section-heading span:last-child { color: var(--text-secondary); font-size: 12px; font-weight: 400; }
 
 .related-problem-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 
-.related-problem-item { display: flex; min-width: 0; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--border-light); border-radius: var(--radius-sm); background: var(--bg-surface); color: var(--text-primary); cursor: pointer; text-align: left; transition: border-color .15s, transform .15s; }
-.related-problem-item:hover { border-color: var(--accent-primary); transform: translateY(-1px); }
+.related-problem-item { display: flex; min-width: 0; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--border-light); border-radius: var(--radius-control); background: var(--bg-surface); color: var(--text-primary); cursor: pointer; text-align: left; transition: border-color .15s; }
+.related-problem-item:hover { border-color: var(--accent-primary); }
 
 .related-problem-id { flex: 0 0 auto; color: var(--accent-primary); font-size: 12px; font-weight: 600; }
 .related-problem-title { overflow: hidden; flex: 1; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }

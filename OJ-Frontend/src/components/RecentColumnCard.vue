@@ -1,5 +1,5 @@
 <template>
-  <el-card shadow="hover" class="home-card discuss-card">
+  <el-card shadow="never" class="home-card discuss-card">
     <template #header>
       <div class="card-header">
         <span class="header-title"><el-icon><ChatDotRound /></el-icon> 近期讨论</span>
@@ -28,11 +28,13 @@
 
 <script setup>
 /**
- * 首页「近期讨论」卡片：按热度展示社区最新讨论，点击进入帖子详情。
+ * 首页「近期讨论」卡片：按热度展示社区最新内容，点击进入帖子详情。
  *
- * 数据来自 getPostList，卡片只关心「非公告的热门帖子」，
+ * 数据来自 getPostList，卡片只关心「非公告的社区内容」，
  * 因此做了一次前端过滤：公告由首页另一张卡片专门展示，
  * 混进讨论列表会让「近期讨论」名不副实。
+ * 内容类型与社区「全部推荐」一致（动态 / 题解 / 文章），
+ * 不能只传 type=0：那会漏掉题解与文章，公告占掉名额后会只剩一两条。
  * 多取 20 条再过滤截 6 条，是因为公告在列表里占比不固定，
  * 只取 6 条的话公告一多就会出现空卡片。
  */
@@ -67,10 +69,10 @@ const getPreviewText = (item) => {
 const fetchData = async () => {
   loading.value = true
   try {
-    // sort: 'hot' 按热度取近期讨论（而非最新），type: 0 表示不限分类
+    // sort: 'hot' 按热度取近期内容；types 与社区「全部推荐」一致，包含动态、题解与文章。
     // 请求失败时列表保持为空，卡片自然呈现为空白容器；
     // 首页多卡片并存，不为单张卡片弹错误提示。
-    const res = await getPostList({ currentPage: 1, pageSize: 20, sort: 'hot', type: 0 })
+    const res = await getPostList({ currentPage: 1, pageSize: 20, sort: 'hot', types: '0,1,2,3' })
     if (res.code === 200) {
       const records = res.data.records || []
       // 先剔除公告再截断：顺序不能反，否则公告会占掉前 6 个名额把卡片挤成空列表
@@ -86,7 +88,7 @@ onMounted(fetchData)
 </script>
 
 <style scoped>
-.home-card { border-radius: 12px; border: none; height: 100%; display: flex; flex-direction: column; }
+.home-card { border-radius: var(--radius-card); border: 1px solid var(--border-light); height: 100%; display: flex; flex-direction: column; }
 :deep(.el-card__body) { flex: 1; display: flex; flex-direction: column; padding: 0 12px 0 12px; }
 .card-header { display: flex; justify-content: space-between; align-items: center; }
 .header-title { font-weight: bold; font-size: 16px; display: flex; align-items: center; gap: 6px; }

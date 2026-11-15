@@ -33,13 +33,19 @@ public class TutorMessageBuilder {
     public TutorMessageBuilder(PromptRegistry prompts) {
         this.prompts = prompts;
         prompts.register("tutor-open", 1, SYSTEM);
-        prompts.register("review-open", 1, SYSTEM + "\n本轮分析指定历史提交；AC 可检查正确性依据和优化，失败状态仅作为诊断线索。\n");
     }
 
     public JSONArray build(String key, Context problem, String code, String language, String question,
                            AiTeachingOptions.HelpMode helpMode, String reference, List<JSONObject> history,
                            String assessment) {
-        String system = prompts.render(key);
+        return build(key, problem, code, language, question, helpMode, reference, history, assessment, null);
+    }
+
+    /** 后台任务使用受理时冻结的完整 system 文本（含模式规则）。 */
+    public JSONArray build(String key, Context problem, String code, String language, String question,
+                           AiTeachingOptions.HelpMode helpMode, String reference, List<JSONObject> history,
+                           String assessment, String frozenSystem) {
+        String system = frozenSystem == null ? prompts.render(key) : frozenSystem;
         if (system == null || system.isBlank()) system = SYSTEM;
         requireSize(system, 8000, "教学模板过长");
         String statement = "【题目】" + problem.title() + "\n" + problem.statement();
@@ -56,7 +62,7 @@ public class TutorMessageBuilder {
             case FULL_SOLUTION -> "完整讲解：当轮提供完整推导、正确性说明、复杂度与参考实现。";
         };
         JSONArray messages = new JSONArray();
-        messages.add(message("system", system + rules));
+        messages.add(message("system", frozenSystem == null ? system + rules : frozenSystem));
         int used = 0;
         int first = history.size();
         // 只取完整 user/assistant 轮次，避免截成孤立回答。

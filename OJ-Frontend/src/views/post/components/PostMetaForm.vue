@@ -117,12 +117,19 @@ let resolveTagsReady
 const tagsReady = new Promise((resolve) => { resolveTagsReady = resolve })
 
 onMounted(async () => {
-  const res = await getPostTagOptions()
-  if (res.code === 200) {
-    tagGroups.value = Object.entries(res.data || {}).map(([label, options]) => ({ label, options }))
-    allowedTags.value = new Set(tagGroups.value.flatMap(group => group.options))
+  try {
+    const res = await getPostTagOptions()
+    if (res.code === 200) {
+      tagGroups.value = Object.entries(res.data || {}).map(([label, options]) => ({ label, options }))
+      allowedTags.value = new Set(tagGroups.value.flatMap(group => group.options))
+    }
+  } catch {
+    // 标签接口失败只影响可选标签，不应阻塞编辑页打开。
+    ElMessage.warning('标签加载失败，仍可继续编辑')
+  } finally {
+    // tagsReady 必须无论成功失败都释放，否则编辑页会永久等待。
+    resolveTagsReady()
   }
-  resolveTagsReady()
 })
 
 const removeSelectedTag = (tag) => {
@@ -153,7 +160,7 @@ defineExpose({ allowedTags, tagsReady })
   gap: 8px;
   padding: 8px 12px;
   border: 1px solid var(--border-base);
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   cursor: pointer;
   transition: border-color 0.2s;
   min-height: 38px;

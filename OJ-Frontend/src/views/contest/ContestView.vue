@@ -7,8 +7,8 @@
       </div>
     </NavbarContext>
 
-    <el-card shadow="never" class="main-card">
-      <div class="table-scroll-area">
+    <div class="table-surface">
+      <div class="table-body">
         <ContestTable
           :list="list"
           :loading="loading"
@@ -26,7 +26,7 @@
           @current-change="fetchData"
         />
       </div>
-    </el-card>
+    </div>
 
     <el-dialog
       v-model="registerDialogVisible"
@@ -167,8 +167,9 @@ onMounted(() => fetchData())
 .contest-page-container {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - var(--app-header-height) - 40px);
+  height: calc(100vh - var(--app-header-height));
   overflow: hidden;
+  background: var(--bg-surface);
 }
 
 .navbar-title {
@@ -180,39 +181,35 @@ onMounted(() => fetchData())
 }
 .mr-2 { margin-right: 8px; }
 
-.main-card {
+/* 白底贴边：页面外壳自己承担结构，不再套 el-card 圆角/阴影边框 */
+.table-surface {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  border-radius: 12px;
-  border: none;
-  min-height: 0;
+  background: var(--bg-surface);
 }
 
-.main-card :deep(.el-card__body) {
+.table-body {
   flex: 1;
-  display: flex;
-  flex-direction: column;
-  padding: 0;
   min-height: 0;
   overflow: hidden;
-}
-
-.table-scroll-area {
-  flex: 1;
-  overflow: hidden;
-  padding: 0;
 }
 
 .pagination-footer {
-  height: 50px;
-  flex-shrink: 0;
+  height: 56px;
+  flex: none;
   display: flex;
   justify-content: center;
   align-items: center;
+  padding: 0;
   border-top: 1px solid var(--border-light);
   background: var(--bg-surface);
-  z-index: 5;
+}
+.pagination-footer :deep(.el-pagination.is-background .btn-prev),
+.pagination-footer :deep(.el-pagination.is-background .btn-next),
+.pagination-footer :deep(.el-pagination.is-background .el-pager li) {
+  border-radius: var(--radius-control);
 }
 
 .dialog-header h3 {

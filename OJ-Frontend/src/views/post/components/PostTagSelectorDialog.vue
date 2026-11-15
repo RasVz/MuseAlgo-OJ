@@ -131,14 +131,14 @@ const handleConfirm = () => {
 .tag-dialog-tabs { flex: 1; }
 .tag-dialog-tabs :deep(.el-tabs__header) { margin: 0; }
 .tag-search-input { width: 210px; }
-.tag-selected-area { display: flex; flex-direction: column; gap: 8px; margin: 16px 0 4px; padding: 12px; border-radius: 6px; background: var(--bg-surface-hover); color: var(--text-regular); font-size: 13px; }
+.tag-selected-area { display: flex; flex-direction: column; gap: 8px; margin: 16px 0 4px; padding: 12px; border-radius: var(--radius-control); background: var(--bg-surface-hover); color: var(--text-regular); font-size: 13px; }
 .tag-selected-list { display: flex; flex-wrap: wrap; gap: 8px; }
 .selected-tag { border: 0; background: var(--accent-primary-dark); }
 .tag-options-scroll { min-height: 235px; max-height: 390px; overflow-y: auto; padding-right: 4px; }
 .tag-option-group { margin-bottom: 22px; }
 .tag-option-group h3 { margin: 0 0 10px; color: var(--text-primary); font-size: 14px; }
 .tag-option-list { display: flex; flex-wrap: wrap; gap: 9px; }
-.tag-option { padding: 6px 12px; border: 1px solid transparent; border-radius: 4px; background: var(--el-fill-color-light); color: var(--text-regular); cursor: pointer; font-size: 13px; transition: all .18s; }
+.tag-option { padding: 6px 12px; border: 1px solid transparent; border-radius: var(--radius-tag); background: var(--el-fill-color-light); color: var(--text-regular); cursor: pointer; font-size: 13px; transition: all .18s; }
 .tag-option:hover { background: var(--bg-surface-hover); }
 .tag-option.active { border-color: var(--accent-primary-dark); background: var(--accent-primary-dark); color: var(--text-on-accent); font-weight: 500; }
 </style>

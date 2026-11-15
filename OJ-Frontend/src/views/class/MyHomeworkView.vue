@@ -86,7 +86,7 @@ onMounted(() => fetchData())
 .homework-page-container {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - var(--app-header-height) - 40px);
+  height: calc(100vh - var(--app-header-height));
   overflow: hidden;
 }
 
@@ -103,8 +103,9 @@ onMounted(() => fetchData())
   flex: 1;
   display: flex;
   flex-direction: column;
-  border-radius: 12px;
+  border-radius: 0;
   border: none;
+  background: var(--bg-surface);
   min-height: 0;
 }
 
@@ -119,7 +120,7 @@ onMounted(() => fetchData())
 
 /* 分页样式 */
 .pagination-footer {
-  height: 60px;
+  height: 56px;
   flex-shrink: 0;
   display: flex;
   justify-content: center;
@@ -127,5 +128,10 @@ onMounted(() => fetchData())
   border-top: 1px solid var(--border-light);
   background: var(--bg-surface);
   z-index: 5;
+}
+.pagination-footer :deep(.el-pagination.is-background .btn-prev),
+.pagination-footer :deep(.el-pagination.is-background .btn-next),
+.pagination-footer :deep(.el-pagination.is-background .el-pager li) {
+  border-radius: var(--radius-control);
 }
 </style>

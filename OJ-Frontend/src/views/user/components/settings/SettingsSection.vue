@@ -38,7 +38,7 @@ defineProps({
   margin: 12px 0 16px;
   padding: 16px 20px 8px;
   border: 1px solid color-mix(in srgb, var(--accent-danger) 45%, transparent);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--accent-danger) 10%, transparent);
 }
 .settings-section-header {

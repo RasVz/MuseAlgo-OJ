@@ -1,5 +1,5 @@
 <template>
-  <el-card v-if="isContestFinished" shadow="never" class="table-card vp-card">
+  <el-card v-if="isContestFinished" shadow="never" class="vp-card">
     <template #header>
       <div class="card-header">
         <span>虚拟参赛 & 赛后订正</span>
@@ -31,7 +31,7 @@
     </div>
 
     <el-divider content-position="left">我的赛后订正（赛后 7 天内重新 AC）</el-divider>
-    <el-table v-if="corrections.length" :data="corrections" size="small" border>
+    <el-table v-if="corrections.length" :data="corrections" size="small" border class="correction-table">
       <el-table-column prop="problemTitle" label="题目" min-width="200" />
       <el-table-column prop="contestStatus" label="赛中结果" width="100" align="center" />
       <el-table-column label="已订正" width="100" align="center">
@@ -121,6 +121,10 @@ const loadVp = async () => {
 }
 
 const doStartVp = async () => {
+  // 与比赛题目页一致：先同步打开空白标签页，再等服务端受理，
+  // 防止 startVp 的网络等待结束后 window.open 被浏览器拦截。
+  const pendingTab = window.open('', '_blank')
+  let handedOff = false
   vpBusy.value = true
   try {
     const res = await startVp(props.contestId)
@@ -128,17 +132,27 @@ const doStartVp = async () => {
     if (vpAttempt.value?.status === 'RUNNING') {
       vpRemaining.value = vpAttempt.value.remainingSeconds ?? 0
       startVpTimer()
-      enterVp()
+      enterVp(pendingTab)
+      handedOff = true
     } else if (vpAttempt.value?.status === 'SETTLING') {
       startSettlementPolling()
     } else {
       stopVpTimer()
     }
-  } finally { vpBusy.value = false }
+  } finally {
+    if (pendingTab && !handedOff) pendingTab.close()
+    vpBusy.value = false
+  }
 }
 
-const enterVp = () => {
-  router.push({ name: 'ContestAnswer', params: { id: props.contestId } })
+const enterVp = (pendingTab = null) => {
+  const location = { name: 'ContestVpAnswer', params: { id: props.contestId } }
+  if (pendingTab) {
+    pendingTab.location.href = router.resolve(location).href
+    return
+  }
+  const tab = window.open(router.resolve(location).href, '_blank')
+  if (!tab) router.push(location)
 }
 
 // 交卷不可撤销（VP 记录会写入并影响排名），用原生 confirm 二次确认
@@ -232,10 +246,21 @@ watch(
   flex-wrap: wrap;
 }
 
-.vp-card { margin-top: 16px; }
+/* 不贴边内容卡片：12px 圆角 + 1px 浅边框，取消浮层阴影 */
+.vp-card {
+  flex: none;
+  margin: 16px 24px 0;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border-light);
+  box-shadow: none;
+}
+
 .vp-actions { display: flex; gap: 8px; }
-.vp-running { font-size: 14px; color: #409eff; }
+.vp-card :deep(.el-button) { border-radius: var(--radius-control); }
+.vp-running { font-size: 14px; color: var(--accent-primary); }
 .vp-running b { font-size: 18px; }
 .vp-result { font-size: 14px; }
-.vp-empty { color: #909399; font-size: 13px; }
+.vp-empty { color: var(--text-secondary); font-size: 13px; }
+
+.correction-table { --el-table-border-color: var(--border-light); }
 </style>

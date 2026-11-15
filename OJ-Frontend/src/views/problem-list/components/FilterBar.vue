@@ -15,10 +15,13 @@
         </div>
       </div>
       <div class="spacer"></div>
-      <el-radio-group :model-value="viewMode" @update:model-value="$emit('update:viewMode', $event)">
-        <el-radio-button label="official">官方精选</el-radio-button>
-        <el-radio-button label="shared">用户分享</el-radio-button>
-      </el-radio-group>
+      <WorkbenchSegmented
+        :model-value="viewMode"
+        :options="viewOptions"
+        size="sm"
+        aria-label="题单视图"
+        @update:model-value="$emit('update:viewMode', $event)"
+      />
     </div>
   </NavbarContext>
 </template>
@@ -26,20 +29,32 @@
 <script setup>
 // 题单广场筛选栏：搜索关键词与视图切换（官方 / 共享），纯受控的展示组件。
 import NavbarContext from '@/components/NavbarContext.vue'
+import WorkbenchSegmented from '@/components/WorkbenchSegmented.vue'
 
 defineProps(['searchKey', 'viewMode'])
 defineEmits(['update:searchKey', 'update:viewMode', 'search'])
+
+const viewOptions = [
+  { value: 'official', label: '官方精选' },
+  { value: 'shared', label: '用户分享' }
+]
 </script>
 
 <style scoped>
 .navbar-console { display: flex; align-items: center; width: 100%; }
 .search-group { display: flex; align-items: center; gap: 15px; }
-.search-label { font-size: 20px; font-weight: bold; color: var(--text-primary); }
+.search-label { font-size: 18px; font-weight: 600; color: var(--text-primary); }
 .custom-search-box { 
   display: flex; align-items: center; border: 1px solid var(--border-base); 
-  border-radius: 4px; height: 36px; overflow: hidden; 
+  border-radius: var(--radius-control); height: var(--control-height); overflow: hidden; 
+  background: var(--bg-surface);
 }
-.custom-search-box input { border: none; outline: none; padding: 0 12px; width: 240px; }
-.custom-search-box button { background: var(--accent-primary); color: var(--text-on-accent); border: none; padding: 0 20px; height: 100%; cursor: pointer; font-weight: bold; }
+.custom-search-box input {
+  border: none; outline: none; padding: 0 12px; width: 240px;
+  background: transparent; color: var(--text-primary); font-size: 14px;
+}
+.custom-search-box input::placeholder { color: var(--text-placeholder); }
+.custom-search-box button { background: var(--accent-primary); color: var(--text-on-accent); border: none; padding: 0 20px; height: 100%; cursor: pointer; font-weight: 500; font-size: 14px; }
 .spacer { margin-left: 40px; }
+
 </style>

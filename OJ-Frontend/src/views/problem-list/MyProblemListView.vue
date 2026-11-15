@@ -19,11 +19,13 @@
           @keyup.enter="fetchData"
         />
         
-        <el-radio-group v-model="filterType" class="ml-4" @change="fetchData">
-          <el-radio-button label="all">全部</el-radio-button>
-          <el-radio-button label="public">公开</el-radio-button>
-          <el-radio-button label="private">私有</el-radio-button>
-        </el-radio-group>
+        <WorkbenchSegmented
+          v-model="filterType"
+          :options="filterOptions"
+          size="sm"
+          aria-label="题单可见范围"
+          @change="fetchData"
+        />
 
         <div class="action-box">
           <el-button type="primary" icon="Plus" @click="handleCreate">
@@ -40,8 +42,9 @@
           style="width: 100%; flex: 1;" 
           height="100%" 
           v-loading="loading"
-          :header-cell-style="{ background: 'var(--bg-surface-hover)', color: 'var(--text-regular)', fontWeight: 'bold' }"
+          :header-cell-style="{ background: 'var(--bg-app)', color: 'var(--text-regular)', fontWeight: '600' }"
           row-key="id"
+          class="list-table"
           @row-click="goDetail"
         >
           <el-table-column label="题单名称" min-width="300">
@@ -123,11 +126,17 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import NavbarContext from '@/components/NavbarContext.vue'
+import WorkbenchSegmented from '@/components/WorkbenchSegmented.vue'
 import { Lock, List } from '@element-plus/icons-vue'
 import { getProblemLists } from '@/api/problemList'
 import dayjs from 'dayjs'
 import { useUserStore } from '@/stores/userStore'
 
+const filterOptions = [
+  { value: 'all', label: '全部' },
+  { value: 'public', label: '公开' },
+  { value: 'private', label: '私有' }
+]
 const router = useRouter()
 const loading = ref(false)
 const listData = ref([])
@@ -203,9 +212,8 @@ onMounted(fetchData)
   display: flex; 
   flex-direction: column;
   box-sizing: border-box;
-  padding: 10px 20px 0 20px;
   overflow: hidden;   
-  background-color: var(--bg-app);
+  background-color: var(--bg-surface);
 }
 
 .navbar-title-section {
@@ -216,13 +224,20 @@ onMounted(fetchData)
 .page-title { margin: 0; font-size: 18px; color: var(--text-primary); font-weight: 600; }
 .sub-title { color: var(--text-secondary); font-size: 12px; margin-top: 2px; }
 
+/* 工具栏：与题库、比赛题目列表保持同一高度与内边距 */
 .filter-section {
-  padding: 10px 0;
   flex-shrink: 0;
+  height: 52px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--border-light);
+  display: flex;
+  align-items: center;
 }
 .filter-bar { 
   display: flex; 
-  align-items: center; 
+  align-items: center;
+  gap: 16px;
+  width: 100%;
 }
 
 .action-box {
@@ -230,47 +245,71 @@ onMounted(fetchData)
 }
 
 .search-input { width: 250px; }
-.ml-4 { margin-left: 16px; }
+.filter-section :deep(.el-input__wrapper),
+.filter-section :deep(.el-button) { border-radius: var(--radius-control); }
 
 .table-container {
   flex: 1;            
+  min-height: 0;
   overflow: hidden;   
-  margin-bottom: 10px;
   background-color: var(--bg-surface);
-  border-radius: 8px;
+  border-radius: 0;
 }
 .main-card {
   height: 100%;
   border: none;
-  border-radius: 8px;
+  border-radius: 0;
+  box-shadow: none;
 }
+
+.table-container :deep(.el-card__body) {
+  padding: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.list-table { --el-table-border-color: var(--border-light); }
+.list-table :deep(th.el-table__cell) { height: var(--table-header-height); padding: 0; }
+.list-table :deep(td.el-table__cell) { height: var(--table-row-height); padding: 0; }
+.list-table :deep(.el-table__cell .cell) { padding: 0 12px; }
+.list-table :deep(th:first-child .cell),
+.list-table :deep(td:first-child .cell) { padding-left: 24px; }
+.list-table :deep(th:last-child .cell),
+.list-table :deep(td:last-child .cell) { padding-right: 24px; }
+.list-table :deep(.el-table__row) { cursor: pointer; }
 
 .pagination-footer {
   flex-shrink: 0;
-  height: 50px;
+  height: 56px;
   display: flex; 
   justify-content: center;
   align-items: center;
   background-color: var(--bg-surface);
   border-top: 1px solid var(--border-light);
-  border-radius: 8px 8px 0 0;
+  border-radius: 0;
+}
+.pagination-footer :deep(.el-pagination.is-background .btn-prev),
+.pagination-footer :deep(.el-pagination.is-background .btn-next),
+.pagination-footer :deep(.el-pagination.is-background .el-pager li) {
+  border-radius: var(--radius-control);
 }
 
-.list-title-wrapper { display: flex; align-items: center; gap: 15px; padding: 5px 0; }
+.list-title-wrapper { display: flex; align-items: center; gap: 12px; }
 .list-icon-box {
-  width: 42px; height: 42px; border-radius: 10px;
-  background: linear-gradient(135deg, #a0cfff 0%, #409eff 100%);
-  color: var(--text-on-accent); font-size: 20px;
+  width: 36px; height: 36px; border-radius: var(--radius-control);
+  background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-info) 100%);
+  color: var(--text-on-accent); font-size: 18px;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
 }
-.list-icon-box.is-private { background: var(--bg-surface-hover); color: var(--text-secondary); }
+.list-icon-box.is-private { background: var(--bg-app); color: var(--text-secondary); }
 .list-info { flex: 1; overflow: hidden; }
-.list-name { font-weight: bold; font-size: 15px; color: var(--text-primary); display: flex; align-items: center; gap: 8px; }
-.private-tag { height: 18px; line-height: 16px; padding: 0 4px; }
-.list-desc { font-size: 13px; color: var(--text-secondary); margin-top: 4px; }
+.list-name { font-weight: 600; font-size: 14px; color: var(--text-primary); display: flex; align-items: center; gap: 8px; }
+.private-tag { height: 18px; line-height: 16px; padding: 0 4px; border-radius: var(--radius-tag); }
+.list-desc { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
 .text-truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mono-font { font-family: 'Menlo', monospace; font-weight: 600; }
+.mono-font { font-family: var(--font-mono); font-weight: 600; color: var(--text-regular); }
 .text-secondary { color: var(--text-secondary); }
 .text-small { font-size: 13px; }
 </style>

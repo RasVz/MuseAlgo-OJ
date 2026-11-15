@@ -4,8 +4,9 @@
       :data="data" 
       style="width: 100%" 
       v-loading="loading" 
-      stripe
       height="100%"
+      class="submission-table-el"
+      :header-cell-style="{ background: 'var(--bg-app)', color: 'var(--text-regular)', fontWeight: '600' }"
     >
       <el-table-column label="#" prop="id" width="100" align="center" />
       
@@ -122,10 +123,30 @@ const formatTime = (t) => t ? t.replace('T', ' ').substring(0, 19) : '-'
 <style scoped>
 .submission-table {
   flex: 1;
+  min-height: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  background: var(--bg-surface);
 }
+
+.submission-table-el {
+  --el-table-border-color: var(--border-light);
+  --el-table-header-bg-color: var(--bg-app);
+}
+.submission-table-el :deep(th.el-table__cell) {
+  height: var(--table-header-height);
+  padding: 0;
+}
+.submission-table-el :deep(td.el-table__cell) {
+  height: var(--table-row-height);
+  padding: 0;
+}
+.submission-table-el :deep(.el-table__cell .cell) { padding: 0 12px; }
+.submission-table-el :deep(th:first-child .cell),
+.submission-table-el :deep(td:first-child .cell) { padding-left: 24px; }
+.submission-table-el :deep(th:last-child .cell),
+.submission-table-el :deep(td:last-child .cell) { padding-right: 24px; }
 
 /* 时间列：等宽字体，不换行 */
 .mono-font {

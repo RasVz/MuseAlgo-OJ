@@ -1,40 +1,39 @@
 <template>
   <div class="contest-ranking-page">
-    <el-card shadow="never" class="page-card">
-      <div class="page-header">
-        <div>
-          <div class="page-title">比赛排行榜</div>
-          <div class="page-desc">
-            正式榜只展示正式选手；全局榜包含正式、超限（打星号）与虚拟赛（VP）选手
-          </div>
-        </div>
-        <div class="page-actions">
-          <el-button v-if="activeTab === 'global' && isAdmin" :loading="exporting" @click="handleExportGlobal">
-            导出全局榜
-          </el-button>
-          <el-button :loading="activeLoading" @click="handleRefresh">刷新</el-button>
+    <div class="page-header">
+      <div class="page-heading">
+        <div class="page-title">比赛排行榜</div>
+        <div class="page-desc">
+          正式榜只展示正式选手；全局榜包含正式、超限（打星号）与虚拟赛（VP）选手
         </div>
       </div>
+      <div class="page-actions">
+        <el-button v-if="activeTab === 'global' && isAdmin" :loading="exporting" @click="handleExportGlobal">
+          导出全局榜
+        </el-button>
+        <el-button :loading="activeLoading" @click="handleRefresh">刷新</el-button>
+      </div>
+    </div>
 
-      <div class="rank-switcher">
-        <el-radio-group v-model="activeTab">
-          <el-radio-button value="official">正式榜</el-radio-button>
-          <el-radio-button value="global">全局榜</el-radio-button>
-        </el-radio-group>
+    <div class="rank-switcher">
+      <WorkbenchSegmented
+        v-model="activeTab"
+        :options="boardOptions"
+        aria-label="榜单类型"
+      />
 
-        <div v-if="activeTab === 'global'" class="board-legend">
-          <el-tag type="warning" effect="plain" size="small">* 超限</el-tag>
-          <span>超限选手打星号，不计 Rating</span>
-          <el-tag type="info" effect="plain" size="small">VP</el-tag>
-          <span>虚拟赛</span>
-          <span>无标记为正式选手</span>
-        </div>
+      <div v-if="activeTab === 'global'" class="board-legend">
+        <el-tag type="warning" effect="plain" size="small">* 超限</el-tag>
+        <span>超限选手打星号，不计 Rating</span>
+        <el-tag type="info" effect="plain" size="small">VP</el-tag>
+        <span>虚拟赛</span>
+        <span>无标记为正式选手</span>
       </div>
-      <div v-if="streamMessage" role="status" aria-live="polite">
-        {{ streamMessage }}
-        <el-button v-if="streamExhausted" link type="primary" @click="retryStream">重新连接</el-button>
-      </div>
-    </el-card>
+    </div>
+    <div v-if="streamMessage" class="stream-message" role="status" aria-live="polite">
+      {{ streamMessage }}
+      <el-button v-if="streamExhausted" link type="primary" @click="retryStream">重新连接</el-button>
+    </div>
 
     <!-- 虚拟赛 + 赛后订正（B4） -->
     <VpCorrectionCard :contest-id="contestId" :is-contest-finished="isContestFinished" :is-oi-contest="isOiContest" />
@@ -46,7 +45,7 @@
       type="info"
       :closable="false"
       show-icon
-      class="mb-16"
+      class="page-alert"
     />
 
     <ContestRankTable
@@ -86,6 +85,7 @@ import {
 import { getContestDetail } from '@/api/contest'
 import { useUserStore } from '@/stores/userStore'
 import { connectSSE } from '@/utils/sse'
+import WorkbenchSegmented from '@/components/WorkbenchSegmented.vue'
 import VpCorrectionCard from './components/VpCorrectionCard.vue'
 import ContestRankTable from './components/ContestRankTable.vue'
 
@@ -106,6 +106,10 @@ const streamExhausted = ref(false)
 
 // official | global —— 两个榜的数据、loading、error 完全独立，
 // 切换时互不覆盖，也方便分别保留各自的空态/错误态。
+const boardOptions = [
+  { value: 'official', label: '正式榜' },
+  { value: 'global', label: '全局榜' }
+]
 const activeTab = ref('official')
 const officialRankList = ref([])
 const globalRankList = ref([])
@@ -560,33 +564,39 @@ async function handleExportGlobal() {
 </script>
 
 <style scoped>
+/* 白底贴边：页面头部 + 页签条贴边，表格主体贴边；48px 为 ContestLayout 页签栏高度 */
 .contest-ranking-page {
-  padding: 20px;
+  height: calc(100vh - var(--app-header-height) - 48px);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  background: var(--bg-surface);
 }
 
-.page-card,
-.table-card {
-  margin-bottom: 16px;
-}
-
-.page-header,
-.card-header {
+.page-header {
+  flex: none;
+  padding: 12px 24px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.page-heading {
+  min-width: 0;
 }
 
 .page-title {
-  font-size: 22px;
-  font-weight: 600;
+  font-size: 16px;
+  font-weight: 700;
   color: var(--text-primary);
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 
 .page-desc {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--text-secondary);
 }
 
@@ -596,13 +606,17 @@ async function handleExportGlobal() {
   gap: 8px;
   flex-wrap: wrap;
 }
+.page-actions :deep(.el-button) { border-radius: var(--radius-control); }
 
 .rank-switcher {
+  flex: none;
+  min-height: 48px;
+  padding: 0 24px;
   display: flex;
   align-items: center;
   gap: 16px;
   flex-wrap: wrap;
-  margin-top: 14px;
+  border-bottom: 1px solid var(--border-light);
 }
 
 .board-legend {
@@ -614,16 +628,16 @@ async function handleExportGlobal() {
   color: var(--text-secondary);
 }
 
-.mb-16 {
-  margin-bottom: 16px;
-}
-
-.header-extra {
-  font-size: 13px;
+.stream-message {
+  flex: none;
+  padding: 8px 24px;
+  font-size: 12px;
   color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-light);
 }
 
-.source-label {
-  color: var(--text-regular);
+.page-alert {
+  flex: none;
+  margin: 16px 24px 0;
 }
 </style>

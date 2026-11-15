@@ -22,12 +22,11 @@
 
     <el-table 
       :data="problemList" 
-      style="margin-top: 20px; border-radius: 8px; overflow: hidden;" 
-      border 
-      stripe 
+      style="margin-top: 20px;" 
       row-key="id" 
       ref="tableRef"
-      :header-cell-style="{ background: 'var(--bg-surface-hover)', color: 'var(--text-regular)', fontWeight: 'bold' }"
+      class="problem-manage-table"
+      :header-cell-style="{ background: 'var(--bg-app)', color: 'var(--text-regular)', fontWeight: '600' }"
     >
       <el-table-column width="60" align="center">
         <template #default>
@@ -237,18 +236,37 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.problems-container { padding: 10px; }
-.manage-tools { background: var(--bg-surface-hover); padding: 20px; border-radius: 8px; border: 1px dashed var(--border-base); display: flex; align-items: center; gap: 15px; }
+.problems-container { padding: 20px 10px; }
+.manage-tools {
+  background: var(--bg-app);
+  padding: 16px 20px;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border-light);
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
 .tool-label { font-weight: 600; color: var(--text-regular); white-space: nowrap; }
-.add-input { width: 350px; box-shadow: var(--shadow-sm); }
-.add-btn { background-color: var(--accent-primary); color: var(--text-on-accent); border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.add-input { width: 350px; }
+.add-input :deep(.el-input__wrapper) { border-radius: var(--radius-control) 0 0 var(--radius-control); }
+.add-btn { background-color: var(--accent-primary); color: var(--text-on-accent); border-radius: 0 var(--radius-control) var(--radius-control) 0; }
 .tool-tip { font-size: 12px; color: var(--text-secondary); margin-left: 10px; }
-.id-tag { font-family: monospace; background: var(--bg-surface-hover); padding: 2px 6px; border-radius: 4px; color: var(--text-regular); }
+
+.problem-manage-table { --el-table-border-color: var(--border-light); }
+.problem-manage-table :deep(th.el-table__cell) { height: var(--table-header-height); padding: 0; }
+.problem-manage-table :deep(td.el-table__cell) { height: var(--table-row-height); padding: 0; }
+.problem-manage-table :deep(.el-table__cell .cell) { padding: 0 12px; }
+.problem-manage-table :deep(th:first-child .cell),
+.problem-manage-table :deep(td:first-child .cell) { padding-left: 24px; }
+.problem-manage-table :deep(th:last-child .cell),
+.problem-manage-table :deep(td:last-child .cell) { padding-right: 24px; }
+
+.id-tag { font-family: var(--font-mono); background: var(--bg-app); padding: 2px 6px; border-radius: var(--radius-tag); color: var(--text-regular); }
 .problem-title { font-weight: 500; color: var(--text-primary); }
-.delete-btn:hover { background-color: var(--accent-danger-light); border-color: var(--el-color-danger-light-7); color: var(--accent-danger); }
+.delete-btn:hover { background-color: var(--accent-danger-light); border-color: var(--accent-danger-light); color: var(--accent-danger); }
 
 /* 难度标签样式 */
-.diff-tag { font-weight: bold; font-size: 13px; }
+.diff-tag { font-weight: 600; font-size: 13px; }
 
-.drag-handler:hover { color: var(--accent-primary) !important; transform: scale(1.1); transition: all 0.2s; }
+.drag-handler:hover { color: var(--accent-primary) !important; transform: scale(1.1); transition: color 0.2s, transform 0.2s; }
 </style>

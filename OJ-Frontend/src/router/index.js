@@ -21,6 +21,10 @@ const studyRoutes = [
 ]
 
 const standaloneRoutes = [
+  // 整卷练习在独立标签页打开，不继承全站顶部栏和侧边导航。
+  { path: '/training/:id/answer', name: 'ExamPaperAnswer', component: () => import('@/views/training/ExamPaperAnswerView.vue'), meta: { title: '整卷答题', requiresAuth: true } },
+  // 虚拟参赛试卷：独立标签页打开，不继承全站顶部栏和侧边导航；题面默认只读，可手动打开 IDE。
+  { path: '/contest/:id/vp', name: 'ContestVpAnswer', component: () => import('@/views/contest/ContestAnswerView.vue'), meta: { title: '虚拟参赛答题', requiresAuth: true } },
   {
     path: '/admin/courseware/create',
     name: 'AdminCoursewareCreate',
@@ -68,17 +72,16 @@ const problemRoutes = [
 const trainingRoutes = [
   { path: 'training', name: 'Training', component: () => import('@/views/training/TrainingView.vue'), meta: { title: '训练' } },
   { path: 'training/:id', name: 'TrainingDetail', component: () => import('@/views/training/ExamPaperDetailView.vue'), meta: { title: '试卷详情', breadcrumb: [{ label: '训练', path: '/training' }] } },
-  { path: 'training/:id/answer', name: 'ExamPaperAnswer', component: () => import('@/views/training/ExamPaperAnswerView.vue'), meta: { title: '整卷答题', requiresAuth: true, immersive: true } },
 ]
 
 // 2.3 社区与文章模块
 const communityRoutes = [
-  { path: 'post', name: 'Post', component: () => import('@/views/post/PostView.vue'), meta: { title: '动态' } },
+  { path: 'post', name: 'Post', component: () => import('@/views/post/PostView.vue'), meta: { title: '社区' } },
   { path: 'discussion', name: 'Discussion', component: () => import('@/views/post/DiscussionView.vue'), meta: { title: '讨论广场' } },
   { path: 'discussion/create', name: 'DiscussionCreate', redirect: () => ({ path: '/editor', query: { channel: 'discussion' } }) },
-  { path: 'post/:id', name: 'PostDetail', component: () => import('@/views/post/PostDetailView.vue'), meta: { title: '动态详情', breadcrumb: [{ label: '动态', path: '/post' }] } },
-  { path: 'post/editor', name: 'PostCreate', component: () => import('@/views/post/PostEditorView.vue'), meta: { title: '写文章', breadcrumb: [{ label: '动态', path: '/post' }], requiresAuth: true } },
-  { path: 'post/editor/:id', name: 'PostEdit', component: () => import('@/views/post/PostEditorView.vue'), meta: { title: '编辑文章', breadcrumb: [{ label: '动态', path: '/post' }], requiresAuth: true } },
+  { path: 'post/:id', name: 'PostDetail', component: () => import('@/views/post/PostDetailView.vue'), meta: { title: '社区详情', breadcrumb: [{ label: '社区', path: '/post' }] } },
+  { path: 'post/editor', name: 'PostCreate', component: () => import('@/views/post/PostEditorView.vue'), meta: { title: '写文章', breadcrumb: [{ label: '社区', path: '/post' }], requiresAuth: true } },
+  { path: 'post/editor/:id', name: 'PostEdit', component: () => import('@/views/post/PostEditorView.vue'), meta: { title: '编辑文章', breadcrumb: [{ label: '社区', path: '/post' }], requiresAuth: true } },
   { path: 'announcement', name: 'Announcement', component: () => import('@/views/post/AnnouncementView.vue'), meta: { title: '系统公告' } },
 ]
 
@@ -88,7 +91,7 @@ const contestRoutes = [
   // 比赛参赛卷：整卷答题页，脱离比赛布局以保证作答期只保留答题必需入口。
   { path: 'contest/:id/answer', name: 'ContestAnswer', component: () => import('@/views/contest/ContestAnswerView.vue'), meta: { title: '比赛答题', requiresAuth: true, immersive: true } },
   {
-    path: 'contest/:id', component: () => import('@/layout/ContestLayout.vue'), meta: { title: '比赛详情', breadcrumb: [{ label: '比赛大厅', path: '/contest' }] },
+    path: 'contest/:id', component: () => import('@/layout/ContestLayout.vue'), meta: { title: '比赛详情', breadcrumb: [{ label: '比赛大厅', path: '/contest' }], immersive: true },
     children: [
       { path: '', redirect: { name: 'ContestProblem' } },
       { path: 'problem', name: 'ContestProblem', component: () => import('@/views/contest/ContestProblemSetView.vue') },

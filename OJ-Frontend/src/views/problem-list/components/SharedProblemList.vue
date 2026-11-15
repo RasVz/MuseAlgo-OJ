@@ -1,7 +1,7 @@
 <template>
   <div class="shared-table-container">
     <el-table 
-      :header-cell-style="{ background: 'var(--bg-surface-hover)' }"
+      :header-cell-style="{ background: 'var(--bg-app)', color: 'var(--text-regular)', fontWeight: '600' }"
       :empty-text="emptyText"
       :data="problemList" 
       @row-click="handleRowClick"
@@ -107,21 +107,29 @@ const formatTime = (t) => {
   return str.replace('T', ' ').substring(0, 16)
 }
 
-const getGradient = () => `linear-gradient(135deg, #a7f3d0 0%, #7dd3fc 100%)`
+const getGradient = () => `linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-info) 100%)`
 </script>
 
 <style scoped>
 .shared-table-container {
   background: var(--bg-surface);
-  border-radius: 8px;
+  border-radius: 0;
 }
 .clickable-table {
   cursor: pointer;
+  --el-table-border-color: var(--border-light);
 }
+.clickable-table :deep(th.el-table__cell) { height: var(--table-header-height); padding: 0; }
+.clickable-table :deep(td.el-table__cell) { height: var(--table-row-height); padding: 0; }
+.clickable-table :deep(.el-table__cell .cell) { padding: 0 12px; }
+.clickable-table :deep(th:first-child .cell),
+.clickable-table :deep(td:first-child .cell) { padding-left: 24px; }
+.clickable-table :deep(th:last-child .cell),
+.clickable-table :deep(td:last-child .cell) { padding-right: 24px; }
 .list-item-cell { display: flex; align-items: center; gap: 12px; }
-.list-icon { width: 36px; height: 36px; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: white; flex-shrink: 0; }
+.list-icon { width: 36px; height: 36px; border-radius: var(--radius-control); display: flex; align-items: center; justify-content: center; color: white; flex-shrink: 0; }
 .list-info { display: flex; flex-direction: column; gap: 4px; }
-.list-title-link { font-weight: bold; color: var(--text-primary); }
+.list-title-link { font-weight: 600; font-size: 14px; color: var(--text-primary); }
 .list-tags { display: flex; gap: 4px; }
 .mr-1 { margin-right: 4px; }
 
@@ -131,9 +139,9 @@ const getGradient = () => `linear-gradient(135deg, #a7f3d0 0%, #7dd3fc 100%)`
   align-items: center; 
   gap: 8px; 
   font-size: 14px; 
-  transition: all 0.2s;
+  transition: color 0.2s, background-color 0.2s;
   padding: 4px 8px; /* 增加一点内边距让点击区域更大 */
-  border-radius: 4px;
+  border-radius: var(--radius-tag);
 }
 /* 鼠标悬停时变色，提示可点击 */
 .creator-box:hover {

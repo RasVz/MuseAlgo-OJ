@@ -9,7 +9,7 @@ import com.musealgo.oj.judge.mapper.SubmissionMapper;
 import java.util.List;
 import java.util.Optional;
 
-/** AI 代码复盘契约实现：submission + submission_case_result 状态统计。 */
+/** AI 提交诊断契约实现：submission + submission_case_result 状态统计。 */
 @Service
 public class SubmissionReviewQueryAdapter implements SubmissionReviewQuery {
 
@@ -29,7 +29,7 @@ public class SubmissionReviewQueryAdapter implements SubmissionReviewQuery {
         if (submission == null) {
             return Optional.empty();
         }
-        // V52 拆表：AI 复盘需要源码，从 submission_code 补载
+        // V52 拆表：AI 诊断需要源码，从 submission_code 补载
         SubmissionCode codeRecord = submissionCodeMapper.selectById(submissionId);
         submission.setCode(codeRecord == null ? null : codeRecord.getCode());
         List<CaseStatusCount> caseStats = submissionMapper.selectCaseStatusCounts(submissionId).stream()
@@ -49,7 +49,8 @@ public class SubmissionReviewQueryAdapter implements SubmissionReviewQuery {
                 submission.getRunMemory(),
                 submission.getErrorMessage(),
                 submission.getContestId(),
-                caseStats
+                caseStats,
+                submission.getExamAttemptId()
         ));
     }
 }

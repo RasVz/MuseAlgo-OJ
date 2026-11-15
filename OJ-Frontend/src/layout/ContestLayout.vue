@@ -263,7 +263,7 @@ const countdownStr = computed(() => {
   color: var(--accent-primary);
   border-bottom-color: var(--accent-primary); 
   font-weight: 600;
-  background-color: rgb(245, 245, 245);
+  background-color: transparent;
 }
 
 .contest-content {
@@ -271,11 +271,15 @@ const countdownStr = computed(() => {
   overflow-y: overlay; 
   overflow-x: hidden; 
   background-color: var(--bg-surface);
-  padding-top: 20px; 
+  padding-top: 0; 
 }
 
 .content-wrapper {
-  padding-bottom: 40px; 
+  max-width: none;
+  width: 100%;
+  padding-left: 0;
+  padding-right: 0;
+  padding-bottom: 0;
 }
 
 .loading-box {

@@ -46,7 +46,10 @@ import SmartRecommendations from '@/components/SmartRecommendations.vue'
 <style scoped>
 .dashboard-content {
   font-family: var(--font-family);
-  height: calc(100vh - var(--app-header-height) - 40px);
+  height: calc(100vh - var(--app-header-height));
+  padding: 16px 20px;
+  box-sizing: border-box;
+  background: var(--bg-surface);
   overflow: hidden;
 }
 .dashboard-grid {

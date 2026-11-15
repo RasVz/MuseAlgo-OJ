@@ -8,6 +8,7 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import com.musealgo.oj.common.api.Result;
 import com.musealgo.oj.community.entity.dto.CommentDTO;
+import com.musealgo.oj.community.entity.vo.CommentPageVO;
 import com.musealgo.oj.community.entity.vo.CommentVO;
 import com.musealgo.oj.community.comment.CommentTarget;
 import com.musealgo.oj.community.service.CommentService;
@@ -61,6 +62,18 @@ public class CommentController {
             @RequestParam(defaultValue = "1") Integer entityType) {
         return Result.success(commentService.getCommentList(new CommentTarget(entityId, entityType)));
 
+    }
+
+    // 2.1 顶层评论分页（含当前页根评论的全部回复）
+    @Operation(summary = "分页获取评论列表")
+    @GetMapping("/page")
+    public Result<CommentPageVO> getPage(
+            @RequestParam Long entityId,
+            @RequestParam(defaultValue = "1") Integer entityType,
+            @RequestParam(defaultValue = "1") Integer page,
+            @RequestParam(defaultValue = "20") Integer size) {
+        return Result.success(commentService.getCommentPage(
+                new CommentTarget(entityId, entityType), page, size));
     }
 
     // 3. 点赞/取消点赞接口

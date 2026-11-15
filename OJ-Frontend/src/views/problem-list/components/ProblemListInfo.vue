@@ -2,7 +2,7 @@
   <div class="info-view animate__animated animate__fadeIn">
     <el-row :gutter="24">
       <el-col :span="8" :xs="24">
-        <el-card shadow="hover" class="metric-card mb-4">
+        <el-card shadow="never" class="metric-card mb-4">
           <template #header>
             <div class="card-header">
               <span>基础信息</span>
@@ -33,7 +33,7 @@
           </div>
         </el-card>
 
-        <el-card shadow="hover" class="metric-card">
+        <el-card shadow="never" class="metric-card">
           <template #header>
             <div class="card-header">
               <span>完成进度</span>
@@ -66,7 +66,7 @@
       </el-col>
 
       <el-col :span="16" :xs="24">
-        <el-card shadow="hover" class="desc-card h-100">
+        <el-card shadow="never" class="desc-card h-100">
           <template #header>
             <div class="card-header">
               <span>题单简介</span>
@@ -128,8 +128,9 @@ const calculateProgress = computed(() => {
 
 /* 卡片通用 */
 .metric-card, .desc-card {
-  border-radius: 8px;
-  border: none;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border-light);
+  box-shadow: none;
 }
 
 .card-header {

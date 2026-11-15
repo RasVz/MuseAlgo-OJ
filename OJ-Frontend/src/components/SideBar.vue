@@ -36,7 +36,7 @@
 <script setup>
 import { useRouter, useRoute } from 'vue-router'
 import {
-  DataBoard, EditPen, Grid, List, Collection, Trophy, Timer, Notebook
+  DataBoard, EditPen, Grid, List, Collection, Trophy, Timer, ChatDotRound
 } from '@element-plus/icons-vue'
 
 const router = useRouter()
@@ -51,7 +51,7 @@ const menuItems = [
   { label: '训练', path: '/training', icon: Collection },
   { label: '比赛', path: '/contest', icon: Trophy },
   { label: '记录', path: '/submission', icon: Timer },
-  { label: '动态', path: '/post', icon: Notebook }
+  { label: '社区', path: '/post', icon: ChatDotRound }
 ]
 
 const goHome = () => {

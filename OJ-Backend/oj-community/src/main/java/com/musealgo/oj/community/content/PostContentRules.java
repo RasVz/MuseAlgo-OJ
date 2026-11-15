@@ -46,10 +46,13 @@ public final class PostContentRules {
      * 内容会同时出现在班级列表和讨论/文章列表。
      */
     public static void applyForUpdate(Post post, Post previous) {
+        boolean classContent = previous != null && previous.getClassId() != null;
+        // 班级内容的可见范围沿用原值，编辑请求里的 privacy 不参与。
+        if (classContent) post.setPrivacy(previous.getPrivacy());
         normalizeFields(post);
-        if (previous != null && previous.getClassId() != null) {
+        if (classContent) {
             post.setType(3);
-            post.setCategory(previous.getCategory());
+            post.setCategory("question");
         } else {
             classify(post, previous);
         }
@@ -87,9 +90,12 @@ public final class PostContentRules {
 
         if ("announcement".equals(category)) throw invalid("公告需通过公告管理发布");
 
-        // 班级内容：归属压过一切，类型固定为 3；分类沿用调用方（通常为 question）。
+        // 班级内容：归属压过一切，类型固定为 3，分类固定为 question，
+        // 且只能在班内公开——直接调接口传 privacy=1 也不能把班级帖藏起来。
         if (post.getClassId() != null) {
             post.setType(3);
+            post.setCategory("question");
+            post.setPrivacy(0);
             return;
         }
 

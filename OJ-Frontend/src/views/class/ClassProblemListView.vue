@@ -85,29 +85,41 @@ onMounted(fetchData)
 /* 样式与 Homework 保持一致 */
 .class-tab-container {
   background: var(--bg-surface);
-  border-radius: 12px;
-  height: 93%;
-  padding: 20px;
+  border-radius: 0;
+  height: 100%;
+  padding: 0;
   display: flex;
   flex-direction: column;
 }
 
 .tab-header {
-  margin-bottom: 20px;
+  height: 52px;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--border-light);
+  flex-shrink: 0;
 }
 .tab-header h3 {
   margin: 0;
-  font-size: 18px;
+  font-size: 14px;
+  font-weight: 700;
   color: var(--text-primary);
 }
 
 .table-wrapper {
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .pagination-footer {
-  margin-top: 20px;
+  height: 56px;
+  margin-top: 0;
   display: flex;
   justify-content: center;
+  align-items: center;
+  border-top: 1px solid var(--border-light);
+  flex-shrink: 0;
 }
 </style>

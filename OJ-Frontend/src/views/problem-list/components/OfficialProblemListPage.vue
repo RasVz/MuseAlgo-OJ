@@ -46,12 +46,13 @@ const emit = defineEmits(['detail'])
  * 这样新增或删除某个题单时，其余题单的颜色不会整体错位。
  */
 const getGradient = (id) => {
+  // 用语义色 token 生成封面渐变：深色主题下仍然可用，且白字始终可读。
   const gradients = [
-    'linear-gradient(135deg, #a7f3d0 0%, #7dd3fc 100%)', // 绿蓝
-    'linear-gradient(135deg, #c4b5fd 0%, #818cf8 100%)', // 紫蓝
-    'linear-gradient(135deg, #fecaca 0%, #fca5a5 100%)', // 粉红
-    'linear-gradient(135deg, #fed7aa 0%, #fdba74 100%)', // 橘黄
-    'linear-gradient(135deg, #93f5d7 0%, #9be1ff 100%)'  // 青蓝
+    'linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-info) 100%)',
+    'linear-gradient(135deg, var(--accent-info) 0%, var(--accent-primary) 100%)',
+    'linear-gradient(135deg, var(--accent-success) 0%, var(--accent-info) 100%)',
+    'linear-gradient(135deg, var(--accent-warning) 0%, var(--accent-danger) 100%)',
+    'linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-success) 100%)'
   ]
   return gradients[id % gradients.length]
 }
@@ -63,8 +64,8 @@ const handleCardClick = (item) => {
 
 <style scoped>
 .official-view-container {
-  /* 这里的 padding 确保在 flex: 1 容器中两边不会紧贴边缘 */
-  padding: 4px;
+  /* 卡片间距由外层内容区留白提供，这里不再叠加内边距 */
+  padding: 0;
 }
 
 /* 移除 el-row 可能带来的横向滚动条 */

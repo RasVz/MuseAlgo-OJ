@@ -3,7 +3,7 @@ import { join } from 'node:path'
 const evidence = process.env.OJ_TEST_OUTPUT_DIR
 
 test.describe.configure({ timeout: 45000 })
-async function setup(page, { contestSubmission = false, interrupted = false, diagnostic = false } = {}) {
+async function setup(page, { interrupted = false, diagnostic = false } = {}) {
   // 真实编辑器代码从本地依赖加载，浏览器验收不依赖公共 CDN。
   await page.route('**/monaco-editor@*/min/vs/**', route => {
     const asset = new URL(route.request().url()).pathname.split('/min/vs/')[1]
@@ -35,17 +35,17 @@ async function setup(page, { contestSubmission = false, interrupted = false, dia
       if (request.method() === 'DELETE') history = []
       return json(history)
     }
-    if (path === '/api/ai/ask/stream' || path === '/api/ai/review') {
+    if (path === '/api/ai/ask/stream') {
       const payload = request.postDataJSON(); calls.push({ path, payload })
       const text = '这是参考实现，关键修改是边界条件。\n\n```cpp\nint main() { return 0; }\n```'
-      history.push({ role: 'user', content: payload.studentQuestion || '复盘' }, { role: 'assistant', content: text })
+      history.push({ role: 'user', content: payload.studentQuestion }, { role: 'assistant', content: text })
       const metadata = diagnostic ? 'event: diagnostic-status\ndata: {"phase":"answering","message":"正在根据验证结果整理回答"}\n\nevent: counterexample\ndata: ' + JSON.stringify({ input:'0', expectedOutput:'0', hasExpected:true, expectationSource:'OFFICIAL_SAMPLE', confirmedFailure:true, runId:'00000000-0000-0000-0000-000000000099', status:3, stdout:'1', note:'实测输出不匹配' }) + '\n\n' : ''
       const body = metadata + text.split('\n').map(line => `data: ${line}`).join('\n') + '\n\n' + (interrupted
         ? 'event: app-error\ndata: {"code":502,"errorCode":"AI_OUTPUT_LIMIT","message":"回复达到输出上限，尚未完成"}\n\n'
         : 'event: done\ndata: \n\n')
       return route.fulfill({ contentType: 'text/event-stream', body })
     }
-    if (path === '/api/submission/detail') return json({ id: 10, problemId: 1, contestId: contestSubmission ? 9 : null, problemTitle: '求和教学案例', userId: 7, username: 'student', status: 1, code: 'int main() { return 0; }', language: 'cpp', score: 100, runTime: 1, runMemory: 1000, createTime: '2026-11-09T12:00:00' })
+    if (path === '/api/submission/detail') return json({ id: 10, problemId: 1, contestId: null, problemTitle: '求和教学案例', userId: 7, username: 'student', status: 1, code: 'int main() { return 0; }', language: 'cpp', score: 100, runTime: 1, runMemory: 1000, createTime: '2026-11-09T12:00:00' })
     if (path.includes('/user/preferences')) return json({ fontSize: 16 })
     if (path.includes('/user/info')) return json({ id: 7, username: 'student', nickname: '学习者', role: 1 })
     return json({ records: [], total: 0 })
@@ -100,26 +100,6 @@ test('contest problem hides AI in reading and editor modes without loading conve
   await expect(page.locator('.ai-chat-drawer')).toHaveCount(0)
   expect(calls).toHaveLength(0)
   if (evidence) await page.screenshot({ path: join(evidence, 'contest-editor-no-ai.png'), fullPage: true })
-})
-
-test('actual contest submission hides AI even without a contest URL parameter', async ({ page }) => {
-  await setup(page, { contestSubmission: true }); await page.goto('/submission/10')
-  await expect(page.getByText('提交者', { exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: /AI 复盘/ })).toHaveCount(0)
-  await expect(page.locator('.review-dialog')).toHaveCount(0)
-})
-
-test('AC practice submission supports review and followup with learning modes', async ({ page }) => {
-  const calls = await setup(page); await page.goto('/submission/10')
-  await page.getByRole('button', { name: /AI 复盘/ }).click()
-  await expect(page.locator('.review-content')).toContainText('这是参考实现')
-  expect(calls.filter(call => call.path === '/api/ai/review')[0].payload.helpMode).toBe('AUTO')
-  await page.getByRole('button', { name: /检查思路/ }).click()
-  await page.getByRole('textbox', { name: '继续提问' }).fill('请解释刚才提到的边界条件')
-  await page.getByRole('button', { name: '发送追问' }).click()
-  await expect.poll(() => calls.filter(call => call.path === '/api/ai/review').length).toBe(2)
-  expect(calls.filter(call => call.path === '/api/ai/review')[1].payload.helpMode).toBe('CHECK_APPROACH')
-  expect(calls.filter(call => call.path === '/api/ai/review')[1].payload.previousAnswer).toContain('这是参考实现')
 })
 
 test('sending after editing includes latest code and language, preserving draft across modes', async ({ page }) => {

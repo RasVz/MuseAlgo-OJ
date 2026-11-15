@@ -15,7 +15,7 @@
       <!-- === 头部 === -->
       <header class="article-header">
         <div class="header-top">
-          <el-tag effect="plain" size="small" round class="category-tag">{{ post.category }}</el-tag>
+          <el-tag effect="plain" size="small" class="category-tag">{{ post.category }}</el-tag>
           <span class="header-meta">
             <span class="meta-item">{{ formatTime(post.publishTime) }}</span>
             <span class="meta-divider">·</span>
@@ -33,12 +33,12 @@
           </div>
           <el-button 
             v-if="!isSelf && !isFollowed" 
-            size="small" round 
+            size="small" 
             @click="handleToggleFollow"
           >+ 关注</el-button>
           <el-button 
             v-else-if="!isSelf" 
-            size="small" round plain
+            size="small" plain
             @click="handleToggleFollow"
           >已关注</el-button>
         </div>
@@ -55,7 +55,7 @@
             />
           </div>
 
-          <div v-if="post.imagesArray && post.imagesArray.length > 0" class="post-images">
+          <div v-if="post.imagesArray && post.imagesArray.length > 0 && !contentHasMarkdownImages" class="post-images">
             <div :class="getGridClass(post.imagesArray.length)">
               <el-image 
                 v-for="(img, index) in post.imagesArray" 
@@ -95,8 +95,15 @@
 
           <!-- 评论 -->
           <div class="comments-section" id="comments">
-            <h3 class="section-title">评论 {{ comments.length > 0 ? `(${comments.length})` : '' }}</h3>
-            <CommentSection :comments="comments" @refresh="fetchComments(post.id)" />
+            <h3 class="section-title">评论 {{ commentTotal > 0 ? `(${commentTotal})` : '' }}</h3>
+            <CommentSection
+              :comments="comments"
+              :has-more="commentsHasMore"
+              :loading="commentsLoading"
+              :entity-type="commentEntityType"
+              @refresh="fetchComments(post.id)"
+              @load-more="loadMoreComments"
+            />
           </div>
         </main>
 
@@ -121,7 +128,7 @@ import { Flag } from '@element-plus/icons-vue'
 import dayjs from 'dayjs'
 import { getPostDetail, getPostComments, togglePostLike, reportPost } from '@/api/post'
 import { toggleFollow } from '@/api/user'
-import { addFavorite, checkFavorite, removeFavorite } from '@/api/favorite'
+import { addFavorite, removeFavorite } from '@/api/favorite'
 import PostContent from './components/PostContent.vue'
 import CommentSection from './components/CommentSection.vue'
 import ArticleToc from './components/ArticleToc.vue'
@@ -136,6 +143,13 @@ const userStore = useUserStore()
 const loading = ref(false)
 const post = ref({}) 
 const comments = ref([])
+const commentTotal = ref(0)
+const commentsLoading = ref(false)
+const commentsPage = ref(1)
+const commentPageSize = 20
+// 题解帖（type=1）的评论分区是 3，其余动态/文章是 1。
+const commentEntityType = ref(1)
+const commentsHasMore = computed(() => comments.value.length < commentTotal.value)
 const isFollowed = ref(false)
 const currentId = userStore.userId
 
@@ -161,6 +175,10 @@ const getGridClass = (count) => {
   return 'grid-9'
 }
 
+// 正文已渲染 Markdown 图片时，images 网格只会在同一页重复显示同一批图。
+// 仅对「正文无图、images 有值」的历史记录保留网格。
+const contentHasMarkdownImages = computed(() => /!\[[^\]]*\]\([^)]+\)/.test(String(post.value.content || '')))
+
 const goUser = (id) => router.push({ name: 'UserProfile', params: { id } })
 const goProblem = (id) => router.push({ name: 'ProblemDetail', params: { id } })
 // 举报理由必填：空理由的举报会让管理员无法判断，纯粹增加处理成本。
@@ -183,18 +201,6 @@ const applyReactionData = (data = {}) => {
   post.value.isLiked = Boolean(data.isLiked)
 }
 
-// 收藏状态用详情接口返回的 isFavorited 不可靠（可能未按当前用户计算），
-// 单独查一次收藏接口，确保按钮显示的是真实状态。
-const fetchFavoriteState = async (postId) => {
-  if (!currentId) return false
-  try {
-    const res = await checkFavorite({ targetId: postId, type: 'post' })
-    return res.code === 200 && Boolean(res.data)
-  } catch {
-    return false
-  }
-}
-
 const fetchDetail = async (id) => {
   loading.value = true
   try {
@@ -215,11 +221,12 @@ const fetchDetail = async (id) => {
         },
         likeCount: Number(data.likeCount || 0),
         isLiked: Boolean(data.isLiked),
-        isFavorited: data.isFavorited || false,
+        // 详情接口已按当前用户计算收藏态，不再额外请求收藏接口。
+        isFavorited: Boolean(data.isFavorited),
         relatedProblems: Array.isArray(data.relatedProblems) ? data.relatedProblems : []
       }
       isFollowed.value = data.isFollowed || false
-      post.value.isFavorited = await fetchFavoriteState(id)
+      commentEntityType.value = Number(data.type) === 1 ? 3 : 1
       fetchComments(id)
     }
   } catch (e) { console.error(e) }
@@ -255,6 +262,8 @@ const handleFavorite = async () => {
 // 评论是后端返回的扁平列表，前端组装成树。
 // 用 String() 归一 parentId/id：接口在这两处可能给出不同类型（数字 vs 字符串），
 // 直接用 Map 查找会全部落空，评论就都变成一级了。
+const flattenComment = (item) => [item, ...(item.children || [])]
+
 const buildCommentTree = (flatList) => {
   const result = [], map = new Map()
   flatList.forEach(item => { item.children = []; map.set(String(item.id), item) })
@@ -268,11 +277,42 @@ const buildCommentTree = (flatList) => {
   return result
 }
 
-const fetchComments = async (id) => {
+let commentsSeq = 0
+const fetchComments = async (id, { reset = true } = {}) => {
+  const seq = ++commentsSeq
+  if (reset) {
+    commentsPage.value = 1
+    comments.value = []
+  }
+  commentsLoading.value = true
   try {
-    const res = await getPostComments(id)
-    if (res.code === 200) comments.value = buildCommentTree(res.data || [])
-  } catch (e) { console.error('获取评论失败', e) }
+    const res = await getPostComments(id, {
+      page: commentsPage.value,
+      size: commentPageSize,
+      entityType: commentEntityType.value
+    })
+    if (seq !== commentsSeq) return
+    if (res.code === 200) {
+      const pageData = res.data || {}
+      const incoming = Array.isArray(pageData.records) ? pageData.records : []
+      const merged = reset ? incoming : [...comments.value.flatMap(flattenComment), ...incoming]
+      // 去重后重新组树，避免加载更多时同一评论被追加两次。
+      const unique = [...new Map(merged.map(item => [String(item.id), item])).values()]
+      comments.value = buildCommentTree(unique)
+      commentTotal.value = Number(pageData.total || 0)
+    }
+  } catch (e) {
+    if (seq === commentsSeq) console.error('获取评论失败', e)
+  } finally {
+    if (seq === commentsSeq) commentsLoading.value = false
+  }
+}
+
+// 加载更多只追加新数据，已加载的树保持不变。
+const loadMoreComments = async () => {
+  if (commentsLoading.value || !commentsHasMore.value) return
+  commentsPage.value += 1
+  await fetchComments(route.params.id, { reset: false })
 }
 
 // 关注接口返回的是状态字符串而非布尔：'followed' / 'unfollowed'，要显式转成布尔。
@@ -299,16 +339,19 @@ onMounted(() => {
    DETAIL PAGE LAYOUT
    ================================================================ */
 .post-detail-page {
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 24px;
+  min-height: calc(100vh - var(--app-header-height));
+  background: var(--bg-surface);
+  padding-bottom: 32px;
+  box-sizing: border-box;
 }
 
 .loading-wrapper, .empty-wrapper {
   min-height: 400px;
+  max-width: 1100px;
+  margin: 24px auto;
   display: flex; align-items: center; justify-content: center;
   background: var(--bg-surface);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-card);
   border: 1px solid var(--border-light);
 }
 
@@ -316,11 +359,13 @@ onMounted(() => {
    HEADER — 与正文视觉区分
    ================================================================ */
 .article-header {
+  max-width: 1100px;
+  margin: 0 auto;
   background: var(--bg-surface);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-md) var(--radius-md) 0 0;
-  padding: 36px 48px 28px;
-  border-bottom: none;
+  border: none;
+  border-bottom: 1px solid var(--border-light);
+  border-radius: 0;
+  padding: 32px 24px 24px;
 }
 
 .header-top {
@@ -351,15 +396,16 @@ onMounted(() => {
    ================================================================ */
 .article-body-wrapper {
   display: flex; gap: 0;
+  max-width: 1100px;
+  margin: 0 auto;
   background: var(--bg-surface);
-  border: 1px solid var(--border-light);
-  border-top: none;
-  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  border: none;
+  border-radius: 0;
 }
 
 .article-main {
   flex: 1; min-width: 0;
-  padding: 32px 48px 48px;
+  padding: 32px 24px 48px;
 }
 
 .article-content {
@@ -388,13 +434,13 @@ onMounted(() => {
 }
 .act-btn {
   display: inline-flex; align-items: center; gap: 8px;
-  padding: 10px 24px; border-radius: 24px;
+  padding: 8px 20px; border-radius: var(--radius-control);
   border: 1px solid var(--border-light);
   background: var(--bg-surface); color: var(--text-regular);
   cursor: pointer; font-size: 14px; transition: all 0.15s;
 }
 .act-btn:hover { border-color: var(--border-hover); color: var(--text-primary); }
-.act-btn.active { color: var(--accent-primary); border-color: var(--accent-primary); background: var(--accent-primary-light); }
+.act-btn.active { color: var(--text-filter-strip); border-color: var(--border-filter-strip); background: var(--bg-filter-strip); }
 
 /* ================================================================
    COMMENTS

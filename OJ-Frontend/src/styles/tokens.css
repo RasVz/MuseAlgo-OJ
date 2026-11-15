@@ -49,6 +49,11 @@
   --accent-info:         #0ea5e9;    /* 天蓝 — 信息 */
   --accent-info-light:   #f0f9ff;    /* 天蓝浅底 */
 
+  /* 筛选条件提示带 */
+  --bg-filter-strip:     #eff6ff;
+  --border-filter-strip: #bfdbfe;
+  --text-filter-strip:   #1d4ed8;
+
   /* ---- 阴影 ---- */
   --shadow-sm:           0 1px 2px rgba(31,35,40,0.06);
   --shadow-md:           0 4px 12px rgba(31,35,40,0.08);
@@ -58,6 +63,14 @@
   --radius-sm:           6px;
   --radius-md:           10px;
   --radius-lg:           16px;
+
+  /* ---- 工作台组件 ---- */
+  --radius-control:      6px;   /* 按钮/输入框/下拉/分页 */
+  --radius-card:         12px;  /* 不贴边的内容卡片 */
+  --radius-tag:          4px;
+  --control-height:      32px;
+  --table-header-height: 40px;
+  --table-row-height:    48px;
 
   /* ---- 间距 ---- */
   --spacing-xs:          4px;
@@ -170,6 +183,10 @@
   --border-light:        #21262d;
   --border-base:         #30363d;
   --border-hover:        #484f58;
+
+  --bg-filter-strip:     rgba(37, 99, 235, 0.16);
+  --border-filter-strip: rgba(37, 99, 235, 0.45);
+  --text-filter-strip:   #93bbfd;
 
   --shadow-sm:           0 1px 2px rgba(0,0,0,0.3);
   --shadow-md:           0 4px 12px rgba(0,0,0,0.4);

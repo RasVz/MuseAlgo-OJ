@@ -34,8 +34,8 @@
           :data="userList" 
           style="width: 100%" 
           v-loading="loading" 
-          stripe
-          :header-cell-style="{ background: 'var(--bg-input)', color: 'var(--text-regular)', fontWeight: 'bold' }"
+          class="rank-table"
+          :header-cell-style="{ background: 'var(--bg-app)', color: 'var(--text-regular)', fontWeight: '600' }"
         >
           <el-table-column label="排名" width="100" align="center">
             <template #default="{ row, $index }">
@@ -190,17 +190,17 @@ onMounted(() => {
 </script>
 
 <style scoped>
-/* 你的样式完全保持不变 */
 .rank-list-container {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - var(--app-header-height) - 40px);
+  height: calc(100vh - var(--app-header-height));
   overflow: hidden;
+  background: var(--bg-surface);
 }
 
 .navbar-title {
   font-size: 18px;
-  font-weight: bold;
+  font-weight: 600;
   color: var(--text-primary);
   display: flex;
   align-items: center;
@@ -211,8 +211,9 @@ onMounted(() => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  border-radius: 12px;
+  border-radius: 0;
   border: none;
+  box-shadow: none;
   min-height: 0;
 }
 
@@ -225,8 +226,10 @@ onMounted(() => {
   overflow: hidden;
 }
 
+/* 工具栏：与题库、比赛题目列表保持同一高度与内边距 */
 .filter-bar {
-  padding: 15px 20px;
+  height: 52px;
+  padding: 0 24px;
   border-bottom: 1px solid var(--border-light);
   display: flex;
   justify-content: space-between;
@@ -243,13 +246,26 @@ onMounted(() => {
 .right-search {
   display: flex;
   gap: 10px;
+  align-items: center;
 }
+.right-search :deep(.el-input__wrapper),
+.right-search :deep(.el-button) { border-radius: var(--radius-control); }
 
 .table-scroll-area {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 0;
 }
+
+.rank-table { --el-table-border-color: var(--border-light); }
+.rank-table :deep(th.el-table__cell) { height: var(--table-header-height); padding: 0; }
+.rank-table :deep(td.el-table__cell) { height: var(--table-row-height); padding: 0; }
+.rank-table :deep(.el-table__cell .cell) { padding: 0 12px; }
+.rank-table :deep(th:first-child .cell),
+.rank-table :deep(td:first-child .cell) { padding-left: 24px; }
+.rank-table :deep(th:last-child .cell),
+.rank-table :deep(td:last-child .cell) { padding-right: 24px; }
 
 .rank-cell {
   display: flex;
@@ -257,7 +273,7 @@ onMounted(() => {
   align-items: center;
 }
 .medal-icon { width: 24px; height: 24px; }
-.rank-num { font-weight: bold; color: var(--text-regular); font-family: 'Menlo', monospace; }
+.rank-num { font-weight: 600; color: var(--text-regular); font-family: var(--font-mono); }
 
 .user-info-cell {
   display: flex;
@@ -267,30 +283,29 @@ onMounted(() => {
 }
 .user-avatar {
   flex-shrink: 0;
-  background: var(--bg-input);
+  background: var(--bg-app);
   color: var(--text-secondary);
-  font-weight: bold;
+  font-weight: 600;
 }
 .name-box {
   display: flex;
   flex-direction: column;
   min-width: 0;
 }
-.username { font-weight: bold; font-size: 14px; }
+.username { font-weight: 600; font-size: 14px; }
 .motto { font-size: 12px; color: var(--text-secondary); }
 .text-truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
 
-.ac-count { font-family: monospace; color: var(--text-regular); font-weight: 600; }
+.ac-count { font-family: var(--font-mono); color: var(--text-regular); font-weight: 600; }
 
 .rating-badge {
   color: var(--text-on-accent);
   padding: 2px 8px;
-  border-radius: 12px;
+  border-radius: var(--radius-tag);
   font-size: 12px;
-  font-weight: bold;
+  font-weight: 600;
   min-width: 40px;
   display: inline-block;
-  text-shadow: 0 1px 1px rgba(0,0,0,0.2);
 }
 
 .color-red { color: #ff3333 !important; }
@@ -302,12 +317,17 @@ onMounted(() => {
 .color-gray { color: #808080 !important; }
 
 .pagination-footer {
-  height: 60px;
+  height: 56px;
   flex-shrink: 0;
   display: flex;
   justify-content: center;
   align-items: center;
   border-top: 1px solid var(--border-light);
   background: var(--bg-surface);
+}
+.pagination-footer :deep(.el-pagination.is-background .btn-prev),
+.pagination-footer :deep(.el-pagination.is-background .btn-next),
+.pagination-footer :deep(.el-pagination.is-background .el-pager li) {
+  border-radius: var(--radius-control);
 }
 </style>

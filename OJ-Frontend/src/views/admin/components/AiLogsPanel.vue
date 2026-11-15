@@ -94,7 +94,8 @@ const route = useRoute()
 
 const sceneOptions = [
   { label: '答疑', value: 'ASK' },
-  { label: '复盘', value: 'REVIEW' },
+  { label: '提交诊断', value: 'DIAGNOSIS' },
+  { label: '复盘（历史）', value: 'REVIEW' },
   { label: '建议', value: 'ADVICE' },
   { label: '间接对话', value: 'INDIRECT' },
   { label: '题面格式化', value: 'INDIRECT_JSON' },

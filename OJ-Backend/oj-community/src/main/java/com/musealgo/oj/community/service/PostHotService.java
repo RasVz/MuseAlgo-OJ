@@ -9,9 +9,12 @@ import com.musealgo.oj.common.utils.PostRedisKey;
 
 import java.time.LocalDateTime;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * 帖子热度行为域：点赞/点踩/收藏/浏览/评论计数（原子 Lua）+ 用户行为集合判定。
@@ -27,10 +30,9 @@ import java.util.Map;
  * 天然规避了这个竞态，也省掉一次网络往返。
  * </p>
  * <p>
- * <b>浏览量为何用 HyperLogLog：</b>浏览是唯一的高频写路径，若用 Set 存每个 UV，
- * 热门帖的 key 会膨胀到与访问量同阶；HLL 以约 0.81% 的标准误差换固定大小内存。
- * 代价是 {@code views} 是<b>近似值</b>，不可用于精确计数或计费，
- * 且 {@code PFADD} 无法删除元素——用户删帖时只能整体丢弃该帖的 HLL key。
+ * <b>浏览量按 PV 计数：</b>详情页每次访问 +1。早期实现用 HyperLogLog 存 UV，
+ * 但 UV 与数据库历史快照取 max 时会被旧值钉住，用户看不到增长；
+ * 现在以数据库快照为基线做原子自增，保证阅读数可见地增加。
  * </p>
  * <p>
  * 计数以 Redis 为准，数据库中的 {@code post} 快照仅在 key 被淘汰后用于补种
@@ -88,10 +90,44 @@ public class PostHotService {
                     "local comments = tonumber(redis.call('HGET', statKey, 'comments') or '0') " +
                     "return {changed, delta, views, likes, dislikes, favorites, comments}";
 
+    /**
+     * 批量读取多篇帖子的统计快照，避免列表页对每篇帖子各发一次 HGETALL。
+     * 整个 hash 不存在的帖子不会出现在返回值里，调用方回退到数据库快照。
+     */
+    private static final String BATCH_STATS_LUA =
+            "local result = {} " +
+                    "for i, key in ipairs(KEYS) do " +
+                    "  result[i] = redis.call('HMGET', key, 'views', 'likes', 'dislikes', 'favorites', 'comments') " +
+                    "end " +
+                    "return result";
+
+    /** 批量判断当前用户是否点赞过多篇帖子，一次往返替代 N 次 SISMEMBER。 */
+    private static final String BATCH_LIKED_LUA =
+            "local result = {} " +
+                    "for i, key in ipairs(KEYS) do " +
+                    "  result[i] = redis.call('SISMEMBER', key, ARGV[1]) " +
+                    "end " +
+                    "return result";
+
+    /**
+     * 浏览量自增：以数据库快照为下限，避免 Redis 中残留的旧 UV 值把阅读数压回历史值。
+     * 每次详情访问 +1，按 PV 计数。
+     */
+    private static final String INCREMENT_VIEW_LUA =
+            "local persisted = tonumber(ARGV[1]) or 0 " +
+                    "local current = tonumber(redis.call('HGET', KEYS[1], 'views') or '0') " +
+                    "if current < persisted then current = persisted end " +
+                    "current = current + 1 " +
+                    "redis.call('HSET', KEYS[1], 'views', tostring(current)) " +
+                    "return current";
+
     private final StringRedisTemplate redisTemplate;
     private final PostRankingService rankingService;
 
     private final DefaultRedisScript<List> applyActionScript = buildListScript(APPLY_ACTION_AND_GET_STATS_LUA);
+    private final DefaultRedisScript<List> batchStatsScript = buildListScript(BATCH_STATS_LUA);
+    private final DefaultRedisScript<List> batchLikedScript = buildListScript(BATCH_LIKED_LUA);
+    private final DefaultRedisScript<Long> incrementViewScript = buildLongScript(INCREMENT_VIEW_LUA);
 
     public boolean like(Long postId, Long userId, String category,
                         boolean isTop, boolean isEssence, LocalDateTime createTime) {
@@ -226,37 +262,17 @@ public class PostHotService {
     }
 
     /**
-     * 浏览量按 UV 记录（HyperLogLog）。
-     * 兼顾游客登录状态下，兼容 null 传参记录统配浏览量
-     * <p>
-     * 注意：所有游客写入同一个 {@code anonymous} 成员，因此 N 个游客只计 1 个 UV。
-     * 这是 HLL + 无身份标识的固有限制，不是 bug；若产品要求区分游客 UV，
-     * 需引入 IP 或会话标识并评估其隐私合规性。
-     * </p>
+     * 记录一次详情页浏览（PV +1）。
      *
-     * @param userId 为 {@code null} 时按游客处理
+     * @param persistedViews 数据库中的历史阅读数，用作 Redis 冷启动/旧值修复的基线
      */
-    public void view(Long postId, Long userId) {
+    public void view(Long postId, int persistedViews) {
         if (postId == null) {
             return;
         }
-
-        ensureStatInitialized(postId);
-
-        String viewKey = PostRedisKey.viewedUsers(postId);
-        String statKey = PostRedisKey.stat(postId);
-
-        if (userId != null) {
-            redisTemplate.opsForHyperLogLog().add(viewKey, userId.toString());
-        } else {
-            // 游客统计入相同的 HLL 时统一算作 anonymous (可基于 IP 改进以精确计算游客UV)
-            redisTemplate.opsForHyperLogLog().add(viewKey, "anonymous");
-        }
-
-        Long uvCount = redisTemplate.opsForHyperLogLog().size(viewKey);
-        if (uvCount != null) {
-            redisTemplate.opsForHash().put(statKey, PostRankingService.FIELD_VIEWS, uvCount.toString());
-        }
+        int base = Math.max(0, persistedViews);
+        redisTemplate.execute(incrementViewScript,
+                List.of(PostRedisKey.stat(postId)), String.valueOf(base));
     }
 
     public void initNewPost(Long postId, String category, boolean isTop, boolean isEssence) {
@@ -285,6 +301,54 @@ public class PostHotService {
 
     public Map<String, Integer> getPostStats(Long postId) {
         return rankingService.getPostStats(postId);
+    }
+
+    public Map<Long, Map<String, Integer>> getPostStatsBatch(Collection<Long> postIds) {
+        List<Long> ids = postIds == null ? List.of() : postIds.stream()
+                .filter(Objects::nonNull).distinct().toList();
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+
+        List<String> keys = ids.stream().map(PostRedisKey::stat).toList();
+        List<?> raw = redisTemplate.execute(batchStatsScript, keys);
+        Map<Long, Map<String, Integer>> result = new LinkedHashMap<>();
+        for (int index = 0; index < ids.size(); index++) {
+            Object row = raw != null && index < raw.size() ? raw.get(index) : null;
+            if (!(row instanceof List<?> values)) {
+                continue;
+            }
+            Map<String, Integer> stats = new LinkedHashMap<>();
+            for (int fieldIndex = 0; fieldIndex < PostRankingService.STAT_FIELDS.size(); fieldIndex++) {
+                Object value = fieldIndex < values.size() ? values.get(fieldIndex) : null;
+                if (value != null) {
+                    stats.put(PostRankingService.STAT_FIELDS.get(fieldIndex), safeToInt(value));
+                }
+            }
+            // 整个 hash 都不存在时不返回条目，调用方回退到数据库快照；
+            // 部分字段缺失时只覆盖 Redis 中真实存在的字段。
+            if (!stats.isEmpty()) {
+                result.put(ids.get(index), stats);
+            }
+        }
+        return result;
+    }
+
+    public Map<Long, Boolean> getLikedStateBatch(Collection<Long> postIds, Long userId) {
+        List<Long> ids = postIds == null ? List.of() : postIds.stream()
+                .filter(Objects::nonNull).distinct().toList();
+        if (ids.isEmpty() || userId == null) {
+            return Map.of();
+        }
+
+        List<String> keys = ids.stream().map(PostRedisKey::likedUsers).toList();
+        List<?> raw = redisTemplate.execute(batchLikedScript, keys, userId.toString());
+        Map<Long, Boolean> result = new LinkedHashMap<>();
+        for (int index = 0; index < ids.size(); index++) {
+            Object value = raw != null && index < raw.size() ? raw.get(index) : null;
+            result.put(ids.get(index), safeToInt(value) == 1);
+        }
+        return result;
     }
 
     public boolean hasLiked(Long postId, Long userId) {
@@ -379,12 +443,25 @@ public class PostHotService {
         return script;
     }
 
+    private static DefaultRedisScript<Long> buildLongScript(String scriptText) {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setScriptText(scriptText);
+        script.setResultType(Long.class);
+        return script;
+    }
+
     private static int safeToInt(Object value) {
         if (value == null) {
             return 0;
         }
         if (value instanceof Number) {
             return ((Number) value).intValue();
+        }
+        if (value instanceof Boolean bool) {
+            return bool ? 1 : 0;
+        }
+        if (value instanceof byte[] bytes) {
+            value = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
         }
         try {
             return Integer.parseInt(value.toString());

@@ -2,40 +2,8 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
-import { readAiResponse } from '../../src/utils/aiStream.js'
-import { AUTO_MODE, isContestScene } from '../../src/utils/tutorModes.js'
 import { ApiError } from '../../src/utils/apiError.js'
 
-function review(response) {
-  const source = readFileSync(new URL('../../src/views/submission/components/AiReviewDialog.vue', import.meta.url), 'utf8')
-  const start = source.indexOf('const startReview =')
-  const end = source.indexOf('</script>', start)
-  const messages = []
-  const context = { props: { submissionId: 1, problemId: 1 }, reviewContent: { value: '' },
-    reviewing: { value: false }, reviewIncomplete: { value: false }, reviewNotice: { value: '' }, question: { value: '' }, helpMode: { value: AUTO_MODE }, lastAnswer: '', isContestScene,
-    fetch: async () => response, useUserStore: () => ({ getAccessToken: () => 'synthetic' }),
-    ElMessage: { error: text => messages.push(text) }, showApiError: (error, fallback) => { if (!error.notified && !error.authNotified) messages.push(error.message || fallback) }, console: { error() {} },
-    TextDecoder, readAiResponse, AbortController, reviewController: null, reviewGeneration: 0 }
-  vm.runInNewContext(source.slice(start, end) + '\nglobalThis.run = startReview', context)
-  return { context, messages, run: context.run }
-}
-for (const [name, response, expected] of [
-  ['JSON handshake', () => new Response(JSON.stringify({ code: 403, errorCode: 'ACCESS_DENIED', message: '无权复盘' }), { headers: { 'Content-Type': 'application/json' } }), '无权复盘'],
-  ['app-error', () => new Response('data: 已生成部分\n\nevent: app-error\ndata: {"code":503,"message":"合成上游失败"}\n\n', { headers: { 'Content-Type': 'text/event-stream' } }), '合成上游失败'],
-  ['premature EOF', () => new Response('data: 已生成部分\n\n', { headers: { 'Content-Type': 'text/event-stream' } }), 'AI 回复中断，请重试']
-]) {
-  test(`review ${name} keeps the failure reason and incomplete state`, async () => {
-    const page = review(response()); await page.run()
-    assert.deepEqual(page.messages, [expected]); assert.equal(page.context.reviewIncomplete.value, true)
-    assert.equal(page.context.reviewing.value, false)
-    assert.equal(page.context.reviewContent.value.includes('"code"'), false)
-  })
-}
-test('review only completes after done', async () => {
-  const page = review(new Response('data:   保留缩进\n\nevent: done\ndata: \n\n', { headers: { 'Content-Type': 'text/event-stream' } }))
-  await page.run(); assert.equal(page.context.reviewContent.value, '  保留缩进')
-  assert.equal(page.context.reviewIncomplete.value, false); assert.deepEqual(page.messages, [])
-})
 test('contest API failure never falls back to unrelated global submissions', async () => {
   const source = readFileSync(new URL('../../src/views/contest/ContestSubmissionView.vue', import.meta.url), 'utf8')
   const start = source.indexOf('const requestWithFallback =')
@@ -57,7 +25,8 @@ test('late submission detail response cannot overwrite a newer route', async () 
   const end = source.indexOf('const goBack =', start)
   const pending = new Map()
   const context = { route: { params: { id: '1' } }, loading: { value: false }, detail: { value: null },
-    isInProgress: { value: false }, reviewDialogVisible: { value: false }, loadGeneration: 0,
+    isInProgress: { value: false }, loadGeneration: 0,
+    showApiError() {},
     codeBlock: { value: null }, nextTick: callback => callback(), ElMessage: { error() {} },
     console: { error() {} }, ApiError, getSubmissionDetail: id => new Promise(resolve => pending.set(id, resolve)) }
   vm.runInNewContext(source.slice(start, end) + '\nglobalThis.run = loadData', context)
@@ -108,7 +77,7 @@ test('settings do not repeat an error already shown by the shared request layer'
 
 for (const [file, name, next, api] of [
   ['FavoriteView.vue', 'fetchPosts', 'const fetchProblemLists', 'getFavoritePosts'],
-  ['ReviewBookView.vue', 'load', 'const changeScope', 'getReviewBook']
+  ['ReviewBookView.vue', 'load', 'const openProblem', 'getReviewBook']
 ]) {
   test(`${file} keeps failed loading distinct from an empty result`, async () => {
     const source = readFileSync(new URL('../../src/views/user/' + file, import.meta.url), 'utf8')
@@ -136,11 +105,13 @@ test('partial AI configuration group save requests a config reload and does not 
  assert.match(context.configError.value,/未完整保存/);assert.equal(context.savingGroup.value,'')
 })
 
-
-test('finishing a review preserves a followup typed while the answer streams', async () => {
-  const page = review(new Response('data: 回答\n\nevent: done\ndata: \n\n', { headers: { 'Content-Type': 'text/event-stream' } }))
-  const pending = page.run()
-  page.context.question.value = '解释刚才提到的边界条件'
-  await pending
-  assert.equal(page.context.question.value, '解释刚才提到的边界条件')
+test('submission detail uses a one-time diagnosis card and no review routes', async () => {
+  const detail = readFileSync(new URL('../../src/views/submission/SubmissionDetailView.vue', import.meta.url), 'utf8')
+  assert.match(detail, /SubmissionAiDiagnosisCard/)
+  assert.doesNotMatch(detail, /AiReview/)
+  const router = readFileSync(new URL('../../src/router/index.js', import.meta.url), 'utf8')
+  assert.doesNotMatch(router, /AiReviewRecords|AiReviewDetail/)
+  const card = readFileSync(new URL('../../src/views/submission/components/SubmissionAiDiagnosisCard.vue', import.meta.url), 'utf8')
+  assert.match(card, /AI_DIAGNOSIS_ALREADY_EXISTS/)
+  assert.match(card, /只做简要代码复查/)
 })

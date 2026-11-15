@@ -1,12 +1,12 @@
 <template>
-  <el-card shadow="never" class="table-card" v-loading="loading">
+  <div class="rank-section" v-loading="loading">
     <el-alert
       v-if="errorText"
       :title="errorText"
       type="warning"
       :closable="false"
       show-icon
-      class="mb-16"
+      class="rank-alert"
     />
 
     <el-alert
@@ -15,16 +15,16 @@
       type="info"
       :closable="false"
       show-icon
-      class="mb-16"
+      class="rank-alert"
     />
 
     <el-table
       v-if="!oiRankingHidden"
       :data="rankList"
-      border
-      stripe
       style="width: 100%"
       :empty-text="emptyText"
+      class="rank-table"
+      :header-cell-style="{ background: 'var(--bg-app)', color: 'var(--text-regular)', fontWeight: '600' }"
     >
       <el-table-column label="名次" width="150" align="center">
         <template #default="{ row, $index }">
@@ -113,8 +113,9 @@
     <el-empty
       v-if="!oiRankingHidden && !loading && rankList.length === 0 && !errorText"
       :description="emptyText"
+      class="rank-empty"
     />
-  </el-card>
+  </div>
 </template>
 
 <script setup>
@@ -153,13 +154,34 @@ function getParticipantType(row) {
 </script>
 
 <style scoped>
-.table-card {
-  margin-bottom: 16px;
+/* 贴边榜单表格：表头 40px / 行 48px，首尾列 24px，其余单元格 12px */
+.rank-section {
+  flex: none;
+  margin-top: 16px;
 }
 
-.mb-16 {
-  margin-bottom: 16px;
+.rank-alert {
+  margin: 0 24px 16px;
 }
+
+.rank-empty {
+  padding: 24px 0 32px;
+}
+
+.rank-table { --el-table-border-color: var(--border-light); }
+.rank-table :deep(th.el-table__cell) {
+  height: var(--table-header-height);
+  padding: 0;
+}
+.rank-table :deep(td.el-table__cell) {
+  height: var(--table-row-height);
+  padding: 0;
+}
+.rank-table :deep(.el-table__cell .cell) { padding: 0 12px; }
+.rank-table :deep(th:first-child .cell),
+.rank-table :deep(td:first-child .cell) { padding-left: 24px; }
+.rank-table :deep(th:last-child .cell),
+.rank-table :deep(td:last-child .cell) { padding-right: 24px; }
 
 .user-cell {
   display: flex;

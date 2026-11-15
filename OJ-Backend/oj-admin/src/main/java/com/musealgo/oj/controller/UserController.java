@@ -651,29 +651,35 @@ public class UserController {
         return Result.success(plan.stream().limit(5).toList());
     }
 
-    @Operation(summary = "我的错题本与今日复习")
+    @Operation(summary = "我的错题本")
     @GetMapping("/review-book")
-    public Result<List<Map<String, Object>>> reviewBook(@RequestParam(defaultValue = "today") String scope) {
+    public Result<List<Map<String, Object>>> reviewBook() {
         Long userId = SecurityUtils.getUserId();
         if (userId == null) return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "请先登录");
         collectReviewProblems(userId);
-        String limit = "today".equals(scope) ? " LIMIT 5" : " LIMIT 50";
+        // 尝试次数与首次/最后尝试时间直接从提交记录聚合，避免在 review 表里维护可能过期的冗余计数。
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
                 "SELECT review.problem_id AS problemId, problem.title, problem.difficulty, review.reason, "
-                        + "review.status, review.last_reviewed_at AS lastReviewedAt, review.first_flagged_at AS firstFlaggedAt "
+                        + "stats.attempt_count AS attemptCount, stats.first_attempt_at AS firstAttemptAt, "
+                        + "stats.last_attempt_at AS lastAttemptAt "
                         + "FROM user_problem_review review JOIN problem ON problem.id = review.problem_id "
+                        + "JOIN (SELECT problem_id, COUNT(*) AS attempt_count, MIN(create_time) AS first_attempt_at, "
+                        + "MAX(create_time) AS last_attempt_at FROM submission "
+                        + "WHERE user_id = ? AND status <> 0 GROUP BY problem_id) stats "
+                        + "ON stats.problem_id = review.problem_id "
                         + "WHERE review.user_id = ? AND review.status = 'REVIEW' "
-                        + "ORDER BY COALESCE(review.last_reviewed_at, review.first_flagged_at) ASC" + limit, userId);
+                        + "ORDER BY stats.last_attempt_at ASC LIMIT 50", userId, userId);
         return Result.success(rows);
     }
 
-    @Operation(summary = "标记错题掌握状态")
-    @PostMapping("/review-book/{problemId}/mastered")
-    public Result<Void> markReviewMastered(@PathVariable Long problemId, @RequestParam boolean mastered) {
+    @Operation(summary = "忽略错题")
+    @PostMapping("/review-book/{problemId}/ignore")
+    public Result<Void> ignoreReviewProblem(@PathVariable Long problemId) {
         Long userId = SecurityUtils.getUserId();
         if (userId == null) return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "请先登录");
-        int updated = jdbcTemplate.update("UPDATE user_problem_review SET status = ?, last_reviewed_at = NOW() WHERE user_id = ? AND problem_id = ?",
-                mastered ? "MASTERED" : "REVIEW", userId, problemId);
+        // 忽略状态记在错题本行上，收集逻辑只更新 reason，不会把 IGNORED 重新变回 REVIEW。
+        int updated = jdbcTemplate.update("UPDATE user_problem_review SET status = 'IGNORED', last_reviewed_at = NOW() WHERE user_id = ? AND problem_id = ?",
+                userId, problemId);
         if (updated == 0) return ErrorResponses.failure(SystemErrorCode.REVIEW_ENTRY_NOT_FOUND, "错题记录不存在");
         return Result.success(null);
     }

@@ -39,7 +39,6 @@ public class AiService implements AiAssistant {
     private final AiQuotaService quotaService;
     private final AiContestGuard contestGuard;
     private final TeacherWorkbenchService teacherWorkbenchService;
-    private final ReviewApplicationService reviewApplicationService;
     private final com.musealgo.oj.ai.tutor.TutorMessageBuilder messages;
     private final com.musealgo.oj.ai.diagnostics.TutorDiagnosisService diagnosis;
     private final com.musealgo.oj.ai.usage.AiUsageRecorder usage;
@@ -47,21 +46,20 @@ public class AiService implements AiAssistant {
     public AiService(AiGateway aiGateway, AiChatSessionService sessionService,
                      RagContextService ragContextService, AiQuotaService quotaService,
                      AiContestGuard contestGuard, TeacherWorkbenchService teacherWorkbenchService,
-                     ReviewApplicationService reviewApplicationService,
                      com.musealgo.oj.ai.tutor.TutorMessageBuilder messages) {
-        this(aiGateway, sessionService, ragContextService, quotaService, contestGuard, teacherWorkbenchService, reviewApplicationService, messages, null, null);
+        this(aiGateway, sessionService, ragContextService, quotaService, contestGuard, teacherWorkbenchService, messages, null, null);
     }
     @org.springframework.beans.factory.annotation.Autowired
     public AiService(AiGateway aiGateway, AiChatSessionService sessionService,
                      RagContextService ragContextService, AiQuotaService quotaService,
                      AiContestGuard contestGuard, TeacherWorkbenchService teacherWorkbenchService,
-                     ReviewApplicationService reviewApplicationService, com.musealgo.oj.ai.tutor.TutorMessageBuilder messages,
+                     com.musealgo.oj.ai.tutor.TutorMessageBuilder messages,
                      com.musealgo.oj.ai.diagnostics.TutorDiagnosisService diagnosis, com.musealgo.oj.ai.usage.AiUsageRecorder usage) {
         this.diagnosis = diagnosis; this.usage=usage;
         this.aiGateway = aiGateway; this.sessionService = sessionService;
         this.ragContextService = ragContextService; this.quotaService = quotaService;
         this.contestGuard = contestGuard; this.teacherWorkbenchService = teacherWorkbenchService;
-        this.reviewApplicationService = reviewApplicationService; this.messages = messages;
+        this.messages = messages;
     }
 
     /**
@@ -198,14 +196,6 @@ public class AiService implements AiAssistant {
         return new AiAskOutcome(result.success() ? AiUsage.STATUS_SUCCESS
                 : "CANCELLED".equals(result.errorType()) ? AiUsage.STATUS_CANCELLED : AiUsage.STATUS_FAIL,
                 result.content(), result.usage(), prompt, result.source(), result.errorType(), null, result.requestSent(), result.usageEstimated());
-    }
-
-    public ReviewApplicationService.PreparedReview prepareReview(Long userId, com.musealgo.oj.ai.dto.AiReviewRequest request) {
-        return reviewApplicationService.prepare(userId, request);
-    }
-    public AiAskOutcome reviewSubmissionStream(Long userId, com.musealgo.oj.ai.dto.AiReviewRequest request,
-            ReviewApplicationService.PreparedReview review, boolean privileged, Consumer<String> onChunk) {
-        return reviewApplicationService.stream(userId, request, review, privileged, onChunk);
     }
 
     /** 字符数 → token 粗估：中英混合语料约 2 字符/token（偏保守，宁多勿少） */

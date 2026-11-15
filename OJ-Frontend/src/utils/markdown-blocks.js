@@ -415,6 +415,38 @@ export function docToMarkdown(doc = { type: 'doc', content: [] }) {
 }
 
 /**
+ * 收集文档中的图片地址，供列表缩略图使用。
+ * 正文仍是内容源；这里只做去重与上限保护（post.images 字段长度有限）。
+ *
+ * @param {{type:'doc', content:Array}} doc
+ * @param {number} limit 最多保留的地址数，默认 9
+ * @returns {string[]}
+ */
+export function collectImageSources(doc, limit = 9) {
+  const max = Number.isSafeInteger(limit) && limit > 0 ? limit : 9
+  const sources = []
+  const seen = new Set()
+
+  const walk = (nodes = []) => {
+    for (const node of nodes) {
+      if (sources.length >= max) return
+      if (!node) continue
+      if (node.type === 'image') {
+        const src = String(node.attrs?.src || '').trim()
+        if (src && !seen.has(src)) {
+          seen.add(src)
+          sources.push(src)
+        }
+      }
+      if (Array.isArray(node.content)) walk(node.content)
+    }
+  }
+
+  walk(doc?.content || [])
+  return sources
+}
+
+/**
  * 往返校验：序列化后再解析，比较结构与文本。
  * 返回 null 表示通过，否则返回差异描述。
  */

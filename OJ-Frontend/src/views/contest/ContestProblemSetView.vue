@@ -1,25 +1,23 @@
 <template>
   <div class="contest-workspace">
-    <div class="left-panel">
-      <el-card shadow="never" class="table-card">
-        <template #header>
-          <div class="panel-header">
-            <div class="header-title">
-              <el-icon><Tickets /></el-icon>
-              <span>比赛题目</span>
-            </div>
-            <el-tag type="info" effect="plain">共 {{ problems.length }} 题</el-tag>
-          </div>
-        </template>
+    <section class="problem-section">
+      <div class="section-toolbar">
+        <div class="header-title">
+          <el-icon><Tickets /></el-icon>
+          <span>比赛题目</span>
+        </div>
+        <el-tag type="info" effect="plain">共 {{ problems.length }} 题</el-tag>
+      </div>
 
-        <el-table
-          v-loading="loading"
-          :data="problems"
-          style="width: 100%"
-          :header-cell-style="{ background: 'var(--bg-input)', color: 'var(--text-regular)', fontWeight: '600' }"
-          :row-class-name="tableRowClassName"
-          @row-click="handleRowClick"
-        >
+      <el-table
+        v-loading="loading"
+        :data="problems"
+        style="width: 100%"
+        :header-cell-style="{ background: 'var(--bg-app)', color: 'var(--text-regular)', fontWeight: '600' }"
+        :row-class-name="tableRowClassName"
+        class="problem-table"
+        @row-click="handleRowClick"
+      >
           <el-table-column width="60" align="center">
             <template #default="{ row }">
               <el-icon v-if="row.userStatus === 1" color="var(--accent-success)"><Check /></el-icon>
@@ -72,11 +70,9 @@
             </template>
           </el-table-column>
         </el-table>
-      </el-card>
-    </div>
+    </section>
 
-    <div class="right-panel">
-      <el-card shadow="never" class="info-card">
+    <aside class="info-sidebar">
         <div class="contest-title">{{ contest.title || '比赛信息' }}</div>
         <div class="contest-time">
           <el-icon><Calendar /></el-icon>
@@ -119,25 +115,31 @@
         <el-button
           type="primary"
           class="entry-button"
-          :loading="registering"
+          :loading="registering || entryLoading"
           :disabled="entryDisabled"
           @click="handleEntry"
         >
           {{ entryLabel }}
         </el-button>
+        <el-button
+          v-if="realStatus === 'Ended' && canReview && vpAttempt?.status !== 'RUNNING' && vpAttempt?.status !== 'SETTLING'"
+          class="vp-entry-button"
+          :loading="registering"
+          :disabled="entryLoading || Boolean(entryError)"
+          @click="enterAnswer(null, true)"
+        >{{ vpAttempt ? '重新虚拟参赛' : '开始虚拟参赛' }}</el-button>
         <p v-if="entryHint" class="entry-hint">{{ entryHint }}</p>
-      </el-card>
-    </div>
+    </aside>
   </div>
 </template>
 
 <script setup>
 // 比赛题目页：赛题列表 + 比赛信息侧栏，并实时反映比赛进行状态。
 // 比赛基本信息来自 contestStore（比赛布局统一注入），本页只额外拉一次赛题列表。
-import { ref, onMounted, computed, onUnmounted } from 'vue'
+import { ref, onMounted, computed, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { getContestProblemList, getMyContestRegistration, registerContestApi } from '@/api/contest'
+import { getContestProblemList, getMyContestRegistration, registerContestApi, getVp, startVp } from '@/api/contest'
 import { useContestStore } from '@/stores/contestContext'
 import { useUserStore } from '@/stores/userStore'
 import { unwrapResultData } from '@/utils/response'
@@ -157,6 +159,9 @@ const loading = ref(false)
 const problems = ref([])
 const registration = ref(null)
 const registering = ref(false)
+const entryLoading = ref(false)
+const entryError = ref('')
+const vpAttempt = ref(null)
 
 // 每秒推进一次"当前时间"，让状态与倒计时在页面开着不动时也能自动翻转。
 // 定时器必须在卸载时清理，否则每次进出这个页面都会多留一个。
@@ -189,7 +194,7 @@ const statusText = computed(() => {
 const statusTagType = computed(() => {
   if (realStatus.value === 'NotStarted') return 'info'
   if (realStatus.value === 'Running') return 'success'
-  return ''
+  return 'info'
 })
 
 const realDuration = computed(() => {
@@ -221,9 +226,16 @@ const isApprovedRegistration = computed(() =>
 const registrationPending = computed(() => registration.value?.status === 'PENDING')
 const registrationRejected = computed(() => registration.value?.status === 'REJECTED')
 
+const canReview = computed(() => isApprovedRegistration.value || vpAttempt.value != null)
+
 const entryLabel = computed(() => {
+  if (entryError.value) return '重试参赛状态'
+  if (entryLoading.value) return '加载参赛状态'
   if (realStatus.value === 'NotStarted') return '比赛未开始'
-  if (realStatus.value === 'Ended') return isApprovedRegistration.value ? '进入复盘' : '比赛已结束'
+  if (realStatus.value === 'Ended') {
+    if (vpAttempt.value?.status === 'RUNNING') return '继续虚拟参赛'
+    return canReview.value ? '进入复盘' : '开始虚拟参赛'
+  }
   if (registrationRejected.value) return '报名未通过'
   if (registrationPending.value) return '审核中'
   if (isApprovedRegistration.value) return '进入答题'
@@ -233,13 +245,17 @@ const entryLabel = computed(() => {
 
 const entryDisabled = computed(() => {
   if (realStatus.value === 'NotStarted') return true
-  if (realStatus.value === 'Ended') return !isApprovedRegistration.value
+  if (entryLoading.value) return true
+  if (entryError.value || realStatus.value === 'Ended') return false
   return registrationPending.value || registrationRejected.value
 })
 
 const entryHint = computed(() => {
+  if (entryError.value) return entryError.value
   if (realStatus.value === 'NotStarted') return '比赛开始后可进入答题'
-  if (realStatus.value === 'Ended' && !isApprovedRegistration.value) return '比赛已结束，未参赛不能查看题目'
+  if (realStatus.value === 'Ended') return vpAttempt.value?.status === 'RUNNING'
+    ? '虚拟参赛进行中，可继续限时答题'
+    : '正式比赛已结束，可复盘已有成绩或限时虚拟参赛'
   if (registrationPending.value) return '报名审核中，通过后可进入答题'
   if (registrationRejected.value) return '报名未通过审核，不能查看题目'
   if (entryDisabled.value) return '当前不可进入答题'
@@ -250,17 +266,35 @@ const fetchRegistration = async () => {
   if (!userStore.getAccessToken() || !contestId.value) return
   try {
     const res = await getMyContestRegistration(contestId.value)
-    if (res.code === 200) registration.value = unwrapResultData(res) || null
+    if (res.code !== 200) throw new Error(res.message || '参赛状态加载失败')
+    registration.value = unwrapResultData(res) || null
   } catch {
-    registration.value = null
+    entryError.value = '参赛状态加载失败，请点击重试'
+  }
+}
+
+const fetchEntryState = async () => {
+  entryLoading.value = true
+  entryError.value = ''
+  try {
+    await fetchRegistration()
+    if (realStatus.value === 'Ended' && userStore.getAccessToken()) {
+      const res = await getVp(contestId.value)
+      if (res.code !== 200) throw new Error('虚拟参赛状态加载失败')
+      vpAttempt.value = unwrapResultData(res) || null
+    }
+  } catch {
+    entryError.value = '参赛状态加载失败，请点击重试'
+  } finally {
+    entryLoading.value = false
   }
 }
 
 /**
- * 进入比赛答题页前的准入：未开始/已结束/审核中/未通过都挡下；
+ * 进入比赛答题页前的准入：未开始、审核中、未通过拒绝正式参赛；赛后按报名/VP 放行；
  * 无需审核且未报名的用户在点击时自动报名，与后端提交入口口径一致。
  */
-const ensureEntry = async () => {
+const ensureEntry = async (startVirtual = false) => {
   if (!userStore.getAccessToken()) {
     ElMessage.warning('请先登录后参赛')
     router.push({ name: 'Login', query: { redirect: route.fullPath } })
@@ -271,9 +305,23 @@ const ensureEntry = async () => {
     return false
   }
   if (realStatus.value === 'Ended') {
-    if (isApprovedRegistration.value) return true
-    ElMessage.warning('比赛已结束，未参赛不能查看题目')
-    return false
+    await fetchEntryState()
+    if (entryError.value) return false
+    if (vpAttempt.value?.status === 'RUNNING' || (!startVirtual && canReview.value)) return true
+    registering.value = true
+    try {
+      const res = await startVp(contestId.value)
+      if (res.code !== 200) throw new Error(res.message || '无法开始虚拟参赛')
+      vpAttempt.value = unwrapResultData(res) || null
+      if (vpAttempt.value?.status === 'RUNNING') return true
+      ElMessage.info('上次虚拟参赛正在结算，请在排行榜查看进度')
+      return false
+    } catch (error) {
+      showApiError(error, '无法开始虚拟参赛')
+      return false
+    } finally {
+      registering.value = false
+    }
   }
   if (registrationRejected.value) {
     ElMessage.warning('报名未通过审核，不能查看题目')
@@ -286,7 +334,8 @@ const ensureEntry = async () => {
   if (isApprovedRegistration.value) return true
 
   // 进入报名前再拉一次：上次加载可能因瞬时失败把已报名用户误判成未报名。
-  await fetchRegistration()
+  await fetchEntryState()
+  if (entryError.value) return false
   if (isApprovedRegistration.value) return true
   if (registrationRejected.value) {
     ElMessage.warning('报名未通过审核，不能查看题目')
@@ -325,17 +374,34 @@ const ensureEntry = async () => {
   }
 }
 
-const enterAnswer = async (problemId) => {
-  if (!(await ensureEntry())) return
-  const target = problemId || problems.value[0]?.problemId
-  router.push({
-    name: 'ContestAnswer',
-    params: { id: contestId.value },
-    query: target ? { q: `coding-${target}` } : {}
-  })
+const enterAnswer = async (problemId, startVirtual = false) => {
+  if (entryLoading.value || registering.value) return
+  // 赛后的虚拟参赛/复盘卷在独立标签页打开：先同步占住标签页，
+  // 避免等待报名或 startVp 的网络往返后被浏览器当成非用户手势而拦截。
+  const isVpPaper = startVirtual || realStatus.value === 'Ended'
+  const pendingTab = isVpPaper ? window.open('', '_blank') : null
+  let handedOff = false
+  try {
+    if (!(await ensureEntry(startVirtual))) return
+    const target = problemId || problems.value[0]?.problemId
+    const location = {
+      name: isVpPaper ? 'ContestVpAnswer' : 'ContestAnswer',
+      params: { id: contestId.value },
+      query: target ? { q: `coding-${target}` } : {}
+    }
+    if (pendingTab) {
+      pendingTab.location.href = router.resolve(location).href
+      handedOff = true
+    } else {
+      // 弹窗被拦截时退回当前标签页，保证仍能进入答题。
+      router.push(location)
+    }
+  } finally {
+    if (pendingTab && !handedOff) pendingTab.close()
+  }
 }
 
-const handleEntry = () => enterAnswer()
+const handleEntry = () => entryError.value ? fetchEntryState() : enterAnswer()
 const handleRowClick = (row) => enterAnswer(row.problemId)
 
 const fetchData = async () => {
@@ -356,42 +422,58 @@ const fetchData = async () => {
 // 比赛状态由 now 每秒推算，回到本页时能自动更新。
 onMounted(() => {
   fetchData()
-  fetchRegistration()
 })
+watch(() => [contestId.value, realStatus.value, userStore.userId], () => {
+  registration.value = null
+  vpAttempt.value = null
+  fetchEntryState()
+}, { immediate: true })
 </script>
 
 <style scoped>
+.vp-entry-button { width: 100%; margin: 10px 0 0; border-radius: var(--radius-control); }
+
 .contest-workspace {
   display: grid;
-  grid-template-columns: 3fr 1fr;
-  gap: 16px;
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 16px 8px 0;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 0;
+  max-width: none;
+  margin: 0;
+  padding: 0;
 }
 
-.left-panel,
-.right-panel {
+.problem-section {
   min-width: 0;
+  background: var(--bg-surface);
 }
 
-.table-card {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 10px;
-}
-
-.panel-header {
+.section-toolbar {
+  height: 52px;
+  padding: 0 24px;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  border-bottom: 1px solid var(--border-light);
 }
+
 .header-title {
   display: flex;
   align-items: center;
   gap: 6px;
   font-weight: 700;
+  font-size: 14px;
   color: var(--text-primary);
 }
+
+.problem-table { --el-table-border-color: var(--border-light); }
+.problem-table :deep(th.el-table__cell) { height: var(--table-header-height); padding: 0; }
+.problem-table :deep(td.el-table__cell) { height: var(--table-row-height); padding: 0; }
+.problem-table :deep(.el-table__cell .cell) { padding: 0 12px; }
+.problem-table :deep(th:first-child .cell),
+.problem-table :deep(td:first-child .cell) { padding-left: 24px; }
+.problem-table :deep(th:last-child .cell),
+.problem-table :deep(td:last-child .cell) { padding-right: 24px; }
+.problem-table :deep(.el-table__row) { cursor: pointer; }
 
 .problem-index {
   font-weight: bold;
@@ -401,6 +483,7 @@ onMounted(() => {
 
 .problem-title {
   font-weight: 500;
+  font-size: 14px;
   color: var(--text-primary);
   cursor: pointer;
   transition: color 0.2s;
@@ -437,20 +520,14 @@ onMounted(() => {
   background-color: var(--el-border-color);
 }
 
-:deep(.el-table__row) {
-  cursor: pointer;
-  height: 64px;
-}
-:deep(.el-table__cell) {
-  padding-top: 16px !important;
-  padding-bottom: 16px !important;
-}
-
-.info-card {
-  border-radius: 10px;
-  border: 1px solid var(--el-border-color-lighter);
+.info-sidebar {
+  min-width: 0;
+  padding: 20px 24px;
+  border-left: 1px solid var(--border-light);
+  background: var(--bg-surface);
   position: sticky;
-  top: 14px;
+  top: 0;
+  align-self: start;
 }
 
 .contest-title {
@@ -507,6 +584,7 @@ onMounted(() => {
 
 .entry-button {
   width: 100%;
+  border-radius: var(--radius-control);
 }
 .entry-hint {
   margin: 8px 0 0;

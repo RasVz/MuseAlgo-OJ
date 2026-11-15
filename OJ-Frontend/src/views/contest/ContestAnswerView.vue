@@ -1,5 +1,5 @@
 <template>
-  <div class="contest-answer" v-loading="loading">
+  <div class="contest-answer" :class="{ standalone: isVpPaper }" v-loading="loading">
     <el-result v-if="error" icon="error" title="无法进入比赛答题" :sub-title="error">
       <template #extra>
         <el-button type="primary" @click="backToContest">返回比赛</el-button>
@@ -32,6 +32,7 @@
         :can-submit="canSubmit"
         :loading="codingLoading"
         :result-visibility="paper.resultVisibility || 'FULL'"
+        :read-mode="isVpPaper"
         @submit="submitCoding"
       />
 
@@ -55,6 +56,7 @@ import CodingQuestionPane from '@/views/answer/components/CodingQuestionPane.vue
 import { getContestAnswerPaper, getContestAnswerProblem, finishVp } from '@/api/contest'
 import { submitCode } from '@/api/problem'
 import { getSubmissionDetail } from '@/api/submission'
+import { useUserStore } from '@/stores/userStore'
 import { useServerClock } from '@/composables/useServerClock'
 import { createScopedDraftAdapter } from '@/composables/useScopedCodeDraft'
 import { getResultMessage, isResultSuccess, unwrapResultData } from '@/utils/response'
@@ -65,6 +67,8 @@ const router = useRouter()
 const { remaining, sync } = useServerClock()
 
 const contestId = computed(() => String(route.params.id))
+// 虚拟参赛卷走独立路由，默认只读题面；正式比赛仍沿用原答题行为。
+const isVpPaper = computed(() => route.name === 'ContestVpAnswer')
 const paper = ref(null)
 const loading = ref(true)
 const error = ref('')
@@ -74,7 +78,8 @@ const codingLoading = ref(false)
 const submitting = ref(false)
 const finishing = ref(false)
 const resultsByProblem = reactive({})
-const draftAdapter = ref(createScopedDraftAdapter(`contest:${contestId.value}`))
+const userStore = useUserStore()
+const draftAdapter = ref(createScopedDraftAdapter(`contest:${contestId.value}`, userStore.userId))
 
 let paperTimer = null
 let submissionPollTimer = null
@@ -137,7 +142,7 @@ const refreshPaper = async () => {
   }
   paper.value = unwrapResultData(res)
   // 草稿范围每次刷新都按当前比赛重建：从一场比赛答题页直接切到另一场时仍能正确隔离。
-  draftAdapter.value = createScopedDraftAdapter(`contest:${contestId.value}`)
+  draftAdapter.value = createScopedDraftAdapter(`contest:${contestId.value}`, userStore.userId)
   sync({
     remainingSeconds: paper.value?.remainingSeconds,
     deadline: paper.value?.deadline
@@ -319,6 +324,11 @@ const finishVpPaper = async () => {
 }
 
 const backToContest = () => {
+  // 虚拟参赛卷由比赛页在新标签页打开，返回时优先关闭本标签页回到原页面。
+  if (isVpPaper.value && window.opener && !window.opener.closed) {
+    window.close()
+    return
+  }
   router.push({ name: 'ContestProblem', params: { id: contestId.value } })
 }
 
@@ -356,6 +366,8 @@ onBeforeUnmount(() => {
   min-height: 0;
   overflow: hidden;
 }
+/* 独立路由没有 BasicLayout 的 el-main 提供高度，需要自己占满视口。 */
+.contest-answer.standalone { height: 100dvh; }
 .contest-placeholder {
   display: flex;
   align-items: center;

@@ -103,7 +103,8 @@ public class SecurityConfig {
                         // 不放行原始请求、其他 AI 路径或其他异步端点。
                         .requestMatchers(request -> request.getDispatcherType() == DispatcherType.ASYNC
                                 && ("/ai/ask/stream".equals(request.getServletPath())
-                                || "/ai/review".equals(request.getServletPath()))).permitAll()
+                                || request.getServletPath().startsWith("/ai/diagnoses/")
+                                && request.getServletPath().endsWith("/generate"))).permitAll()
                         // === 白名单配置 (允许匿名访问) ===
                         .requestMatchers("/auth/login", "/auth/register").permitAll() // 登录注册
                         .requestMatchers("/auth/refresh").permitAll()
@@ -122,7 +123,7 @@ public class SecurityConfig {
 
                         // 公共接口 (首页公告、题目列表等)
                         .requestMatchers("/post/announcements", "/post/list").permitAll()
-                        .requestMatchers("/comment/list").permitAll()
+                        .requestMatchers("/comment/list", "/comment/page").permitAll()
                         .requestMatchers("/problem-list/list").permitAll()
                         .requestMatchers("/problem/list").permitAll()
                         .requestMatchers(HttpMethod.GET, "/problem/search", "/problem/filter-options").permitAll()

@@ -76,7 +76,8 @@ public class AdminAnnouncementController {
             post.setCreateTime(LocalDateTime.now());
             post.setIsDeleted(0);
             if (post.getIsTop() == null) post.setIsTop(0);
-            if (post.getPrivacy() == null) post.setPrivacy(1);
+            // 公告是面向全站发布的内容，新建时默认公开；私密公告不会出现在公开列表。
+            if (post.getPrivacy() == null) post.setPrivacy(0);
             if (!postService.save(post)) throw new IllegalStateException("公告保存失败");
         } else {
             Post update = new Post();
@@ -84,6 +85,8 @@ public class AdminAnnouncementController {
             update.setTitle(post.getTitle());
             update.setContent(post.getContent());
             update.setIsTop(post.getIsTop() == null ? 0 : post.getIsTop());
+            // 历史公告可能因旧默认值被标记为私密，编辑时一并恢复为公开。
+            update.setPrivacy(0);
             if (!postService.updateById(update)) return ErrorResponses.failure(CommunityErrorCode.POST_NOT_FOUND, "公告不存在");
         }
         return Result.success("保存成功");

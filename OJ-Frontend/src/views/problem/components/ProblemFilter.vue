@@ -333,15 +333,18 @@ onMounted(loadFilterOptions)
 <style scoped>
 .navbar-filter-container { display: flex; align-items: center; width: 100%; height: 100%; gap: 15px; }
 .left-filters { display: flex; align-items: center; gap: 12px; }
-.filter-label { font-weight: bold; color: var(--text-primary); white-space: nowrap; font-size: 15px; }
+.filter-label { font-weight: bold; color: var(--text-primary); white-space: nowrap; font-size: 14px; }
 .nav-select { width: 180px; }
 .spacer { flex: 1; }
 .right-actions { display: flex; align-items: center; gap: 10px; }
 .nav-input { width: 240px; }
+.left-filters :deep(.el-select__wrapper),
+.right-actions :deep(.el-input__wrapper) { border-radius: var(--radius-control); }
+.right-actions :deep(.el-button) { border-radius: var(--radius-control); }
 
 .tag-trigger {
   border: 1px solid var(--el-border-color);
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   padding: 0 12px;
   height: 32px; 
   line-height: 32px;
