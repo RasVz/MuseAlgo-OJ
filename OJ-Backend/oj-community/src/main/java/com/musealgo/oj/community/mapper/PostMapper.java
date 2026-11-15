@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Update;
 import com.musealgo.oj.community.entity.Post;
+import com.musealgo.oj.community.entity.vo.MyClassPostSummaryVO;
 import com.musealgo.oj.community.entity.vo.PostVO;
 
 import java.time.LocalDateTime;
@@ -39,6 +40,9 @@ public interface PostMapper extends BaseMapper<Post> {
 
     // 详情查询
     PostVO selectPostVODetail(@Param("id") Long id);
+
+    // 我发过动态的班级聚合（我的内容 → 班级内容一级列表）
+    List<MyClassPostSummaryVO> selectMyClassSummaries(@Param("authorId") Long authorId);
 
     // 查询近期活跃的帖子（用于定时任务）。SQL 定义见 mapper/PostMapper.xml
     // 注意：注解与 XML 同时定义同一 id 时 XML 生效、注解被 MyBatis 忽略并打 ERROR 日志，故此处不再保留注解。

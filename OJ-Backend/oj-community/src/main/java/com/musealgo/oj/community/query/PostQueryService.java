@@ -1,6 +1,7 @@
 package com.musealgo.oj.community.query;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.musealgo.oj.community.entity.vo.MyClassPostSummaryVO;
 import com.musealgo.oj.community.entity.vo.PostVO;
 
 import java.util.List;
@@ -11,6 +12,7 @@ public interface PostQueryService {
     IPage<PostVO> list(Integer page, Integer size, String category, Integer type, List<Integer> types,
                         Long authorId, Long contestId, Long problemId, Long classId, String keyword, List<String> tags, String sort);
     IPage<PostVO> relatedArticles(Long problemId, Integer page, Integer size, String sort);
-    IPage<PostVO> authoredBy(Long userId, Integer page, Integer size, String contentType);
+    IPage<PostVO> authoredBy(Long userId, Integer page, Integer size, String contentType, Long classId);
+    List<MyClassPostSummaryVO> myClassSummaries(Long userId);
     Map<String, Object> detail(Long postId, Long currentUserId);
 }

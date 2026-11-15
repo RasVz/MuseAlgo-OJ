@@ -12,6 +12,7 @@ import com.musealgo.oj.api.contest.ContestProblemAccessQuery;
 import com.musealgo.oj.common.api.Result;
 import com.musealgo.oj.common.utils.SecurityUtils;
 import com.musealgo.oj.community.entity.Post;
+import com.musealgo.oj.community.entity.vo.MyClassPostSummaryVO;
 import com.musealgo.oj.community.entity.vo.PostVO;
 import com.musealgo.oj.community.service.PostHotService;
 import com.musealgo.oj.community.service.PostService;
@@ -155,10 +156,19 @@ public class PostController {
     public Result<IPage<PostVO>> getMyPosts(
             @RequestParam(defaultValue = "1") Integer page,
             @RequestParam(defaultValue = "10") Integer size,
-            @RequestParam(defaultValue = "all") String contentType) {
+            @RequestParam(defaultValue = "all") String contentType,
+            @RequestParam(required = false) Long classId) {
         Long userId = SecurityUtils.getUserId();
         if (userId == null) return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "请先登录");
-        return Result.success(postQueries.authoredBy(userId, Math.max(page, 1), clampPageSize(size), contentType));
+        return Result.success(postQueries.authoredBy(userId, Math.max(page, 1), clampPageSize(size), contentType, classId));
+    }
+
+    @Operation(summary = "我的班级内容概览")
+    @GetMapping("/my/classes")
+    public Result<List<MyClassPostSummaryVO>> getMyClassSummaries() {
+        Long userId = SecurityUtils.getUserId();
+        if (userId == null) return ErrorResponses.failure(CommonErrorCode.AUTH_REQUIRED, "请先登录");
+        return Result.success(postQueries.myClassSummaries(userId));
     }
 
     @Operation(summary = "文章可选标签")

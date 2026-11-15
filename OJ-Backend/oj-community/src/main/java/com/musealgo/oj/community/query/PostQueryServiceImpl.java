@@ -11,6 +11,7 @@ import com.musealgo.oj.api.user.UserDisplayInfo;
 import com.musealgo.oj.api.user.UserQuery;
 import com.musealgo.oj.community.entity.Post;
 import com.musealgo.oj.community.entity.UserRelation;
+import com.musealgo.oj.community.entity.vo.MyClassPostSummaryVO;
 import com.musealgo.oj.community.entity.vo.PostVO;
 import com.musealgo.oj.community.mapper.PostMapper;
 import com.musealgo.oj.community.mapper.PostProblemRelationMapper;
@@ -68,9 +69,10 @@ class PostQueryServiceImpl implements PostQueryService {
     }
 
     @Override
-    public IPage<PostVO> authoredBy(Long userId, Integer page, Integer size, String contentType) {
+    public IPage<PostVO> authoredBy(Long userId, Integer page, Integer size, String contentType, Long classId) {
         Page<Post> records = new Page<>(page, size);
         LambdaQueryWrapper<Post> query = new LambdaQueryWrapper<Post>().eq(Post::getAuthorId, userId).orderByDesc(Post::getCreateTime);
+        if (classId != null) query.eq(Post::getClassId, classId);
         applyContentFilter(query, contentType); posts.page(records, query);
         UserDisplayInfo author = users.findDisplayInfo(userId).orElse(null);
         List<PostVO> views = records.getRecords().stream().map(post -> toAuthorView(post, author)).collect(Collectors.toList());
@@ -131,6 +133,11 @@ class PostQueryServiceImpl implements PostQueryService {
         return view;
     }
 
+    @Override
+    public List<MyClassPostSummaryVO> myClassSummaries(Long userId) {
+        return mapper.selectMyClassSummaries(userId);
+    }
+
     /**
      * 内容分区过滤：把前端的 {@code contentType} 翻译成 type/category 条件。
      * <p>
@@ -149,8 +156,9 @@ class PostQueryServiceImpl implements PostQueryService {
         if ("solution".equals(contentType)) { query.and(filter -> filter.isNotNull(Post::getProblemId).or().eq(Post::getCategory, "solution").or().eq(Post::getType, 1)); return; }
         List<String> articles = List.of("algorithm", "life", "leisure", "contest");
         if ("article".equals(contentType)) { query.and(filter -> filter.eq(Post::getType, 2).or().in(Post::getCategory, articles)); return; }
-        if ("discussion".equals(contentType)) query.and(filter -> filter.eq(Post::getType, 3).or(nested -> nested.eq(Post::getType, 0)
-                .and(category -> category.isNull(Post::getCategory).or().notIn(Post::getCategory, articles).ne(Post::getCategory, "solution"))));
+        // 班级动态(type=3)由「班级内容」分区承接，不再混入讨论贴。
+        if ("discussion".equals(contentType)) query.and(filter -> filter.eq(Post::getType, 0)
+                .and(category -> category.isNull(Post::getCategory).or().notIn(Post::getCategory, articles).ne(Post::getCategory, "solution")));
     }
     private int value(Integer number) { return number == null ? 0 : number; }
     /** 取 Redis 实时值与数据库快照的较大者，理由见类头注释；两个来源缺失时按 0 处理。 */
